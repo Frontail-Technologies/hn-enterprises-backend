@@ -1,0 +1,34 @@
+{
+  "name": "hn-enterprises-backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun run --watch src/index.ts",
+    "start": "bun run src/index.ts",
+    "check": "bunx tsc --noEmit",
+    "generate": "drizzle-kit generate",
+    "migrate": "drizzle-kit push",
+    "seed:admin": "bun run src/scripts/seed-admin.ts",
+    "seed:supervisor": "bun run src/scripts/seed-supervisor.ts",
+    "studio": "drizzle-kit studio"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1096.0",
+    "@elysiajs/cors": "^1.4.1",
+    "@elysiajs/jwt": "^1.4.0",
+    "bcryptjs": "^3.0.3",
+    "cloudinary": "^2.10.0",
+    "date-fns": "^4.1.0",
+    "drizzle-orm": "^0.45.1",
+    "elysia": "latest",
+    "exceljs": "^4.4.0",
+    "postgres": "^3.4.8",
+    "sharp": "^0.35.3"
+  },
+  "devDependencies": {
+    "bun-types": "latest",
+    "drizzle-kit": "^0.31.9",
+    "typescript": "^5.8.3"
+  }
+}

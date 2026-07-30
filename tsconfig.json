@@ -1,0 +1,29 @@
+{
+  "compilerOptions": {
+    "lib": ["ESNext"],
+    "module": "ESNext",
+    "target": "ESNext",
+    "moduleResolution": "Bundler",
+    "moduleDetection": "force",
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "allowSyntheticDefaultImports": true,
+    "forceConsistentCasingInFileNames": true,
+    "types": ["bun-types"],
+    "baseUrl": ".",
+    "paths": {
+      "@constants": ["./src/constants/index.ts"],
+      "@db": ["./src/db/index.ts"],
+      "@db/schema": ["./src/db/schema.ts"],
+      "@modules": ["./src/modules/index.ts"],
+      "@modules/*": ["./src/modules/*"],
+      "@plugins": ["./src/plugins/index.ts"],
+      "@services": ["./src/services/index.ts"],
+      "@types": ["./src/types/index.ts"],
+      "@utils": ["./src/utils/index.ts"]
+    }
+  },
+  "include": ["src/**/*.ts", "drizzle.config.ts"]
+}
