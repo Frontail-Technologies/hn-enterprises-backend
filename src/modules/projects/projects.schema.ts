@@ -39,8 +39,13 @@ export const createProjectSiteBodySchema = t.Object({
   code: t.Optional(t.String()),
   city: t.Optional(t.String()),
   address: t.Optional(t.String()),
+  latitude: t.Optional(t.Number()),
+  longitude: t.Optional(t.Number()),
   plannedConnections: t.Optional(t.Number()),
   supervisorName: t.Optional(t.String()),
+  startDate: t.Optional(t.String()),
+  endDate: t.Optional(t.String()),
+  remarks: t.Optional(t.String()),
   status: t.Optional(siteStatusSchema),
 });
 

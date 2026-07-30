@@ -36,8 +36,13 @@ export type CreateProjectSiteBody = {
   code?: string;
   city?: string;
   address?: string;
+  latitude?: number;
+  longitude?: number;
   plannedConnections?: number;
   supervisorName?: string;
+  startDate?: string;
+  endDate?: string;
+  remarks?: string;
   status?: SiteStatus;
 };
 
