@@ -140,17 +140,23 @@ type CustomerBillingCompletionPayload = {
 };
 
 export const customerStatusEnum = pgEnum("customer_status", [
+  "draft",
+  "pending",
   "active",
   "inactive",
   "on_hold",
+  "completed",
   "archived",
 ]);
 
 export const customerDocumentStatusEnum = pgEnum("customer_document_status", [
   "draft",
   "submitted",
+  "in_review",
   "approved",
+  "sent_back",
   "rejected",
+  "completed",
 ]);
 
 export const lmcPipeSizeEnum = pgEnum("lmc_pipe_size", [
@@ -272,7 +278,11 @@ export const customerDocuments = pgTable(
       .notNull()
       .references(() => projectSites.id, { onDelete: "restrict" }),
     documentType: text("document_type").notNull(),
+    category: text("category"),
     referenceNumber: text("reference_number"),
+    issueDate: timestamp("issue_date", { withTimezone: true }),
+    expiryDate: timestamp("expiry_date", { withTimezone: true }),
+    amount: numeric("amount", { precision: 14, scale: 2 }),
     fileUrl: text("file_url").notNull(),
     fileName: text("file_name").notNull(),
     mimeType: text("mime_type"),

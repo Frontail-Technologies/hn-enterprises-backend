@@ -449,10 +449,15 @@ function serializeNormalizedRow(row: NormalizedImportRow): Record<string, unknow
   };
 }
 
-function mapCustomerStatus(status: string): "active" | "inactive" | "on_hold" | "archived" {
+function mapCustomerStatus(
+  status: string,
+): "draft" | "pending" | "active" | "inactive" | "on_hold" | "completed" | "archived" {
   const normalized = normalizeKey(status);
+  if (normalized === "draft") return "draft";
+  if (normalized === "pending") return "pending";
   if (normalized === "inactive") return "inactive";
   if (normalized === "onhold" || normalized === "hold") return "on_hold";
+  if (normalized === "completed" || normalized === "complete") return "completed";
   if (normalized === "archived") return "archived";
   return "active";
 }

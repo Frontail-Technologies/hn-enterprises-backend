@@ -78,6 +78,13 @@ export const customersService = {
 
   async create(input: CreateCustomerBody, userId: string) {
     const db = getDb();
+
+    const jsonSections: Record<string, Record<string, unknown>> = {};
+    for (const key of JSON_SECTION_KEYS) {
+      const section = input[key];
+      if (section) jsonSections[key] = section;
+    }
+
     const [customer] = await db
       .insert(customers)
       .values({
@@ -99,6 +106,7 @@ export const customersService = {
         gcReportNumber: input.gcReportNumber || null,
         conversionReportNumber: input.conversionReportNumber || null,
         status: input.status ?? "active",
+        ...jsonSections,
         createdBy: userId,
         updatedBy: userId,
       })
@@ -221,7 +229,11 @@ export const customersService = {
         projectId: customer.projectId,
         siteId: customer.siteId,
         documentType: input.documentType,
+        category: input.category || null,
         referenceNumber: input.referenceNumber || null,
+        issueDate: input.issueDate ? new Date(input.issueDate) : null,
+        expiryDate: input.expiryDate ? new Date(input.expiryDate) : null,
+        amount: input.amount?.toString(),
         fileUrl: input.fileUrl,
         fileName: input.fileName,
         mimeType: input.mimeType || null,

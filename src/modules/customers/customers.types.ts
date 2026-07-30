@@ -19,7 +19,19 @@ export type CustomerListQuery = {
   siteId?: string;
 };
 
-export type CreateCustomerBody = {
+export type CustomerJsonSections = {
+  survey?: Record<string, unknown>;
+  giMeasurements?: Record<string, unknown>;
+  valvesRegulators?: Record<string, unknown>;
+  fittingsAccessories?: Record<string, unknown>;
+  lmcPipelineWork?: Record<string, unknown>;
+  mdpeFittings?: Record<string, unknown>;
+  commissioningConversion?: Record<string, unknown>;
+  billingCompletion?: Record<string, unknown>;
+  customFields?: Record<string, unknown>;
+};
+
+export type CreateCustomerBody = CustomerJsonSections & {
   projectId: string;
   siteId: string;
   trBpNumber: string;
@@ -36,18 +48,6 @@ export type CreateCustomerBody = {
   gcReportNumber?: string;
   conversionReportNumber?: string;
   status?: CustomerStatus;
-};
-
-export type CustomerJsonSections = {
-  survey?: Record<string, unknown>;
-  giMeasurements?: Record<string, unknown>;
-  valvesRegulators?: Record<string, unknown>;
-  fittingsAccessories?: Record<string, unknown>;
-  lmcPipelineWork?: Record<string, unknown>;
-  mdpeFittings?: Record<string, unknown>;
-  commissioningConversion?: Record<string, unknown>;
-  billingCompletion?: Record<string, unknown>;
-  customFields?: Record<string, unknown>;
 };
 
 export type UpdateCustomerBody = Partial<CreateCustomerBody> & CustomerJsonSections;
@@ -68,7 +68,11 @@ export type UpsertLmcPipeRecordBody = {
 
 export type CreateCustomerDocumentBody = {
   documentType: string;
+  category?: string;
   referenceNumber?: string;
+  issueDate?: string;
+  expiryDate?: string;
+  amount?: number;
   fileUrl: string;
   fileName: string;
   mimeType?: string;

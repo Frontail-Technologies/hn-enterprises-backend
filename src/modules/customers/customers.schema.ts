@@ -17,40 +17,45 @@ export const customerListQuerySchema = t.Object({
   siteId: t.Optional(t.String()),
 });
 
-export const createCustomerBodySchema = t.Object({
-  projectId: t.String({ minLength: 1 }),
-  siteId: t.String({ minLength: 1 }),
-  trBpNumber: t.String({ minLength: 1 }),
-  mobileNumber: t.Optional(t.String()),
-  customerName: t.String({ minLength: 1 }),
-  fullAddress: t.Optional(t.String()),
-  city: t.Optional(t.String()),
-  connectionType: t.Optional(t.String()),
-  houseType: t.Optional(t.String()),
-  scheme: t.Optional(t.String()),
-  plumberName: t.Optional(t.String()),
-  supervisorName: t.Optional(t.String()),
-  giReportNumber: t.Optional(t.String()),
-  gcReportNumber: t.Optional(t.String()),
-  conversionReportNumber: t.Optional(t.String()),
-  status: t.Optional(customerStatusSchema),
+const jsonSection = t.Optional(t.Record(t.String(), t.Unknown()));
+
+const customerJsonSectionsSchema = t.Object({
+  survey: jsonSection,
+  giMeasurements: jsonSection,
+  valvesRegulators: jsonSection,
+  fittingsAccessories: jsonSection,
+  lmcPipelineWork: jsonSection,
+  mdpeFittings: jsonSection,
+  commissioningConversion: jsonSection,
+  billingCompletion: jsonSection,
+  customFields: jsonSection,
 });
 
-const jsonSection = t.Optional(t.Record(t.String(), t.Unknown()));
+export const createCustomerBodySchema = t.Composite([
+  t.Object({
+    projectId: t.String({ minLength: 1 }),
+    siteId: t.String({ minLength: 1 }),
+    trBpNumber: t.String({ minLength: 1 }),
+    mobileNumber: t.Optional(t.String()),
+    customerName: t.String({ minLength: 1 }),
+    fullAddress: t.Optional(t.String()),
+    city: t.Optional(t.String()),
+    connectionType: t.Optional(t.String()),
+    houseType: t.Optional(t.String()),
+    scheme: t.Optional(t.String()),
+    plumberName: t.Optional(t.String()),
+    supervisorName: t.Optional(t.String()),
+    giReportNumber: t.Optional(t.String()),
+    gcReportNumber: t.Optional(t.String()),
+    conversionReportNumber: t.Optional(t.String()),
+    status: t.Optional(customerStatusSchema),
+  }),
+  customerJsonSectionsSchema,
+]);
 
 export const updateCustomerBodySchema = t.Composite([
   t.Partial(createCustomerBodySchema),
-  t.Object({
-    survey: jsonSection,
-    giMeasurements: jsonSection,
-    valvesRegulators: jsonSection,
-    fittingsAccessories: jsonSection,
-    lmcPipelineWork: jsonSection,
-    mdpeFittings: jsonSection,
-    commissioningConversion: jsonSection,
-    billingCompletion: jsonSection,
-    customFields: jsonSection,
-  }),
+  customerJsonSectionsSchema,
 ]);
 
 export const upsertLmcPipeRecordBodySchema = t.Object({
@@ -69,7 +74,11 @@ export const upsertLmcPipeRecordBodySchema = t.Object({
 
 export const createCustomerDocumentBodySchema = t.Object({
   documentType: t.String({ minLength: 1 }),
+  category: t.Optional(t.String()),
   referenceNumber: t.Optional(t.String()),
+  issueDate: t.Optional(t.String()),
+  expiryDate: t.Optional(t.String()),
+  amount: t.Optional(t.Number()),
   fileUrl: t.String({ minLength: 1 }),
   fileName: t.String({ minLength: 1 }),
   mimeType: t.Optional(t.String()),
