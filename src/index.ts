@@ -2,12 +2,14 @@ import { Elysia } from "elysia";
 import cors from "@elysiajs/cors";
 import { CORS_CONFIGS, HOST, PORT } from "@constants";
 import { apiModules } from "@modules";
+import { uploadsStaticRoutes } from "@modules/uploads/uploads.static.routes";
 import { errorHandler, requestLogger } from "@plugins";
 
 const app = new Elysia()
   .use(cors(CORS_CONFIGS))
   .use(requestLogger)
   .use(errorHandler)
+  .use(uploadsStaticRoutes)
   .group("/api", (api) =>
     api.use(apiModules).get("/", () => ({
       success: true,
