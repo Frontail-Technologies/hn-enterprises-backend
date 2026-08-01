@@ -143,4 +143,14 @@ export const customersController = {
       return { success: false, message: errorMessage(error, "Unable to create customer document") };
     }
   },
+
+  async deleteDocument({ params, set }: { params: { id: string; documentId: string }; set: SetContext }) {
+    try {
+      await customersService.deleteDocument(params.id, params.documentId);
+      return ok(null, "Customer document deleted");
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to delete customer document") };
+    }
+  },
 };

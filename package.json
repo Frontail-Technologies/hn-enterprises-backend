@@ -11,6 +11,7 @@
     "migrate": "drizzle-kit push",
     "seed:admin": "bun run src/scripts/seed-admin.ts",
     "seed:supervisor": "bun run src/scripts/seed-supervisor.ts",
+    "backfill:plumbers": "bun run src/scripts/backfill-plumbers.ts",
     "studio": "drizzle-kit studio"
   },
   "dependencies": {

@@ -218,6 +218,12 @@ export const projectsService = {
     return site;
   },
 
+  async deleteSite(projectId: string, siteId: string) {
+    await getSiteOrThrow(projectId, siteId);
+    const db = getDb();
+    await db.delete(projectSites).where(eq(projectSites.id, siteId));
+  },
+
   async listDocuments(projectId: string) {
     await getProjectOrThrow(projectId);
     const db = getDb();
@@ -257,5 +263,19 @@ export const projectsService = {
 
     if (!document) throw new Error("Unable to create project document");
     return document;
+  },
+
+  async deleteDocument(projectId: string, documentId: string) {
+    await getProjectOrThrow(projectId);
+    const db = getDb();
+
+    const [document] = await db
+      .select({ id: projectDocuments.id })
+      .from(projectDocuments)
+      .where(and(eq(projectDocuments.id, documentId), eq(projectDocuments.projectId, projectId)))
+      .limit(1);
+
+    if (!document) throw new Error("Project document not found");
+    await db.delete(projectDocuments).where(eq(projectDocuments.id, documentId));
   },
 };

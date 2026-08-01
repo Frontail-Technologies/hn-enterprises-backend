@@ -135,6 +135,16 @@ export const projectsController = {
     }
   },
 
+  async deleteSite({ params, set }: { params: { id: string; siteId: string }; set: SetContext }) {
+    try {
+      await projectsService.deleteSite(params.id, params.siteId);
+      return ok(null, "Project site deleted");
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to delete project site") };
+    }
+  },
+
   async listDocuments({ params, set }: { params: { id: string }; set: SetContext }) {
     try {
       const documents = await projectsService.listDocuments(params.id);
@@ -164,6 +174,16 @@ export const projectsController = {
     } catch (error) {
       set.status = statusFromError(error);
       return { success: false, message: errorMessage(error, "Unable to create project document") };
+    }
+  },
+
+  async deleteDocument({ params, set }: { params: { id: string; documentId: string }; set: SetContext }) {
+    try {
+      await projectsService.deleteDocument(params.id, params.documentId);
+      return ok(null, "Project document deleted");
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to delete project document") };
     }
   },
 };

@@ -67,4 +67,12 @@ export const customersRoutes = new Elysia({ prefix: "/customers" })
       body: createCustomerDocumentBodySchema,
       requireAuth: true,
     },
+  )
+  .delete(
+    "/:id/documents/:documentId",
+    ({ params, set }) => customersController.deleteDocument({ params, set }),
+    {
+      params: t.Object({ id: t.String(), documentId: t.String() }),
+      requireAuth: true,
+    },
   );

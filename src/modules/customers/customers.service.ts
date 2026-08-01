@@ -1,6 +1,6 @@
 import { and, count, eq, ilike, or } from "drizzle-orm";
 import { getDb } from "@db";
-import { customerDocuments, customerLmcPipeRecords, customers } from "@db/schema";
+import { customerDocuments, customerLmcPipeRecords, customers, plumbers } from "@db/schema";
 import { normalizeKey } from "@modules/master-import/master-import.mapper";
 import { buildPaginationMeta, cleanObject, parsePagination, toSearchPattern } from "@utils";
 import type {
@@ -23,6 +23,13 @@ const JSON_SECTION_KEYS = [
   "billingCompletion",
   "customFields",
 ] as const satisfies readonly (keyof CustomerJsonSections)[];
+
+async function getPlumberNameOrThrow(plumberId: string) {
+  const db = getDb();
+  const [plumber] = await db.select({ name: plumbers.name }).from(plumbers).where(eq(plumbers.id, plumberId)).limit(1);
+  if (!plumber) throw new Error("Plumber not found");
+  return plumber.name;
+}
 
 async function getCustomerOrThrow(id: string) {
   const db = getDb();
@@ -78,6 +85,7 @@ export const customersService = {
 
   async create(input: CreateCustomerBody, userId: string) {
     const db = getDb();
+    const plumberName = await getPlumberNameOrThrow(input.plumberId);
 
     const jsonSections: Record<string, Record<string, unknown>> = {};
     for (const key of JSON_SECTION_KEYS) {
@@ -100,7 +108,8 @@ export const customersService = {
         connectionType: input.connectionType || null,
         houseType: input.houseType || null,
         scheme: input.scheme || null,
-        plumberName: input.plumberName || null,
+        plumberId: input.plumberId,
+        plumberName,
         supervisorName: input.supervisorName || null,
         giReportNumber: input.giReportNumber || null,
         gcReportNumber: input.gcReportNumber || null,
@@ -119,6 +128,7 @@ export const customersService = {
   async update(id: string, input: UpdateCustomerBody, userId: string) {
     const existing = await getCustomerOrThrow(id);
     const db = getDb();
+    const plumberName = input.plumberId ? await getPlumberNameOrThrow(input.plumberId) : undefined;
 
     const patch = cleanObject({
       trBpNumber: input.trBpNumber,
@@ -129,7 +139,8 @@ export const customersService = {
       connectionType: input.connectionType,
       houseType: input.houseType,
       scheme: input.scheme,
-      plumberName: input.plumberName,
+      plumberId: input.plumberId,
+      plumberName,
       supervisorName: input.supervisorName,
       giReportNumber: input.giReportNumber,
       gcReportNumber: input.gcReportNumber,
@@ -245,5 +256,19 @@ export const customersService = {
 
     if (!document) throw new Error("Unable to create customer document");
     return document;
+  },
+
+  async deleteDocument(customerId: string, documentId: string) {
+    await getCustomerOrThrow(customerId);
+    const db = getDb();
+
+    const [document] = await db
+      .select({ id: customerDocuments.id })
+      .from(customerDocuments)
+      .where(and(eq(customerDocuments.id, documentId), eq(customerDocuments.customerId, customerId)))
+      .limit(1);
+
+    if (!document) throw new Error("Customer document not found");
+    await db.delete(customerDocuments).where(eq(customerDocuments.id, documentId));
   },
 };

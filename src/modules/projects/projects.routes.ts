@@ -60,6 +60,14 @@ export const projectsRoutes = new Elysia({ prefix: "/projects" })
       requireRole: ["super_admin", "admin"],
     },
   )
+  .delete(
+    "/:id/sites/:siteId",
+    ({ params, set }) => projectsController.deleteSite({ params, set }),
+    {
+      params: t.Object({ id: t.String(), siteId: t.String() }),
+      requireRole: ["super_admin", "admin"],
+    },
+  )
   .get(
     "/:id/documents",
     ({ params, set }) => projectsController.listDocuments({ params, set }),
@@ -72,6 +80,14 @@ export const projectsRoutes = new Elysia({ prefix: "/projects" })
     {
       params: t.Object({ id: t.String() }),
       body: createProjectDocumentBodySchema,
+      requireRole: ["super_admin", "admin"],
+    },
+  )
+  .delete(
+    "/:id/documents/:documentId",
+    ({ params, set }) => projectsController.deleteDocument({ params, set }),
+    {
+      params: t.Object({ id: t.String(), documentId: t.String() }),
       requireRole: ["super_admin", "admin"],
     },
   );

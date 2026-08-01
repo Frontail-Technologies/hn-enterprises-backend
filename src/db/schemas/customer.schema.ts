@@ -11,6 +11,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { users } from "./auth.schema";
+import { plumbers } from "./plumber.schema";
 import { projects, projectSites } from "./project.schema";
 
 type CustomerSurveyPayload = {
@@ -200,6 +201,7 @@ export const customers = pgTable(
     houseType: text("house_type"),
     scheme: text("scheme"),
     plumberName: text("plumber_name"),
+    plumberId: uuid("plumber_id").references(() => plumbers.id, { onDelete: "set null" }),
     supervisorName: text("supervisor_name"),
     giReportNumber: text("gi_report_number"),
     gcReportNumber: text("gc_report_number"),
@@ -229,6 +231,7 @@ export const customers = pgTable(
     siteIdx: index("customers_site_idx").on(table.siteId),
     mobileIdx: index("customers_mobile_idx").on(table.mobileNumber),
     nameIdx: index("customers_name_idx").on(table.normalizedCustomerName),
+    plumberIdx: index("customers_plumber_idx").on(table.plumberId),
   }),
 );
 
@@ -308,6 +311,10 @@ export const customersRelations = relations(customers, ({ one, many }) => ({
   site: one(projectSites, {
     fields: [customers.siteId],
     references: [projectSites.id],
+  }),
+  plumber: one(plumbers, {
+    fields: [customers.plumberId],
+    references: [plumbers.id],
   }),
   documents: many(customerDocuments),
   lmcPipeRecords: many(customerLmcPipeRecords),
