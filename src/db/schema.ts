@@ -5,3 +5,5 @@ export * from "./schemas/customer.schema";
 export * from "./schemas/import.schema";
 export * from "./schemas/attendance.schema";
 export * from "./schemas/planning.schema";
+export * from "./schemas/common.schema";
+export * from "./schemas/bill.schema";
