@@ -1,3 +1,6 @@
+import { getDb } from "@db";
+import { auditLogs } from "@db/schema";
+
 type AuditLogInput = {
   userId?: string;
   module: string;
@@ -9,9 +12,18 @@ type AuditLogInput = {
 
 export const auditService = {
   async log(input: AuditLogInput) {
-    console.info("[audit]", {
-      ...input,
-      createdAt: new Date().toISOString(),
-    });
+    try {
+      const db = getDb();
+      await db.insert(auditLogs).values({
+        userId: input.userId || null,
+        module: input.module,
+        action: input.action,
+        recordId: input.recordId || null,
+        description: input.description || null,
+        metadata: input.metadata,
+      });
+    } catch (error) {
+      console.error("[audit] Failed to record audit log", error);
+    }
   },
 };

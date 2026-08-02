@@ -1,5 +1,6 @@
 import { Elysia } from "elysia";
 import { attendanceRoutes } from "./attendance/attendance.routes";
+import { auditLogsRoutes } from "./audit-logs/audit-logs.routes";
 import { authRoutes } from "./auth/auth.routes";
 import { billsRoutes } from "./bills/bills.routes";
 import { customersRoutes } from "./customers/customers.routes";
@@ -32,4 +33,5 @@ export const apiModules = new Elysia()
   .use(paymentsRoutes)
   .use(wagesRoutes)
   .use(staffRoutes)
-  .use(documentsRoutes);
+  .use(documentsRoutes)
+  .use(auditLogsRoutes);
