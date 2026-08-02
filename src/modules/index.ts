@@ -12,6 +12,7 @@ import { projectsRoutes } from "./projects/projects.routes";
 import { systemRoutes } from "./system/system.routes";
 import { uploadsRoutes } from "./uploads/uploads.routes";
 import { usersRoutes } from "./users/users.routes";
+import { wagesRoutes } from "./wages/wages.routes";
 
 export const apiModules = new Elysia()
   .use(systemRoutes)
@@ -26,4 +27,5 @@ export const apiModules = new Elysia()
   .use(plumbersRoutes)
   .use(billsRoutes)
   .use(materialsRoutes)
-  .use(paymentsRoutes);
+  .use(paymentsRoutes)
+  .use(wagesRoutes);
