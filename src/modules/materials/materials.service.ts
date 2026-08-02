@@ -1,6 +1,6 @@
 import { and, count, eq, gte, ilike, isNotNull, lte } from "drizzle-orm";
 import { getDb } from "@db";
-import { materialTransactions, materials } from "@db/schema";
+import { materialTransactions, materials, users } from "@db/schema";
 import { normalizeKey } from "@modules/master-import/master-import.mapper";
 import { buildPaginationMeta, cleanObject, parsePagination, toSearchPattern } from "@utils";
 import type {
@@ -152,6 +152,13 @@ export const materialsService = {
         .limit(1);
       if (!material) throw new Error("Material not found");
 
+      let supervisorName: string | undefined;
+      if (input.supervisorId) {
+        const [supervisor] = await tx.select({ name: users.name }).from(users).where(eq(users.id, input.supervisorId)).limit(1);
+        if (!supervisor) throw new Error("Supervisor not found");
+        supervisorName = supervisor.name;
+      }
+
       const quantityDelta = computeQuantityDelta(input.type, input.quantity);
 
       const [transaction] = await tx
@@ -166,7 +173,8 @@ export const materialsService = {
           rate: input.rate != null ? String(input.rate) : null,
           billAmount: input.billAmount != null ? String(input.billAmount) : null,
           plumberId: input.plumberId || null,
-          supervisorName: input.supervisorName || null,
+          supervisorId: input.supervisorId || null,
+          supervisorName: supervisorName || null,
           siteId: input.siteId || null,
           storeLabel: input.storeLabel || null,
           customerId: input.customerId || null,

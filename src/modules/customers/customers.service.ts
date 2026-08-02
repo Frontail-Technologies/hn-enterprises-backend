@@ -1,6 +1,6 @@
 import { and, count, eq, ilike, or } from "drizzle-orm";
 import { getDb } from "@db";
-import { customerDocuments, customerLmcPipeRecords, customers, plumbers } from "@db/schema";
+import { customerDocuments, customerLmcPipeRecords, customers, plumbers, users } from "@db/schema";
 import { normalizeKey } from "@modules/master-import/master-import.mapper";
 import { buildPaginationMeta, cleanObject, parsePagination, toSearchPattern } from "@utils";
 import type {
@@ -29,6 +29,13 @@ async function getPlumberNameOrThrow(plumberId: string) {
   const [plumber] = await db.select({ name: plumbers.name }).from(plumbers).where(eq(plumbers.id, plumberId)).limit(1);
   if (!plumber) throw new Error("Plumber not found");
   return plumber.name;
+}
+
+async function getUserNameOrThrow(userId: string) {
+  const db = getDb();
+  const [user] = await db.select({ name: users.name }).from(users).where(eq(users.id, userId)).limit(1);
+  if (!user) throw new Error("Supervisor not found");
+  return user.name;
 }
 
 async function getCustomerOrThrow(id: string) {
@@ -86,6 +93,7 @@ export const customersService = {
   async create(input: CreateCustomerBody, userId: string) {
     const db = getDb();
     const plumberName = await getPlumberNameOrThrow(input.plumberId);
+    const supervisorName = input.supervisorId ? await getUserNameOrThrow(input.supervisorId) : undefined;
 
     const jsonSections: Record<string, Record<string, unknown>> = {};
     for (const key of JSON_SECTION_KEYS) {
@@ -110,7 +118,8 @@ export const customersService = {
         scheme: input.scheme || null,
         plumberId: input.plumberId,
         plumberName,
-        supervisorName: input.supervisorName || null,
+        supervisorId: input.supervisorId || null,
+        supervisorName: supervisorName || null,
         giReportNumber: input.giReportNumber || null,
         gcReportNumber: input.gcReportNumber || null,
         conversionReportNumber: input.conversionReportNumber || null,
@@ -129,6 +138,7 @@ export const customersService = {
     const existing = await getCustomerOrThrow(id);
     const db = getDb();
     const plumberName = input.plumberId ? await getPlumberNameOrThrow(input.plumberId) : undefined;
+    const supervisorName = input.supervisorId ? await getUserNameOrThrow(input.supervisorId) : undefined;
 
     const patch = cleanObject({
       trBpNumber: input.trBpNumber,
@@ -141,7 +151,8 @@ export const customersService = {
       scheme: input.scheme,
       plumberId: input.plumberId,
       plumberName,
-      supervisorName: input.supervisorName,
+      supervisorId: input.supervisorId,
+      supervisorName,
       giReportNumber: input.giReportNumber,
       gcReportNumber: input.gcReportNumber,
       conversionReportNumber: input.conversionReportNumber,

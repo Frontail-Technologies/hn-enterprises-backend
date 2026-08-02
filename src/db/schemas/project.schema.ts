@@ -95,6 +95,7 @@ export const projectSites = pgTable(
     longitude: numeric("longitude", { precision: 10, scale: 6 }),
     plannedConnections: integer("planned_connections"),
     supervisorName: text("supervisor_name"),
+    supervisorId: uuid("supervisor_id").references(() => users.id, { onDelete: "set null" }),
     startDate: timestamp("start_date", { withTimezone: true }),
     endDate: timestamp("end_date", { withTimezone: true }),
     remarks: text("remarks"),
@@ -116,6 +117,7 @@ export const projectSites = pgTable(
     ),
     projectIdx: index("project_sites_project_idx").on(table.projectId),
     statusIdx: index("project_sites_status_idx").on(table.status),
+    supervisorIdx: index("project_sites_supervisor_idx").on(table.supervisorId),
   }),
 );
 

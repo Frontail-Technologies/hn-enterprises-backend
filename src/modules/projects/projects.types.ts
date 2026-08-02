@@ -39,7 +39,7 @@ export type CreateProjectSiteBody = {
   latitude?: number;
   longitude?: number;
   plannedConnections?: number;
-  supervisorName?: string;
+  supervisorId?: string;
   startDate?: string;
   endDate?: string;
   remarks?: string;

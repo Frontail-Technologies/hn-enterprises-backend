@@ -1,6 +1,6 @@
 import { and, count, eq, ilike, or } from "drizzle-orm";
 import { getDb } from "@db";
-import { projectDocuments, projectSites, projects } from "@db/schema";
+import { projectDocuments, projectSites, projects, users } from "@db/schema";
 import { normalizeKey } from "@modules/master-import/master-import.mapper";
 import { buildPaginationMeta, cleanObject, parsePagination, toSearchPattern } from "@utils";
 import type {
@@ -24,6 +24,13 @@ async function getProjectOrThrow(id: string) {
 
   if (!project) throw new Error("Project not found");
   return project;
+}
+
+async function getUserNameOrThrow(userId: string) {
+  const db = getDb();
+  const [user] = await db.select({ name: users.name }).from(users).where(eq(users.id, userId)).limit(1);
+  if (!user) throw new Error("Supervisor not found");
+  return user.name;
 }
 
 async function getSiteOrThrow(projectId: string, siteId: string) {
@@ -153,6 +160,7 @@ export const projectsService = {
   async createSite(projectId: string, input: CreateProjectSiteBody, userId: string) {
     await getProjectOrThrow(projectId);
     const db = getDb();
+    const supervisorName = input.supervisorId ? await getUserNameOrThrow(input.supervisorId) : undefined;
 
     const [site] = await db
       .insert(projectSites)
@@ -168,7 +176,8 @@ export const projectsService = {
         latitude: input.latitude?.toString(),
         longitude: input.longitude?.toString(),
         plannedConnections: input.plannedConnections,
-        supervisorName: input.supervisorName || null,
+        supervisorId: input.supervisorId || null,
+        supervisorName: supervisorName || null,
         startDate: input.startDate ? new Date(input.startDate) : null,
         endDate: input.endDate ? new Date(input.endDate) : null,
         remarks: input.remarks || null,
@@ -185,6 +194,7 @@ export const projectsService = {
   async updateSite(projectId: string, siteId: string, input: UpdateProjectSiteBody, userId: string) {
     await getSiteOrThrow(projectId, siteId);
     const db = getDb();
+    const supervisorName = input.supervisorId ? await getUserNameOrThrow(input.supervisorId) : undefined;
 
     const patch = cleanObject({
       name: input.name,
@@ -194,7 +204,8 @@ export const projectsService = {
       latitude: input.latitude?.toString(),
       longitude: input.longitude?.toString(),
       plannedConnections: input.plannedConnections,
-      supervisorName: input.supervisorName,
+      supervisorId: input.supervisorId,
+      supervisorName,
       startDate: input.startDate ? new Date(input.startDate) : undefined,
       endDate: input.endDate ? new Date(input.endDate) : undefined,
       remarks: input.remarks,

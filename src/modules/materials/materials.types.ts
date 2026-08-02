@@ -40,7 +40,7 @@ export type CreateMaterialTransactionBody = {
   rate?: number;
   billAmount?: number;
   plumberId?: string;
-  supervisorName?: string;
+  supervisorId?: string;
   siteId?: string;
   storeLabel?: string;
   customerId?: string;

@@ -203,6 +203,7 @@ export const customers = pgTable(
     plumberName: text("plumber_name"),
     plumberId: uuid("plumber_id").references(() => plumbers.id, { onDelete: "set null" }),
     supervisorName: text("supervisor_name"),
+    supervisorId: uuid("supervisor_id").references(() => users.id, { onDelete: "set null" }),
     giReportNumber: text("gi_report_number"),
     gcReportNumber: text("gc_report_number"),
     conversionReportNumber: text("conversion_report_number"),
@@ -232,6 +233,7 @@ export const customers = pgTable(
     mobileIdx: index("customers_mobile_idx").on(table.mobileNumber),
     nameIdx: index("customers_name_idx").on(table.normalizedCustomerName),
     plumberIdx: index("customers_plumber_idx").on(table.plumberId),
+    supervisorIdx: index("customers_supervisor_idx").on(table.supervisorId),
   }),
 );
 

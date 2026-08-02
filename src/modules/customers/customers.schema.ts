@@ -44,7 +44,7 @@ export const createCustomerBodySchema = t.Composite([
     houseType: t.Optional(t.String()),
     scheme: t.Optional(t.String()),
     plumberId: t.String({ minLength: 1 }),
-    supervisorName: t.Optional(t.String()),
+    supervisorId: t.Optional(t.String()),
     giReportNumber: t.Optional(t.String()),
     gcReportNumber: t.Optional(t.String()),
     conversionReportNumber: t.Optional(t.String()),

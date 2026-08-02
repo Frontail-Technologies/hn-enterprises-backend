@@ -43,7 +43,7 @@ export type CreateCustomerBody = CustomerJsonSections & {
   houseType?: string;
   scheme?: string;
   plumberId: string;
-  supervisorName?: string;
+  supervisorId?: string;
   giReportNumber?: string;
   gcReportNumber?: string;
   conversionReportNumber?: string;
