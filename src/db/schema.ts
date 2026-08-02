@@ -15,3 +15,4 @@ export * from "./schemas/audit.schema";
 export * from "./schemas/masters.schema";
 export * from "./schemas/announcement.schema";
 export * from "./schemas/notification.schema";
+export * from "./schemas/work-progress.schema";

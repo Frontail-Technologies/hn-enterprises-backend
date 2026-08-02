@@ -19,6 +19,7 @@ import { systemRoutes } from "./system/system.routes";
 import { uploadsRoutes } from "./uploads/uploads.routes";
 import { usersRoutes } from "./users/users.routes";
 import { wagesRoutes } from "./wages/wages.routes";
+import { workProgressRoutes } from "./work-progress/work-progress.routes";
 
 export const apiModules = new Elysia()
   .use(systemRoutes)
@@ -41,4 +42,5 @@ export const apiModules = new Elysia()
   .use(mastersRoutes)
   .use(announcementsRoutes)
   .use(notificationsRoutes)
-  .use(pushTokensRoutes);
+  .use(pushTokensRoutes)
+  .use(workProgressRoutes);
