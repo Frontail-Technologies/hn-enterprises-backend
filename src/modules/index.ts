@@ -1,4 +1,5 @@
 import { Elysia } from "elysia";
+import { announcementsRoutes } from "./announcements/announcements.routes";
 import { attendanceRoutes } from "./attendance/attendance.routes";
 import { auditLogsRoutes } from "./audit-logs/audit-logs.routes";
 import { authRoutes } from "./auth/auth.routes";
@@ -8,6 +9,7 @@ import { documentsRoutes } from "./documents/documents.routes";
 import { masterImportRoutes } from "./master-import/master-import.routes";
 import { mastersRoutes } from "./masters/masters.routes";
 import { materialsRoutes } from "./materials/materials.routes";
+import { notificationsRoutes, pushTokensRoutes } from "./notifications/notifications.routes";
 import { paymentsRoutes } from "./payments/payments.routes";
 import { planningRoutes } from "./planning/planning.routes";
 import { plumbersRoutes } from "./plumbers/plumbers.routes";
@@ -36,4 +38,7 @@ export const apiModules = new Elysia()
   .use(staffRoutes)
   .use(documentsRoutes)
   .use(auditLogsRoutes)
-  .use(mastersRoutes);
+  .use(mastersRoutes)
+  .use(announcementsRoutes)
+  .use(notificationsRoutes)
+  .use(pushTokensRoutes);
