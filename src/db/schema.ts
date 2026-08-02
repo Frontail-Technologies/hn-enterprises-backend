@@ -7,3 +7,4 @@ export * from "./schemas/attendance.schema";
 export * from "./schemas/planning.schema";
 export * from "./schemas/common.schema";
 export * from "./schemas/bill.schema";
+export * from "./schemas/material.schema";
