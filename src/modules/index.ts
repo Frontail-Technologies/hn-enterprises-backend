@@ -15,6 +15,7 @@ import { planningRoutes } from "./planning/planning.routes";
 import { plumbersRoutes } from "./plumbers/plumbers.routes";
 import { projectsRoutes } from "./projects/projects.routes";
 import { staffRoutes } from "./staff/staff.routes";
+import { statsRoutes } from "./stats/stats.routes";
 import { systemRoutes } from "./system/system.routes";
 import { uploadsRoutes } from "./uploads/uploads.routes";
 import { usersRoutes } from "./users/users.routes";
@@ -43,4 +44,5 @@ export const apiModules = new Elysia()
   .use(announcementsRoutes)
   .use(notificationsRoutes)
   .use(pushTokensRoutes)
-  .use(workProgressRoutes);
+  .use(workProgressRoutes)
+  .use(statsRoutes);
