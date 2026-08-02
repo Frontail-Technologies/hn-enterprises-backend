@@ -10,3 +10,4 @@ export * from "./schemas/bill.schema";
 export * from "./schemas/material.schema";
 export * from "./schemas/payment.schema";
 export * from "./schemas/wage.schema";
+export * from "./schemas/staff.schema";
