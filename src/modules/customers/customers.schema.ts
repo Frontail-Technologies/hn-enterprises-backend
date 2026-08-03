@@ -72,6 +72,10 @@ export const upsertLmcPipeRecordBodySchema = t.Object({
   evidence: t.Optional(t.Array(t.Record(t.String(), t.Unknown()))),
 });
 
+export const createCustomerNoteBodySchema = t.Object({
+  note: t.String({ minLength: 1 }),
+});
+
 export const createCustomerDocumentBodySchema = t.Object({
   documentType: t.String({ minLength: 1 }),
   category: t.Optional(t.String()),

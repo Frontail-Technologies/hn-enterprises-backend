@@ -67,6 +67,7 @@ export const attendanceService = {
       .set({
         checkOutAt: new Date(input.location.capturedAt),
         checkOutLocation: input.location as AttendanceLocation,
+        ...(input.remarks ? { remarks: input.remarks } : {}),
         updatedAt: new Date(),
       })
       .where(

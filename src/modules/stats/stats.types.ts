@@ -11,7 +11,15 @@ export type SupervisorStatId =
   | "pre-commissioning"
   | "commissioning"
   | "dpr"
-  | "planning";
+  | "planning"
+  | "pole-marker"
+  | "route-marker"
+  | "complaint-customer"
+  | "total-pbg-assignment"
+  | "total-connection-done"
+  | "total-connection-remark"
+  | "total-conversion-done"
+  | "customer-resolve";
 
 export type SupervisorStatTone = "blue" | "orange" | "green" | "red";
 

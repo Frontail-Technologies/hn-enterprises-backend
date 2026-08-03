@@ -7,7 +7,6 @@ export const loginBodySchema = t.Object({
 });
 
 export const changePasswordBodySchema = t.Object({
-  currentPassword: t.String({ minLength: 1 }),
   newPassword: t.String({ minLength: 8 }),
 });
 
@@ -16,7 +15,8 @@ export const requestPasswordResetBodySchema = t.Object({
 });
 
 export const resetPasswordBodySchema = t.Object({
-  token: t.String({ minLength: 20 }),
+  identifier: t.String({ minLength: 1 }),
+  otp: t.String({ minLength: 6, maxLength: 6 }),
   newPassword: t.String({ minLength: 8 }),
 });
 
@@ -27,7 +27,6 @@ export type LoginBody = {
 };
 
 export type ChangePasswordBody = {
-  currentPassword: string;
   newPassword: string;
 };
 
@@ -36,6 +35,7 @@ export type RequestPasswordResetBody = {
 };
 
 export type ResetPasswordBody = {
-  token: string;
+  identifier: string;
+  otp: string;
   newPassword: string;
 };

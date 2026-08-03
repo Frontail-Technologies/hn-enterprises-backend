@@ -66,6 +66,10 @@ export type UpsertLmcPipeRecordBody = {
   evidence?: Record<string, unknown>[];
 };
 
+export type CreateCustomerNoteBody = {
+  note: string;
+};
+
 export type CreateCustomerDocumentBody = {
   documentType: string;
   category?: string;

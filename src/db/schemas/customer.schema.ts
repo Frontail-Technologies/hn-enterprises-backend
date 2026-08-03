@@ -269,6 +269,22 @@ export const customerLmcPipeRecords = pgTable(
   }),
 );
 
+export const customerNotes = pgTable(
+  "customer_notes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    customerId: uuid("customer_id")
+      .notNull()
+      .references(() => customers.id, { onDelete: "cascade" }),
+    authorId: uuid("author_id").references(() => users.id, { onDelete: "set null" }),
+    note: text("note").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    customerIdx: index("customer_notes_customer_idx").on(table.customerId),
+  }),
+);
+
 export const customerDocuments = pgTable(
   "customer_documents",
   {
@@ -320,6 +336,18 @@ export const customersRelations = relations(customers, ({ one, many }) => ({
   }),
   documents: many(customerDocuments),
   lmcPipeRecords: many(customerLmcPipeRecords),
+  notes: many(customerNotes),
+}));
+
+export const customerNotesRelations = relations(customerNotes, ({ one }) => ({
+  customer: one(customers, {
+    fields: [customerNotes.customerId],
+    references: [customers.id],
+  }),
+  author: one(users, {
+    fields: [customerNotes.authorId],
+    references: [users.id],
+  }),
 }));
 
 export const customerLmcPipeRecordsRelations = relations(customerLmcPipeRecords, ({ one }) => ({

@@ -33,19 +33,38 @@ export const uploadsController = {
     currentUser: AuthTokenPayload | null;
     set: SetContext;
   }) {
+    const module = getModule(body);
+    const recordId = getRecordId(body);
+
     try {
       if (!currentUser) throw new Error("Authentication required");
 
       const file = getUploadFile(body);
       const stored = await uploadService.store(file, {
-        module: getModule(body),
-        recordId: getRecordId(body),
+        module,
+        recordId,
+        uploadedBy: currentUser.id,
+      });
+
+      console.info("[uploads] stored", {
+        fileName: stored.fileName,
+        size: stored.size,
+        driver: stored.driver,
+        module,
+        recordId,
         uploadedBy: currentUser.id,
       });
 
       set.status = 201;
       return ok(stored, "File uploaded");
     } catch (error) {
+      console.error("[uploads] failed", {
+        module,
+        recordId,
+        uploadedBy: currentUser?.id,
+        error: error instanceof Error ? error.message : error,
+      });
+
       set.status = 400;
       return {
         success: false,

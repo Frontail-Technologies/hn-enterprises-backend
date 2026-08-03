@@ -4,6 +4,7 @@ import { attendanceRoutes } from "./attendance/attendance.routes";
 import { auditLogsRoutes } from "./audit-logs/audit-logs.routes";
 import { authRoutes } from "./auth/auth.routes";
 import { billsRoutes } from "./bills/bills.routes";
+import { complaintsRoutes } from "./complaints/complaints.routes";
 import { customersRoutes } from "./customers/customers.routes";
 import { documentsRoutes } from "./documents/documents.routes";
 import { masterImportRoutes } from "./master-import/master-import.routes";
@@ -45,4 +46,5 @@ export const apiModules = new Elysia()
   .use(notificationsRoutes)
   .use(pushTokensRoutes)
   .use(workProgressRoutes)
+  .use(complaintsRoutes)
   .use(statsRoutes);

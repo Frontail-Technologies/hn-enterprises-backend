@@ -208,7 +208,7 @@ export const authController = {
   }) {
     try {
       const { user } = await requireCurrentUser({ jwt, cookie, headers });
-      await authService.changePassword(user.id, body.currentPassword, body.newPassword);
+      await authService.changePassword(user.id, body.newPassword);
       cookieSlot(cookie, "accessToken").remove();
       cookieSlot(cookie, "refreshToken").remove();
 
@@ -249,7 +249,7 @@ export const authController = {
     set: SetContext;
   }) {
     try {
-      await authService.resetPassword(body.token, body.newPassword);
+      await authService.resetPassword(body.identifier, body.otp, body.newPassword);
 
       return {
         success: true,

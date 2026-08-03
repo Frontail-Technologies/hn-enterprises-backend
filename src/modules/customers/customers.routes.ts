@@ -4,6 +4,7 @@ import { customersController } from "./customers.controller";
 import {
   createCustomerBodySchema,
   createCustomerDocumentBodySchema,
+  createCustomerNoteBodySchema,
   customerListQuerySchema,
   updateCustomerBodySchema,
   upsertLmcPipeRecordBodySchema,
@@ -73,6 +74,21 @@ export const customersRoutes = new Elysia({ prefix: "/customers" })
     ({ params, set }) => customersController.deleteDocument({ params, set }),
     {
       params: t.Object({ id: t.String(), documentId: t.String() }),
+      requireAuth: true,
+    },
+  )
+  .get(
+    "/:id/notes",
+    ({ params, set }) => customersController.listNotes({ params, set }),
+    { params: t.Object({ id: t.String() }), requireAuth: true },
+  )
+  .post(
+    "/:id/notes",
+    ({ params, body, currentUser, set }) =>
+      customersController.createNote({ params, body, currentUser, set }),
+    {
+      params: t.Object({ id: t.String() }),
+      body: createCustomerNoteBodySchema,
       requireAuth: true,
     },
   );

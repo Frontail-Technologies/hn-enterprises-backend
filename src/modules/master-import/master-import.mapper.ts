@@ -221,7 +221,15 @@ export async function readSheetRows(file: File): Promise<RawSheetRow[]> {
   }
 
   const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(buffer as unknown as Parameters<typeof workbook.xlsx.load>[0]);
+  try {
+    await workbook.xlsx.load(buffer as unknown as Parameters<typeof workbook.xlsx.load>[0]);
+  } catch {
+    throw new Error(
+      "Unable to read this Excel file. It may be an older .xls format or saved by a tool this " +
+        "importer doesn't fully support - try re-saving/exporting it as .xlsx or .csv and upload again.",
+    );
+  }
+
   const worksheet = workbook.worksheets[0];
 
   if (!worksheet) {

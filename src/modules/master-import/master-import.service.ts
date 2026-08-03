@@ -71,9 +71,10 @@ export const masterImportService = {
     }
 
     return {
-      ...summary,
+      ...(summary satisfies ImportPreviewSummary),
       batchId: batch.id,
-    } satisfies ImportPreviewSummary;
+      rows,
+    };
   },
 
   async getBatch(batchId: string, user: { role: string }) {
@@ -90,10 +91,20 @@ export const masterImportService = {
       throw new Error("Import batch not found");
     }
 
+    const storedRows = await db
+      .select()
+      .from(importRows)
+      .where(eq(importRows.batchId, batchId));
+
+    const rows = storedRows
+      .sort((a, b) => a.rowNumber - b.rowNumber)
+      .map((row) => row.normalizedData as unknown as NormalizedImportRow);
+
     return {
       ...batch.summary,
       batchId: batch.id,
       status: batch.status,
+      rows,
     };
   },
 

@@ -32,7 +32,7 @@ export const GHOSTSCRIPT_BIN = process.env.GHOSTSCRIPT_BIN;
 export const UPLOAD_MAX_FILE_SIZE_MB = Number(process.env.UPLOAD_MAX_FILE_SIZE_MB || 20);
 export const UPLOAD_ALLOWED_MIME_TYPES = (
   process.env.UPLOAD_ALLOWED_MIME_TYPES ||
-  "image/jpeg,image/png,image/webp,application/pdf,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+  "image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
 )
   .split(",")
   .map((item) => item.trim())
@@ -50,3 +50,9 @@ export const SEED_SUPERVISOR_EMAIL =
 export const SEED_SUPERVISOR_USERNAME = process.env.SEED_SUPERVISOR_USERNAME || "supervisor";
 export const SEED_SUPERVISOR_MOBILE = process.env.SEED_SUPERVISOR_MOBILE || "9876543210";
 export const SEED_SUPERVISOR_PASSWORD = process.env.SEED_SUPERVISOR_PASSWORD || "Supervisor@123";
+
+export const EMAIL_PROVIDER = process.env.EMAIL_PROVIDER || "console";
+export const EMAIL_FROM = process.env.EMAIL_FROM || "HN Enterprises <no-reply@hnenterprises.com>";
+export const RESEND_API_KEY = process.env.RESEND_API_KEY;
+export const PASSWORD_RESET_OTP_EXPIRY_MINUTES = Number(process.env.PASSWORD_RESET_OTP_EXPIRY_MINUTES || 10);
+export const PASSWORD_RESET_OTP_MAX_ATTEMPTS = Number(process.env.PASSWORD_RESET_OTP_MAX_ATTEMPTS || 5);

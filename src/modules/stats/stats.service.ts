@@ -1,6 +1,6 @@
-import { desc } from "drizzle-orm";
+import { desc, inArray } from "drizzle-orm";
 import { getDb } from "@db";
-import { workProgressUpdates } from "@db/schema";
+import { complaints, workProgressUpdates } from "@db/schema";
 import type { SupervisorStat, SupervisorStatDetailRow, SupervisorStatId, SupervisorStatTone } from "./stats.types";
 
 const STAT_DEFINITIONS: Record<SupervisorStatId, { label: string; suffix: string; tone: SupervisorStatTone }> = {
@@ -17,6 +17,14 @@ const STAT_DEFINITIONS: Record<SupervisorStatId, { label: string; suffix: string
   commissioning: { label: "Commissioning", suffix: "Customers", tone: "green" },
   dpr: { label: "DPR", suffix: "Completed", tone: "blue" },
   planning: { label: "Planning", suffix: "Plans", tone: "orange" },
+  "pole-marker": { label: "Pole Marker", suffix: "Customers", tone: "blue" },
+  "route-marker": { label: "Route Marker", suffix: "Customers", tone: "orange" },
+  "complaint-customer": { label: "Complaint Customer", suffix: "Open", tone: "red" },
+  "total-pbg-assignment": { label: "Total PBG Assignment", suffix: "Assigned", tone: "blue" },
+  "total-connection-done": { label: "Total Connection Done", suffix: "Customers", tone: "green" },
+  "total-connection-remark": { label: "Total Connection Remark", suffix: "Pending", tone: "orange" },
+  "total-conversion-done": { label: "Total Conversion Done", suffix: "Customers", tone: "green" },
+  "customer-resolve": { label: "Customer Resolve", suffix: "Customers", tone: "blue" },
 };
 
 const STAT_ORDER: SupervisorStatId[] = [
@@ -33,6 +41,28 @@ const STAT_ORDER: SupervisorStatId[] = [
   "commissioning",
   "dpr",
   "planning",
+  "pole-marker",
+  "route-marker",
+  "complaint-customer",
+  "total-pbg-assignment",
+  "total-connection-done",
+  "total-connection-remark",
+  "total-conversion-done",
+  "customer-resolve",
+];
+
+// These don't have a real backing concept anywhere in the schema yet (no pole/route marker
+// tracking, no PBG assignment tracking - Pre-Commissioning is a whole unbuilt module per the
+// product spec). Restored to the list per explicit request; they report 0 rather than a
+// fabricated non-zero count until real tracking exists. ("complaint-customer" used to be here
+// too, but now has a real complaints table backing it - see fetchComplaintDetailRows.)
+const UNTRACKED_STAT_IDS: SupervisorStatId[] = [
+  "pole-marker",
+  "route-marker",
+  "total-pbg-assignment",
+  "total-connection-done",
+  "total-connection-remark",
+  "customer-resolve",
 ];
 
 function isStatId(value: string): value is SupervisorStatId {
@@ -282,13 +312,34 @@ async function fetchPlanningDetailRows() {
   }));
 }
 
+async function fetchComplaintDetailRows() {
+  const db = getDb();
+  const rows = await db.query.complaints.findMany({
+    where: inArray(complaints.status, ["open", "in_progress"]),
+    with: { customer: { with: { site: true } } },
+    orderBy: (fields, { desc: descOrder }) => [descOrder(fields.createdAt)],
+  });
+
+  return rows.map((complaint) => ({
+    id: complaint.id,
+    customerId: complaint.customerId,
+    title: complaint.title,
+    reference: complaint.customer?.customerName ?? "-",
+    site: complaint.customer?.site?.name ?? "-",
+    status: complaint.status === "in_progress" ? ("In Progress" as const) : ("Pending" as const),
+    updatedOn: toIso(complaint.createdAt),
+    helper: complaint.description,
+  }));
+}
+
 export const statsService = {
   async getSummary(): Promise<SupervisorStat[]> {
-    const [customers, dprRows, planningRows, latestWorkProgress] = await Promise.all([
+    const [customers, dprRows, planningRows, latestWorkProgress, complaintRows] = await Promise.all([
       fetchCustomers(),
       fetchDprDetailRows(),
       fetchPlanningDetailRows(),
       fetchLatestWorkProgress(),
+      fetchComplaintDetailRows(),
     ]);
 
     const latestByCustomer = new Map(latestWorkProgress.map((row) => [row.customerId, row]));
@@ -314,15 +365,26 @@ export const statsService = {
     counts["dpr"] = dprRows.filter((row) => row.status === "Done").length;
     counts["planning"] = planningRows.length;
     counts["flushing-testing"] = flushingTestingRows.length;
+    // "Total Conversion Done" duplicates "Conversion Done" under a different label (that's
+    // real, already-tracked data) rather than a fabricated number, unlike the other 7 restored
+    // ids in UNTRACKED_STAT_IDS which have no backing concept and stay at 0.
+    counts["total-conversion-done"] = counts["conversion-done"];
+    counts["complaint-customer"] = complaintRows.length;
 
     const totalCustomers = customers.length;
+    const bareCountStatIds: SupervisorStatId[] = [
+      "dpr",
+      "planning",
+      "flushing-testing",
+      "complaint-customer",
+      "total-pbg-assignment",
+      "total-connection-remark",
+    ];
 
     return STAT_ORDER.map((statId) => {
       const definition = STAT_DEFINITIONS[statId];
       const count = counts[statId] ?? 0;
-      const value = statId === "dpr" || statId === "planning" || statId === "flushing-testing"
-        ? String(count)
-        : `${count}/${totalCustomers}`;
+      const value = bareCountStatIds.includes(statId) ? String(count) : `${count}/${totalCustomers}`;
 
       return { id: statId, label: definition.label, value, suffix: definition.suffix, tone: definition.tone };
     });
@@ -333,6 +395,8 @@ export const statsService = {
 
     if (type === "dpr") return fetchDprDetailRows();
     if (type === "planning") return fetchPlanningDetailRows();
+    if (type === "complaint-customer") return fetchComplaintDetailRows();
+    if ((UNTRACKED_STAT_IDS as string[]).includes(type)) return [];
 
     const customers = await fetchCustomers();
 
@@ -342,6 +406,7 @@ export const statsService = {
       return buildFlushingTestingRows(customers, latestByCustomer);
     }
 
-    return customers.map((customer) => buildCustomerRow(customer, type).row);
+    const detailStatId = type === "total-conversion-done" ? "conversion-done" : type;
+    return customers.map((customer) => buildCustomerRow(customer, detailStatId).row);
   },
 };

@@ -6,3 +6,4 @@ export { permissionService } from "./permission.service";
 export { uploadService } from "./upload.service";
 export type { CsvColumn } from "./export.service";
 export type { StoredFile, UploadContext, UploadDriver } from "./upload.service";
+export { emailService } from "./email.service";

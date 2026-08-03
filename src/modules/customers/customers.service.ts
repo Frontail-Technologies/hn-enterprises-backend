@@ -1,11 +1,12 @@
-import { and, count, eq, ilike, or } from "drizzle-orm";
+import { and, count, desc, eq, ilike, or } from "drizzle-orm";
 import { getDb } from "@db";
-import { customerDocuments, customerLmcPipeRecords, customers, plumbers, users } from "@db/schema";
+import { customerDocuments, customerLmcPipeRecords, customerNotes, customers, plumbers, users } from "@db/schema";
 import { normalizeKey } from "@modules/master-import/master-import.mapper";
 import { buildPaginationMeta, cleanObject, parsePagination, toSearchPattern } from "@utils";
 import type {
   CreateCustomerBody,
   CreateCustomerDocumentBody,
+  CreateCustomerNoteBody,
   CustomerJsonSections,
   CustomerListQuery,
   UpdateCustomerBody,
@@ -45,6 +46,8 @@ async function getCustomerOrThrow(id: string) {
     with: {
       lmcPipeRecords: true,
       documents: true,
+      project: true,
+      site: true,
     },
   });
 
@@ -79,6 +82,10 @@ export const customersService = {
         limit,
         offset,
         orderBy: (fields, { desc }) => [desc(fields.createdAt)],
+        with: {
+          project: true,
+          site: true,
+        },
       }),
       db.select({ value: count() }).from(customers).where(where),
     ]);
@@ -281,5 +288,32 @@ export const customersService = {
 
     if (!document) throw new Error("Customer document not found");
     await db.delete(customerDocuments).where(eq(customerDocuments.id, documentId));
+  },
+
+  async listNotes(customerId: string) {
+    await getCustomerOrThrow(customerId);
+    const db = getDb();
+    return db.query.customerNotes.findMany({
+      where: eq(customerNotes.customerId, customerId),
+      with: { author: { columns: { id: true, name: true } } },
+      orderBy: desc(customerNotes.createdAt),
+    });
+  },
+
+  async createNote(customerId: string, input: CreateCustomerNoteBody, userId: string) {
+    await getCustomerOrThrow(customerId);
+    const db = getDb();
+
+    const [note] = await db
+      .insert(customerNotes)
+      .values({
+        customerId,
+        authorId: userId,
+        note: input.note,
+      })
+      .returning();
+
+    if (!note) throw new Error("Unable to create customer note");
+    return note;
   },
 };

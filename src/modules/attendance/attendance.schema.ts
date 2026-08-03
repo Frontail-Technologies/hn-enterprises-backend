@@ -19,6 +19,7 @@ export const checkInBodySchema = t.Object({
 export const checkOutBodySchema = t.Object({
   date: t.String({ minLength: 1 }),
   location: attendanceLocationSchema,
+  remarks: t.Optional(t.String()),
 });
 
 export const selfHistoryQuerySchema = t.Object({

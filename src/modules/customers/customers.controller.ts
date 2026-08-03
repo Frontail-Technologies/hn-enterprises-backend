@@ -5,6 +5,7 @@ import { customersService } from "./customers.service";
 import type {
   CreateCustomerBody,
   CreateCustomerDocumentBody,
+  CreateCustomerNoteBody,
   CustomerListQuery,
   UpdateCustomerBody,
   UpsertLmcPipeRecordBody,
@@ -151,6 +152,38 @@ export const customersController = {
     } catch (error) {
       set.status = statusFromError(error);
       return { success: false, message: errorMessage(error, "Unable to delete customer document") };
+    }
+  },
+
+  async listNotes({ params, set }: { params: { id: string }; set: SetContext }) {
+    try {
+      const notes = await customersService.listNotes(params.id);
+      return ok(notes);
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to list customer notes") };
+    }
+  },
+
+  async createNote({
+    params,
+    body,
+    currentUser,
+    set,
+  }: {
+    params: { id: string };
+    body: CreateCustomerNoteBody;
+    currentUser: AuthTokenPayload | null;
+    set: SetContext;
+  }) {
+    try {
+      if (!currentUser) throw new Error("Authentication required");
+      const note = await customersService.createNote(params.id, body, currentUser.id);
+      set.status = 201;
+      return ok(note, "Note added");
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to add customer note") };
     }
   },
 };

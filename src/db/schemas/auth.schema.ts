@@ -1,6 +1,7 @@
 import { relations } from "drizzle-orm";
 import {
   boolean,
+  integer,
   index,
   pgEnum,
   pgTable,
@@ -79,6 +80,7 @@ export const passwordResetTokens = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     tokenHash: text("token_hash").notNull(),
+    attempts: integer("attempts").notNull().default(0),
     ipAddress: text("ip_address"),
     userAgent: text("user_agent"),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),

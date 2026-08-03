@@ -18,6 +18,7 @@ export type CheckInBody = {
 export type CheckOutBody = {
   date: string;
   location: AttendanceLocation;
+  remarks?: string;
 };
 
 export type SelfHistoryQuery = {

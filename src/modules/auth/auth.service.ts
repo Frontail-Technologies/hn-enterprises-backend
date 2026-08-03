@@ -1,9 +1,13 @@
-import { and, eq, gt, isNull, or } from "drizzle-orm";
-import { randomUUID } from "node:crypto";
-import { NODE_ENV } from "@constants";
+import { and, desc, eq, gt, isNull, or } from "drizzle-orm";
+import { randomInt, randomUUID } from "node:crypto";
+import {
+  NODE_ENV,
+  PASSWORD_RESET_OTP_EXPIRY_MINUTES,
+  PASSWORD_RESET_OTP_MAX_ATTEMPTS,
+} from "@constants";
 import { getDb } from "@db";
 import { passwordResetTokens, refreshTokens, users } from "@db/schema";
-import { auditService } from "@services";
+import { auditService, backgroundJobService, emailService } from "@services";
 import { assertStrongPassword, generateSecureToken, hashPassword, hashToken, verifyPassword } from "@utils";
 import type { AuthTokenPayload } from "@types";
 import type { RequestMeta } from "./auth.helpers";
@@ -53,6 +57,14 @@ function authPayload(user: UserRecord): AuthTokenPayload {
     role: user.role,
     sessionId: user.currentSessionId,
   };
+}
+
+function generateOtp() {
+  return String(randomInt(100000, 1000000));
+}
+
+function hashResetOtp(userId: string, otp: string) {
+  return hashToken(`${userId}:${otp}`);
 }
 
 async function findUserByIdentifier(identifier: string) {
@@ -288,7 +300,7 @@ export const authService = {
     }
   },
 
-  async changePassword(userId: string, currentPassword: string, newPassword: string) {
+  async changePassword(userId: string, newPassword: string) {
     assertStrongPassword(newPassword);
     const db = getDb();
     const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
@@ -297,10 +309,8 @@ export const authService = {
       throw new Error("User not found");
     }
 
-    const passwordValid = await verifyPassword(currentPassword, user.passwordHash);
-
-    if (!passwordValid) {
-      throw new Error("Current password is incorrect");
+    if (user.role !== "super_admin" && user.role !== "admin") {
+      throw new Error("Password change is available for admin users only");
     }
 
     await db
@@ -330,52 +340,92 @@ export const authService = {
     const db = getDb();
     const user = await findUserByIdentifier(identifier);
 
-    if (!user || user.status !== "active") {
-      return { resetToken: null };
+    if (!user || user.status !== "active" || !user.email) {
+      return { resetOtp: null };
     }
 
-    const token = generateSecureToken();
+    const now = new Date();
+    const otp = generateOtp();
+
+    await db
+      .update(passwordResetTokens)
+      .set({ usedAt: now })
+      .where(and(eq(passwordResetTokens.userId, user.id), isNull(passwordResetTokens.usedAt)));
 
     await db.insert(passwordResetTokens).values({
       userId: user.id,
-      tokenHash: hashToken(token),
-      expiresAt: new Date(Date.now() + 30 * 60 * 1000),
+      tokenHash: hashResetOtp(user.id, otp),
+      attempts: 0,
+      expiresAt: new Date(now.getTime() + PASSWORD_RESET_OTP_EXPIRY_MINUTES * 60 * 1000),
       ipAddress: meta?.ipAddress ?? null,
       userAgent: meta?.userAgent ?? null,
     });
+
+    backgroundJobService.enqueue("send-password-reset-otp", () =>
+      emailService.sendPasswordResetOtp({
+        email: user.email,
+        name: user.name,
+        otp,
+        expiresInMinutes: PASSWORD_RESET_OTP_EXPIRY_MINUTES,
+      }),
+    );
 
     await auditService.log({
       userId: user.id,
       module: "auth",
       action: "password_reset_requested",
-      description: "Password reset requested",
+      description: "Password reset OTP requested",
       metadata: meta,
     });
 
     return {
-      resetToken: NODE_ENV === "production" ? null : token,
+      resetOtp: NODE_ENV === "production" ? null : otp,
     };
   },
 
-  async resetPassword(token: string, newPassword: string) {
+  async resetPassword(identifier: string, otp: string, newPassword: string) {
     assertStrongPassword(newPassword);
     const db = getDb();
     const now = new Date();
+    const user = await findUserByIdentifier(identifier);
+
+    if (!user || user.status !== "active") {
+      throw new Error("Invalid or expired OTP");
+    }
 
     const [resetToken] = await db
       .select()
       .from(passwordResetTokens)
       .where(
         and(
-          eq(passwordResetTokens.tokenHash, hashToken(token)),
+          eq(passwordResetTokens.userId, user.id),
           isNull(passwordResetTokens.usedAt),
           gt(passwordResetTokens.expiresAt, now),
         ),
       )
+      .orderBy(desc(passwordResetTokens.createdAt))
       .limit(1);
 
     if (!resetToken) {
-      throw new Error("Invalid or expired reset token");
+      throw new Error("Invalid or expired OTP");
+    }
+
+    if (resetToken.attempts >= PASSWORD_RESET_OTP_MAX_ATTEMPTS) {
+      await db
+        .update(passwordResetTokens)
+        .set({ usedAt: now })
+        .where(eq(passwordResetTokens.id, resetToken.id));
+      throw new Error("Invalid or expired OTP");
+    }
+
+    const expectedHash = hashResetOtp(user.id, otp.trim());
+    if (resetToken.tokenHash !== expectedHash) {
+      const attempts = resetToken.attempts + 1;
+      await db
+        .update(passwordResetTokens)
+        .set({ attempts, usedAt: attempts >= PASSWORD_RESET_OTP_MAX_ATTEMPTS ? now : null })
+        .where(eq(passwordResetTokens.id, resetToken.id));
+      throw new Error("Invalid or expired OTP");
     }
 
     await db
@@ -386,7 +436,7 @@ export const authService = {
         passwordChangedAt: now,
         updatedAt: now,
       })
-      .where(eq(users.id, resetToken.userId));
+      .where(eq(users.id, user.id));
 
     await db
       .update(passwordResetTokens)
@@ -396,13 +446,13 @@ export const authService = {
     await db
       .update(refreshTokens)
       .set({ revokedAt: now })
-      .where(and(eq(refreshTokens.userId, resetToken.userId), isNull(refreshTokens.revokedAt)));
+      .where(and(eq(refreshTokens.userId, user.id), isNull(refreshTokens.revokedAt)));
 
     await auditService.log({
-      userId: resetToken.userId,
+      userId: user.id,
       module: "auth",
       action: "password_reset_completed",
-      description: "Password reset completed",
+      description: "Password reset completed with OTP",
     });
   },
 };
