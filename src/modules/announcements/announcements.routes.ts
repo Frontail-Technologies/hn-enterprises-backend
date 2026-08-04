@@ -20,7 +20,7 @@ export const announcementsRoutes = new Elysia({ prefix: "/announcements" })
   )
   .patch(
     "/:id",
-    ({ params, body, set }) => announcementsController.update({ params, body, set }),
+    ({ params, body, currentUser, set }) => announcementsController.update({ params, body, currentUser, set }),
     {
       params: t.Object({ id: t.String() }),
       body: updateAnnouncementBodySchema,

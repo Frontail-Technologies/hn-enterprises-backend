@@ -23,6 +23,18 @@ function getRecordId(body: unknown): string | undefined {
   return typeof recordId === "string" && recordId ? recordId : undefined;
 }
 
+// Cloudinary's SDK rejects with plain {message, name, http_code} objects, not
+// real Error instances - `error instanceof Error` misses those entirely and
+// was masking the real failure reason (e.g. rate limiting) behind a generic
+// "Unable to upload file" message.
+function getErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === "object" && "message" in error && typeof error.message === "string") {
+    return error.message;
+  }
+  return fallback;
+}
+
 export const uploadsController = {
   async upload({
     body,
@@ -62,13 +74,13 @@ export const uploadsController = {
         module,
         recordId,
         uploadedBy: currentUser?.id,
-        error: error instanceof Error ? error.message : error,
+        error,
       });
 
       set.status = 400;
       return {
         success: false,
-        message: error instanceof Error ? error.message : "Unable to upload file",
+        message: getErrorMessage(error, "Unable to upload file"),
       };
     }
   },

@@ -5,10 +5,10 @@ import { normalizeKey } from "@modules/master-import/master-import.mapper";
 import { buildPaginationMeta, cleanObject, parsePagination, toSearchPattern } from "@utils";
 import type {
   CreateCustomerBody,
-  CreateCustomerDocumentBody,
   CreateCustomerNoteBody,
   CustomerJsonSections,
   CustomerListQuery,
+  ResolvedCustomerDocumentInput,
   UpdateCustomerBody,
   UpsertLmcPipeRecordBody,
 } from "./customers.types";
@@ -247,7 +247,7 @@ export const customersService = {
       .orderBy(customerDocuments.uploadedAt);
   },
 
-  async createDocument(customerId: string, input: CreateCustomerDocumentBody, userId: string) {
+  async createDocument(customerId: string, input: ResolvedCustomerDocumentInput, userId: string) {
     const customer = await getCustomerOrThrow(customerId);
     const db = getDb();
 

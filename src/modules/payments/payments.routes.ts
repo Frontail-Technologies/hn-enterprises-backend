@@ -27,4 +27,9 @@ export const paymentsRoutes = new Elysia({ prefix: "/payments" })
       body: updatePaymentBodySchema,
       requireAuth: true,
     },
+  )
+  .delete(
+    "/:id",
+    ({ params, set }) => paymentsController.remove({ params, set }),
+    { params: t.Object({ id: t.String() }), requireRole: ["super_admin", "admin"] },
   );

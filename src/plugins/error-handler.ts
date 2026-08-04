@@ -10,14 +10,22 @@ function statusFromCode(code: string) {
 
 export const errorHandler = (app: Elysia) =>
   app.onError(({ code, error, set }) => {
-    const normalizedError = error instanceof Error ? error : new Error("Request failed");
-    const status = typeof set.status === "number" ? set.status : statusFromCode(String(code));
+    const normalizedError =
+      error instanceof Error ? error : new Error("Request failed");
+    console.error(normalizedError, "error-handler");
+    const status =
+      typeof set.status === "number"
+        ? set.status
+        : statusFromCode(String(code));
 
     set.status = status;
 
     return {
       success: false,
-      message: status === 500 ? "Internal server error" : normalizedError.message,
-      ...(NODE_ENV !== "production" ? { code, stack: normalizedError.stack } : {}),
+      message:
+        status === 500 ? "Internal server error" : normalizedError.message,
+      ...(NODE_ENV !== "production"
+        ? { code, stack: normalizedError.stack }
+        : {}),
     };
   });

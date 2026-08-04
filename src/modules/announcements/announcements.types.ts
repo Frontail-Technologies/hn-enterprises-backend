@@ -13,6 +13,7 @@ export type CreateAnnouncementBody = {
   message: string;
   imageUrl?: string;
   imageFileName?: string;
+  file?: File;
 };
 
 export type UpdateAnnouncementBody = Partial<CreateAnnouncementBody>;

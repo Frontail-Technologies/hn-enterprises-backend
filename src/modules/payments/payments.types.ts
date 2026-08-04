@@ -29,6 +29,7 @@ export type CreatePaymentBody = {
   purpose?: string;
   remarks?: string;
   evidence?: Record<string, unknown>[];
+  files?: File[];
 };
 
 export type UpdatePaymentBody = Partial<CreatePaymentBody>;

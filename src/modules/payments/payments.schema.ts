@@ -23,13 +23,17 @@ export const createPaymentBodySchema = t.Object({
   paidTo: t.Optional(t.String()),
   siteId: t.Optional(t.String()),
   customerId: t.Optional(t.String()),
-  amount: t.Number(),
+  // t.Numeric() (not t.Number()) so this also accepts the numeric strings a
+  // multipart/form-data body delivers - the mobile app embeds attachments in
+  // the same request instead of calling the separate /uploads route first.
+  amount: t.Numeric(),
   paymentDate: t.String({ minLength: 1 }),
   mode: paymentModeSchema,
   status: t.Optional(paymentStatusSchema),
   purpose: t.Optional(t.String()),
   remarks: t.Optional(t.String()),
   evidence: t.Optional(t.Array(t.Record(t.String(), t.Unknown()))),
+  files: t.Optional(t.Files()),
 });
 
 export const updatePaymentBodySchema = t.Partial(createPaymentBodySchema);

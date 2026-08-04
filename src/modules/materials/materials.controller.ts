@@ -1,5 +1,6 @@
 import type { AuthTokenPayload } from "@types";
 import type { SetContext } from "@modules/auth/auth.helpers";
+import { uploadService } from "@services";
 import { ok, paginated } from "@utils";
 import { materialsService } from "./materials.service";
 import type {
@@ -17,7 +18,32 @@ function statusFromError(error: unknown) {
 }
 
 function errorMessage(error: unknown, fallback: string) {
-  return error instanceof Error ? error.message : fallback;
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === "object" && "message" in error && typeof error.message === "string") {
+    return error.message;
+  }
+  return fallback;
+}
+
+// Attachments arrive embedded in the same multipart request as the
+// transaction fields (mobile/web) instead of via a separate /uploads call
+// beforehand - avoids leaving an orphaned uploaded file when the user picks
+// a photo but never actually saves the transaction.
+async function mergeUploadedEvidence(
+  existing: Record<string, unknown>[] | undefined,
+  files: File[] | undefined,
+  uploadedBy: string,
+) {
+  if (!files?.length) return existing;
+
+  const uploaded = await Promise.all(
+    files.map(async (file) => {
+      const stored = await uploadService.store(file, { module: "materials", uploadedBy });
+      return { id: crypto.randomUUID(), fileName: stored.fileName, fileUrl: stored.url };
+    }),
+  );
+
+  return [...(existing ?? []), ...uploaded];
 }
 
 export const materialsController = {
@@ -103,7 +129,9 @@ export const materialsController = {
   }) {
     try {
       if (!currentUser) throw new Error("Authentication required");
-      const transaction = await materialsService.createTransaction(body, currentUser.id);
+      const { files, ...rest } = body;
+      const evidence = await mergeUploadedEvidence(rest.evidence, files, currentUser.id);
+      const transaction = await materialsService.createTransaction({ ...rest, evidence }, currentUser.id);
       set.status = 201;
       return ok(transaction, "Transaction recorded");
     } catch (error) {

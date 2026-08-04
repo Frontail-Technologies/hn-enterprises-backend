@@ -14,6 +14,7 @@ export const createAnnouncementBodySchema = t.Object({
   message: t.String({ minLength: 1 }),
   imageUrl: t.Optional(t.String()),
   imageFileName: t.Optional(t.String()),
+  file: t.Optional(t.File()),
 });
 
 export const updateAnnouncementBodySchema = t.Partial(createAnnouncementBodySchema);

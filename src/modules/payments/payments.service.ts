@@ -71,10 +71,15 @@ export const paymentsService = {
   },
 
   async update(id: string, input: UpdatePaymentBody, currentUser: { id: string; role: string }) {
-    await getPaymentOrThrow(id);
+    const existing = await getPaymentOrThrow(id);
     const db = getDb();
 
-    const isApprovalTransition = input.status === "approved" || input.status === "rejected";
+    // Only treat this as an approval action if the status is actually changing
+    // to approved/rejected - otherwise every unrelated edit (e.g. adding a
+    // receipt photo) to an already-approved payment would re-trip this check
+    // for the non-admin who originally submitted it.
+    const isApprovalTransition =
+      (input.status === "approved" || input.status === "rejected") && input.status !== existing.status;
     if (isApprovalTransition && !APPROVAL_ROLES.includes(currentUser.role)) {
       throw new Error("Only admins can approve or reject payments");
     }
@@ -106,5 +111,11 @@ export const paymentsService = {
 
     if (!payment) throw new Error("Unable to update payment");
     return payment;
+  },
+
+  async remove(id: string) {
+    await getPaymentOrThrow(id);
+    const db = getDb();
+    await db.delete(payments).where(eq(payments.id, id));
   },
 };

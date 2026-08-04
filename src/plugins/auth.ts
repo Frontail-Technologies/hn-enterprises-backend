@@ -16,11 +16,19 @@ export const auth = (app: Elysia) =>
     .use(jwt({ name: "jwt", secret: JWT_ACCESS_SECRET }))
     .derive(async ({ jwt: jwtService, cookie, headers }) => {
       const token = accessTokenFromRequest(cookie, headers);
-      const rawPayload = token ? await jwtService.verify(token).catch(() => false) : false;
+      const rawPayload = token
+        ? await jwtService.verify(token).catch(() => false)
+        : false;
       const payload =
-        rawPayload && typeof rawPayload === "object" ? (rawPayload as Record<string, unknown>) : null;
+        rawPayload && typeof rawPayload === "object"
+          ? (rawPayload as Record<string, unknown>)
+          : null;
 
-      if (!payload || typeof payload.id !== "string" || typeof payload.sessionId !== "string") {
+      if (
+        !payload ||
+        typeof payload.id !== "string" ||
+        typeof payload.sessionId !== "string"
+      ) {
         return {
           currentUser: null,
         };
@@ -40,15 +48,13 @@ export const auth = (app: Elysia) =>
 
       return {
         currentUser:
-          user?.status === "active" && user.currentSessionId === payload.sessionId
+          user?.status === "active" &&
+          user.currentSessionId === payload.sessionId
             ? (payload as AuthTokenPayload)
             : null,
       };
     })
-    // Elysia 1.4's .macro() types still describe the older manager-callback shape
-    // (`({ onBeforeHandle }) => ({ prop() { onBeforeHandle(fn) } })`), but only this
-    // object-returning shape (`prop() { return { beforeHandle: fn } }`) actually
-    // registers the hook at runtime — the manager-callback style silently no-ops.
+
     .macro({
       requireAuth(enabled: boolean) {
         if (!enabled) return {};

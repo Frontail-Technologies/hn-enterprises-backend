@@ -51,6 +51,7 @@ export type CreateMaterialTransactionBody = {
   vehicleQty?: number;
   evidence?: Record<string, unknown>[];
   remarks?: string;
+  files?: File[];
 };
 
 export type PlumberBalanceQuery = {

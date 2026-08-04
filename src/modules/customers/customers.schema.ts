@@ -31,7 +31,12 @@ const customerJsonSectionsSchema = t.Object({
   customFields: jsonSection,
 });
 
-export const createCustomerBodySchema = t.Composite([
+// t.Files() is a Transform type internally, and t.Composite()/t.Intersect()
+// refuse to merge transform types with anything else ("Cannot intersect
+// transform types") - so `files` has to be added as a plain object property
+// after the (transform-free) base+sections composite resolves, not merged in
+// via another Composite member.
+const createCustomerFieldsSchema = t.Composite([
   t.Object({
     projectId: t.String({ minLength: 1 }),
     siteId: t.String({ minLength: 1 }),
@@ -53,10 +58,15 @@ export const createCustomerBodySchema = t.Composite([
   customerJsonSectionsSchema,
 ]);
 
-export const updateCustomerBodySchema = t.Composite([
-  t.Partial(createCustomerBodySchema),
-  customerJsonSectionsSchema,
-]);
+export const createCustomerBodySchema = t.Object({
+  ...createCustomerFieldsSchema.properties,
+  files: t.Optional(t.Files()),
+});
+
+export const updateCustomerBodySchema = t.Object({
+  ...t.Partial(createCustomerFieldsSchema).properties,
+  files: t.Optional(t.Files()),
+});
 
 export const upsertLmcPipeRecordBodySchema = t.Object({
   pipeSize: lmcPipeSizeSchema,
@@ -70,6 +80,7 @@ export const upsertLmcPipeRecordBodySchema = t.Object({
   jointFittingDetails: t.Optional(t.String()),
   remarks: t.Optional(t.String()),
   evidence: t.Optional(t.Array(t.Record(t.String(), t.Unknown()))),
+  files: t.Optional(t.Files()),
 });
 
 export const createCustomerNoteBodySchema = t.Object({
@@ -82,10 +93,13 @@ export const createCustomerDocumentBodySchema = t.Object({
   referenceNumber: t.Optional(t.String()),
   issueDate: t.Optional(t.String()),
   expiryDate: t.Optional(t.String()),
-  amount: t.Optional(t.Number()),
-  fileUrl: t.String({ minLength: 1 }),
-  fileName: t.String({ minLength: 1 }),
+  amount: t.Optional(t.Numeric()),
+  // Either a pre-uploaded fileUrl/fileName (legacy JSON path) or an embedded
+  // `file` to upload here - the controller resolves whichever is present.
+  fileUrl: t.Optional(t.String({ minLength: 1 })),
+  fileName: t.Optional(t.String({ minLength: 1 })),
   mimeType: t.Optional(t.String()),
+  file: t.Optional(t.File()),
   status: t.Optional(customerDocumentStatusSchema),
   remarks: t.Optional(t.String()),
 });

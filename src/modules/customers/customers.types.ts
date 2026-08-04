@@ -48,9 +48,10 @@ export type CreateCustomerBody = CustomerJsonSections & {
   gcReportNumber?: string;
   conversionReportNumber?: string;
   status?: CustomerStatus;
+  files?: File[];
 };
 
-export type UpdateCustomerBody = Partial<CreateCustomerBody> & CustomerJsonSections;
+export type UpdateCustomerBody = Partial<CreateCustomerBody> & CustomerJsonSections & { files?: File[] };
 
 export type UpsertLmcPipeRecordBody = {
   pipeSize: LmcPipeSize;
@@ -64,6 +65,7 @@ export type UpsertLmcPipeRecordBody = {
   jointFittingDetails?: string;
   remarks?: string;
   evidence?: Record<string, unknown>[];
+  files?: File[];
 };
 
 export type CreateCustomerNoteBody = {
@@ -77,9 +79,18 @@ export type CreateCustomerDocumentBody = {
   issueDate?: string;
   expiryDate?: string;
   amount?: number;
-  fileUrl: string;
-  fileName: string;
+  fileUrl?: string;
+  fileName?: string;
   mimeType?: string;
+  file?: File;
   status?: CustomerDocumentStatus;
   remarks?: string;
+};
+
+// The controller resolves `file`/`fileUrl` down to a guaranteed fileUrl+fileName
+// (uploading `file` if present) before calling the service - this is what the
+// service actually persists.
+export type ResolvedCustomerDocumentInput = Omit<CreateCustomerDocumentBody, "file" | "fileUrl" | "fileName"> & {
+  fileUrl: string;
+  fileName: string;
 };

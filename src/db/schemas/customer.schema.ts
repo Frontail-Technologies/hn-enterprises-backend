@@ -38,6 +38,7 @@ type CustomerSurveyPayload = {
   approvalComments?: string;
   revisions?: Record<string, unknown>[];
   photos?: Record<string, unknown>[];
+  evidence?: Record<string, unknown>[];
 };
 
 type CustomerGiMeasurementsPayload = {
@@ -49,6 +50,7 @@ type CustomerGiMeasurementsPayload = {
   giPipeOneInch?: string;
   giPipeOneAndHalfInch?: string;
   giPipeTwoInch?: string;
+  evidence?: Record<string, unknown>[];
 };
 
 type CustomerValvesRegulatorsPayload = {
@@ -62,6 +64,7 @@ type CustomerValvesRegulatorsPayload = {
   regulator6BarTo21Mbar?: string;
   regulator100MbarTo21Mbar?: string;
   warningPlate?: string;
+  evidence?: Record<string, unknown>[];
 };
 
 type CustomerFittingsAccessoriesPayload = {
@@ -81,6 +84,7 @@ type CustomerFittingsAccessoriesPayload = {
   fittingsOneAndHalfInchQuantity?: string;
   fittingsTwoInchQuantity?: string;
   extraGiAbove10Metres?: string;
+  evidence?: Record<string, unknown>[];
 };
 
 type CustomerLmcCivilPayload = {
