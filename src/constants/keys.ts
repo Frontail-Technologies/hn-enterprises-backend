@@ -56,3 +56,34 @@ export const EMAIL_FROM = process.env.EMAIL_FROM || "HN Enterprises <no-reply@hn
 export const RESEND_API_KEY = process.env.RESEND_API_KEY;
 export const PASSWORD_RESET_OTP_EXPIRY_MINUTES = Number(process.env.PASSWORD_RESET_OTP_EXPIRY_MINUTES || 10);
 export const PASSWORD_RESET_OTP_MAX_ATTEMPTS = Number(process.env.PASSWORD_RESET_OTP_MAX_ATTEMPTS || 5);
+
+// Called once at server startup (see src/index.ts) - fails fast on missing
+// config instead of letting the app boot into a broken or insecurely
+// configured state that only surfaces once the first request hits it.
+export function assertRequiredEnv() {
+  const problems: string[] = [];
+
+  if (!DATABASE_URL) {
+    problems.push("DATABASE_URL is not set");
+  }
+
+  const insecurePlaceholders: [string, string][] = [
+    ["JWT_ACCESS_SECRET", JWT_ACCESS_SECRET],
+    ["JWT_REFRESH_SECRET", JWT_REFRESH_SECRET],
+  ];
+  const placeholders = insecurePlaceholders.filter(([, value]) => value === "change-me").map(([key]) => key);
+
+  if (placeholders.length && NODE_ENV === "production") {
+    problems.push(
+      `${placeholders.join(", ")} still ${placeholders.length > 1 ? "have" : "has"} the insecure default value "change-me"`,
+    );
+  } else if (placeholders.length) {
+    console.warn(
+      `[startup] ${placeholders.join(", ")} ${placeholders.length > 1 ? "are" : "is"} using the insecure default "change-me" - fine for local dev, but must be set before deploying.`,
+    );
+  }
+
+  if (problems.length) {
+    throw new Error(`Refusing to start: ${problems.join("; ")}.`);
+  }
+}

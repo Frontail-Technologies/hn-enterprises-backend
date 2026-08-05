@@ -49,4 +49,12 @@ export const materialsRoutes = new Elysia({ prefix: "/materials" })
       body: updateMaterialBodySchema,
       requireRole: ["super_admin", "admin"],
     },
+  )
+  .delete(
+    "/:id",
+    ({ params, currentUser, set }) => materialsController.delete({ params, currentUser, set }),
+    {
+      params: t.Object({ id: t.String() }),
+      requireRole: ["super_admin", "admin"],
+    },
   );

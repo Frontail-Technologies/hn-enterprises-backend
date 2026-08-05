@@ -1,18 +1,9 @@
 import type { AuthTokenPayload } from "@types";
 import type { SetContext } from "@modules/auth/auth.helpers";
 import { uploadService } from "@services";
-import { ok, paginated } from "@utils";
+import { errorMessage, ok, paginated, statusFromError } from "@utils";
 import { announcementsService } from "./announcements.service";
 import type { AnnouncementListQuery, CreateAnnouncementBody, UpdateAnnouncementBody } from "./announcements.types";
-
-function statusFromError(error: unknown) {
-  if (error instanceof Error && error.message.includes("not found")) return 404;
-  return 400;
-}
-
-function errorMessage(error: unknown, fallback: string) {
-  return error instanceof Error ? error.message : fallback;
-}
 
 // The image arrives embedded in the same request as the title/message
 // (mobile/web) instead of via a separate /uploads call beforehand.

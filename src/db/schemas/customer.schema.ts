@@ -51,6 +51,8 @@ type CustomerGiMeasurementsPayload = {
   giPipeOneAndHalfInch?: string;
   giPipeTwoInch?: string;
   evidence?: Record<string, unknown>[];
+  approvalStatus?: string;
+  approvalComments?: string;
 };
 
 type CustomerValvesRegulatorsPayload = {
@@ -99,6 +101,8 @@ type CustomerLmcCivilPayload = {
   hardRock?: string;
   civilRemarks?: string;
   civilEvidence?: Record<string, unknown>[];
+  approvalStatus?: string;
+  approvalComments?: string;
 };
 
 type CustomerMdpeFittingsPayload = {
@@ -129,6 +133,8 @@ type CustomerCommissioningConversionPayload = {
   meterReading?: string;
   nonConversionRemark?: string;
   evidence?: Record<string, unknown>[];
+  approvalStatus?: string;
+  approvalComments?: string;
 };
 
 type CustomerBillingCompletionPayload = {

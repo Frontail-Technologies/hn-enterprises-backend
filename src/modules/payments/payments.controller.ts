@@ -1,25 +1,9 @@
 import type { AuthTokenPayload } from "@types";
 import type { SetContext } from "@modules/auth/auth.helpers";
 import { uploadService } from "@services";
-import { ok, paginated } from "@utils";
+import { errorMessage, ok, paginated, statusFromError } from "@utils";
 import { paymentsService } from "./payments.service";
 import type { CreatePaymentBody, PaymentListQuery, UpdatePaymentBody } from "./payments.types";
-
-function statusFromError(error: unknown) {
-  if (error instanceof Error && error.message.includes("not found")) return 404;
-  return 400;
-}
-
-// Cloudinary's SDK rejects with plain {message, name, http_code} objects, not
-// real Error instances - `error instanceof Error` misses those, masking the
-// real failure reason (e.g. rate limiting) for embedded-file uploads here.
-function errorMessage(error: unknown, fallback: string) {
-  if (error instanceof Error) return error.message;
-  if (error && typeof error === "object" && "message" in error && typeof error.message === "string") {
-    return error.message;
-  }
-  return fallback;
-}
 
 // Attachments arrive embedded in the same multipart request as the payment
 // fields (mobile) instead of via a separate /uploads call beforehand - this
@@ -78,7 +62,7 @@ export const paymentsController = {
       if (!currentUser) throw new Error("Authentication required");
       const { files, ...rest } = body;
       const evidence = await mergeUploadedEvidence(rest.evidence, files, { uploadedBy: currentUser.id });
-      const payment = await paymentsService.create({ ...rest, evidence }, currentUser.id);
+      const payment = await paymentsService.create({ ...rest, evidence }, currentUser);
       set.status = 201;
       return ok(payment, "Payment recorded");
     } catch (error) {

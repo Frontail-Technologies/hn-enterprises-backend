@@ -1,8 +1,14 @@
-import { and, count, eq, gte, ilike, isNotNull, lte } from "drizzle-orm";
+import { and, count, eq, gte, ilike, isNotNull, lte, sql } from "drizzle-orm";
 import { getDb } from "@db";
 import { materialTransactions, materials, users } from "@db/schema";
 import { normalizeKey } from "@modules/master-import/master-import.mapper";
-import { buildPaginationMeta, cleanObject, parsePagination, toSearchPattern } from "@utils";
+import { auditService } from "@services";
+import {
+  buildPaginationMeta,
+  cleanObject,
+  parsePagination,
+  toSearchPattern,
+} from "@utils";
 import type {
   CreateMaterialBody,
   CreateMaterialTransactionBody,
@@ -13,16 +19,23 @@ import type {
   UpdateMaterialBody,
 } from "./materials.types";
 
-function withStatus<T extends { currentBalance: string; reorderLevel: string }>(material: T) {
+function withStatus<T extends { currentBalance: string; reorderLevel: string }>(
+  material: T,
+) {
   const balance = Number(material.currentBalance);
   const reorder = Number(material.reorderLevel);
-  const status = balance <= 0 ? "out_of_stock" : balance <= reorder ? "low_stock" : "active";
+  const status =
+    balance <= 0 ? "out_of_stock" : balance <= reorder ? "low_stock" : "active";
   return { ...material, status };
 }
 
 async function getMaterialOrThrow(id: string) {
   const db = getDb();
-  const [material] = await db.select().from(materials).where(eq(materials.id, id)).limit(1);
+  const [material] = await db
+    .select()
+    .from(materials)
+    .where(eq(materials.id, id))
+    .limit(1);
   if (!material) throw new Error("Material not found");
   return material;
 }
@@ -52,15 +65,26 @@ export const materialsService = {
     const conditions = [
       query.category ? eq(materials.category, query.category) : undefined,
       searchPattern ? ilike(materials.name, searchPattern) : undefined,
-    ].filter((condition): condition is NonNullable<typeof condition> => Boolean(condition));
+    ].filter((condition): condition is NonNullable<typeof condition> =>
+      Boolean(condition),
+    );
     const where = conditions.length ? and(...conditions) : undefined;
 
     const [rows, [{ value: total }]] = await Promise.all([
-      db.select().from(materials).where(where).limit(limit).offset(offset).orderBy(materials.name),
+      db
+        .select()
+        .from(materials)
+        .where(where)
+        .limit(limit)
+        .offset(offset)
+        .orderBy(materials.name),
       db.select({ value: count() }).from(materials).where(where),
     ]);
 
-    return { rows: rows.map(withStatus), pagination: buildPaginationMeta(page, limit, total) };
+    return {
+      rows: rows.map(withStatus),
+      pagination: buildPaginationMeta(page, limit, total),
+    };
   },
 
   async get(id: string) {
@@ -84,6 +108,15 @@ export const materialsService = {
       .returning();
 
     if (!material) throw new Error("Unable to create material");
+
+    await auditService.log({
+      userId,
+      module: "Inventory",
+      action: "Created Material",
+      recordId: material.id,
+      description: `Created material ${material.name}`,
+    });
+
     return withStatus(material);
   },
 
@@ -95,7 +128,8 @@ export const materialsService = {
       name: input.name,
       category: input.category,
       unit: input.unit,
-      reorderLevel: input.reorderLevel != null ? String(input.reorderLevel) : undefined,
+      reorderLevel:
+        input.reorderLevel != null ? String(input.reorderLevel) : undefined,
     });
 
     const [material] = await db
@@ -113,18 +147,53 @@ export const materialsService = {
     return withStatus(material);
   },
 
+  async delete(id: string, userId: string) {
+    const db = getDb();
+    const existing = await getMaterialOrThrow(id);
+
+    try {
+      await db.delete(materials).where(eq(materials.id, id));
+      await auditService.log({
+        userId,
+        module: "Inventory",
+        action: "Deleted Material",
+        recordId: id,
+        description: `Deleted material ${existing.name}`,
+      });
+    } catch (error: any) {
+      if (error.code === "23503") {
+        throw new Error(
+          "Cannot delete this material because it has associated transactions. Please delete them first.",
+        );
+      }
+      throw error;
+    }
+  },
+
   async listTransactions(query: MaterialTransactionListQuery) {
     const db = getDb();
     const { page, limit, offset } = parsePagination(query);
     const conditions = [
-      query.materialId ? eq(materialTransactions.materialId, query.materialId) : undefined,
+      query.materialId
+        ? eq(materialTransactions.materialId, query.materialId)
+        : undefined,
       query.type ? eq(materialTransactions.type, query.type) : undefined,
-      query.plumberId ? eq(materialTransactions.plumberId, query.plumberId) : undefined,
+      query.plumberId
+        ? eq(materialTransactions.plumberId, query.plumberId)
+        : undefined,
       query.siteId ? eq(materialTransactions.siteId, query.siteId) : undefined,
-      query.customerId ? eq(materialTransactions.customerId, query.customerId) : undefined,
-      query.from ? gte(materialTransactions.transactionDate, new Date(query.from)) : undefined,
-      query.to ? lte(materialTransactions.transactionDate, new Date(query.to)) : undefined,
-    ].filter((condition): condition is NonNullable<typeof condition> => Boolean(condition));
+      query.customerId
+        ? eq(materialTransactions.customerId, query.customerId)
+        : undefined,
+      query.from
+        ? gte(materialTransactions.transactionDate, new Date(query.from))
+        : undefined,
+      query.to
+        ? lte(materialTransactions.transactionDate, new Date(query.to))
+        : undefined,
+    ].filter((condition): condition is NonNullable<typeof condition> =>
+      Boolean(condition),
+    );
     const where = conditions.length ? and(...conditions) : undefined;
 
     const [rows, [{ value: total }]] = await Promise.all([
@@ -141,7 +210,10 @@ export const materialsService = {
     return { rows, pagination: buildPaginationMeta(page, limit, total) };
   },
 
-  async createTransaction(input: CreateMaterialTransactionBody, userId: string) {
+  async createTransaction(
+    input: CreateMaterialTransactionBody,
+    userId: string,
+  ) {
     const db = getDb();
 
     return db.transaction(async (tx) => {
@@ -154,7 +226,11 @@ export const materialsService = {
 
       let supervisorName: string | undefined;
       if (input.supervisorId) {
-        const [supervisor] = await tx.select({ name: users.name }).from(users).where(eq(users.id, input.supervisorId)).limit(1);
+        const [supervisor] = await tx
+          .select({ name: users.name })
+          .from(users)
+          .where(eq(users.id, input.supervisorId))
+          .limit(1);
         if (!supervisor) throw new Error("Supervisor not found");
         supervisorName = supervisor.name;
       }
@@ -171,18 +247,21 @@ export const materialsService = {
           referenceNo: input.referenceNo || null,
           vendorName: input.vendorName || null,
           rate: input.rate != null ? String(input.rate) : null,
-          billAmount: input.billAmount != null ? String(input.billAmount) : null,
+          billAmount:
+            input.billAmount != null ? String(input.billAmount) : null,
           plumberId: input.plumberId || null,
           supervisorId: input.supervisorId || null,
           supervisorName: supervisorName || null,
           siteId: input.siteId || null,
           storeLabel: input.storeLabel || null,
           customerId: input.customerId || null,
+          paymentId: input.paymentId || null,
           reportNo: input.reportNo || null,
           condition: input.condition || null,
           adjustmentType: input.adjustmentType || null,
           vehicleNo: input.vehicleNo || null,
-          vehicleQty: input.vehicleQty != null ? String(input.vehicleQty) : null,
+          vehicleQty:
+            input.vehicleQty != null ? String(input.vehicleQty) : null,
           transactionDate: new Date(input.transactionDate),
           evidence: input.evidence,
           remarks: input.remarks || null,
@@ -195,7 +274,7 @@ export const materialsService = {
       await tx
         .update(materials)
         .set({
-          currentBalance: String(Number(material.currentBalance) + quantityDelta),
+          currentBalance: sql`${materials.currentBalance} + ${quantityDelta}`,
           updatedAt: new Date(),
         })
         .where(eq(materials.id, input.materialId));
@@ -208,9 +287,15 @@ export const materialsService = {
     const db = getDb();
     const conditions = [
       isNotNull(materialTransactions.plumberId),
-      query.plumberId ? eq(materialTransactions.plumberId, query.plumberId) : undefined,
-      query.materialId ? eq(materialTransactions.materialId, query.materialId) : undefined,
-    ].filter((condition): condition is NonNullable<typeof condition> => Boolean(condition));
+      query.plumberId
+        ? eq(materialTransactions.plumberId, query.plumberId)
+        : undefined,
+      query.materialId
+        ? eq(materialTransactions.materialId, query.materialId)
+        : undefined,
+    ].filter((condition): condition is NonNullable<typeof condition> =>
+      Boolean(condition),
+    );
 
     const rows = await db
       .select({
@@ -224,7 +309,13 @@ export const materialsService = {
 
     const grouped = new Map<
       string,
-      { plumberId: string; materialId: string; issued: number; consumed: number; returned: number }
+      {
+        plumberId: string;
+        materialId: string;
+        issued: number;
+        consumed: number;
+        returned: number;
+      }
     >();
 
     for (const row of rows) {

@@ -1,17 +1,8 @@
 import type { AuthTokenPayload } from "@types";
 import type { SetContext } from "@modules/auth/auth.helpers";
-import { ok } from "@utils";
+import { errorMessage, ok, statusFromError } from "@utils";
 import { notificationsService, pushTokensService } from "./notifications.service";
 import type { NotificationListQuery, RegisterPushTokenBody } from "./notifications.types";
-
-function statusFromError(error: unknown) {
-  if (error instanceof Error && error.message.includes("not found")) return 404;
-  return 400;
-}
-
-function errorMessage(error: unknown, fallback: string) {
-  return error instanceof Error ? error.message : fallback;
-}
 
 export const notificationsController = {
   async list({

@@ -1,7 +1,7 @@
 import type { AuthTokenPayload } from "@types";
 import type { SetContext } from "@modules/auth/auth.helpers";
-import { uploadService } from "@services";
-import { ok, paginated } from "@utils";
+import { auditService, uploadService } from "@services";
+import { errorMessage, ok, paginated, statusFromError } from "@utils";
 import { customersService } from "./customers.service";
 import type {
   CreateCustomerBody,
@@ -12,19 +12,6 @@ import type {
   UpdateCustomerBody,
   UpsertLmcPipeRecordBody,
 } from "./customers.types";
-
-function statusFromError(error: unknown) {
-  if (error instanceof Error && error.message.includes("not found")) return 404;
-  return 400;
-}
-
-function errorMessage(error: unknown, fallback: string) {
-  if (error instanceof Error) return error.message;
-  if (error && typeof error === "object" && "message" in error && typeof error.message === "string") {
-    return error.message;
-  }
-  return fallback;
-}
 
 // Attachments arrive embedded in the same multipart request as the section
 // fields (mobile) instead of via a separate /uploads call beforehand - this
@@ -155,11 +142,22 @@ export const customersController = {
     try {
       if (!currentUser) throw new Error("Authentication required");
       const patch = await applyUploadedFilesToSection(body, currentUser.id, params.id);
-      const customer = await customersService.update(params.id, patch, currentUser.id);
+      const customer = await customersService.update(params.id, patch, currentUser);
       return ok(customer, "Customer updated");
     } catch (error) {
       set.status = statusFromError(error);
       return { success: false, message: errorMessage(error, "Unable to update customer") };
+    }
+  },
+
+  async delete({ params, currentUser, set }: { params: { id: string }; currentUser: AuthTokenPayload | null; set: SetContext }) {
+    try {
+      if (!currentUser) throw new Error("Authentication required");
+      await customersService.delete(params.id, currentUser.id);
+      return ok(null, "Customer deleted");
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to delete customer") };
     }
   },
 
@@ -241,9 +239,25 @@ export const customersController = {
     }
   },
 
-  async deleteDocument({ params, set }: { params: { id: string; documentId: string }; set: SetContext }) {
+  async deleteDocument({
+    params,
+    currentUser,
+    set,
+  }: {
+    params: { id: string; documentId: string };
+    currentUser: AuthTokenPayload | null;
+    set: SetContext;
+  }) {
     try {
+      if (!currentUser) throw new Error("Authentication required");
       await customersService.deleteDocument(params.id, params.documentId);
+      await auditService.log({
+        userId: currentUser.id,
+        module: "customers",
+        action: "document_deleted",
+        recordId: params.id,
+        description: `Deleted document ${params.documentId}`,
+      });
       return ok(null, "Customer document deleted");
     } catch (error) {
       set.status = statusFromError(error);

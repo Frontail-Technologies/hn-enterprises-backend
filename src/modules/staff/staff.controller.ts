@@ -1,17 +1,8 @@
 import type { AuthTokenPayload } from "@types";
 import type { SetContext } from "@modules/auth/auth.helpers";
-import { ok, paginated } from "@utils";
+import { errorMessage, ok, paginated, statusFromError } from "@utils";
 import { staffService } from "./staff.service";
 import type { CreateStaffBody, StaffListQuery, UpdateStaffBody } from "./staff.types";
-
-function statusFromError(error: unknown) {
-  if (error instanceof Error && error.message.includes("not found")) return 404;
-  return 400;
-}
-
-function errorMessage(error: unknown, fallback: string) {
-  return error instanceof Error ? error.message : fallback;
-}
 
 export const staffController = {
   async list({ query, set }: { query: StaffListQuery; set: SetContext }) {
@@ -45,7 +36,7 @@ export const staffController = {
   }) {
     try {
       if (!currentUser) throw new Error("Authentication required");
-      const record = await staffService.create(body, currentUser.id);
+      const record = await staffService.create(body, currentUser.id, currentUser.role);
       set.status = 201;
       return ok(record, "Staff record created");
     } catch (error) {
@@ -67,7 +58,7 @@ export const staffController = {
   }) {
     try {
       if (!currentUser) throw new Error("Authentication required");
-      const record = await staffService.update(params.id, body, currentUser.id);
+      const record = await staffService.update(params.id, body, currentUser.id, currentUser.role);
       return ok(record, "Staff record updated");
     } catch (error) {
       set.status = statusFromError(error);

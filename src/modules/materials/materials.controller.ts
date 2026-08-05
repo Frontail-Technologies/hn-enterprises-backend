@@ -1,7 +1,7 @@
 import type { AuthTokenPayload } from "@types";
 import type { SetContext } from "@modules/auth/auth.helpers";
 import { uploadService } from "@services";
-import { ok, paginated } from "@utils";
+import { errorMessage, ok, paginated, statusFromError } from "@utils";
 import { materialsService } from "./materials.service";
 import type {
   CreateMaterialBody,
@@ -11,19 +11,6 @@ import type {
   PlumberBalanceQuery,
   UpdateMaterialBody,
 } from "./materials.types";
-
-function statusFromError(error: unknown) {
-  if (error instanceof Error && error.message.includes("not found")) return 404;
-  return 400;
-}
-
-function errorMessage(error: unknown, fallback: string) {
-  if (error instanceof Error) return error.message;
-  if (error && typeof error === "object" && "message" in error && typeof error.message === "string") {
-    return error.message;
-  }
-  return fallback;
-}
 
 // Attachments arrive embedded in the same multipart request as the
 // transaction fields (mobile/web) instead of via a separate /uploads call
@@ -105,6 +92,17 @@ export const materialsController = {
     } catch (error) {
       set.status = statusFromError(error);
       return { success: false, message: errorMessage(error, "Unable to update material") };
+    }
+  },
+
+  async delete({ params, currentUser, set }: { params: { id: string }; currentUser: AuthTokenPayload | null; set: SetContext }) {
+    try {
+      if (!currentUser) throw new Error("Authentication required");
+      await materialsService.delete(params.id, currentUser.id);
+      return ok(null, "Material deleted");
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to delete material") };
     }
   },
 

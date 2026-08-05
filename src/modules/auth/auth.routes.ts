@@ -32,11 +32,11 @@ export const authRoutes = new Elysia({ prefix: "/auth" })
   )
   .post(
     "/request-password-reset",
-    ({ body, request }) => authController.requestPasswordReset({ body, request }),
+    ({ body, request, set }) => authController.requestPasswordReset({ body, request, set }),
     { body: requestPasswordResetBodySchema },
   )
   .post(
     "/reset-password",
-    ({ body, set }) => authController.resetPassword({ body, set }),
+    ({ body, request, set }) => authController.resetPassword({ body, request, set }),
     { body: resetPasswordBodySchema },
   );

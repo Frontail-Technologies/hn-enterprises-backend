@@ -1,10 +1,10 @@
 import { and, count, eq, gte, ilike, lte, or } from "drizzle-orm";
 import { getDb } from "@db";
 import { payments } from "@db/schema";
+import { permissionService } from "@services";
 import { buildPaginationMeta, cleanObject, parsePagination, toSearchPattern } from "@utils";
+import type { AuthTokenPayload } from "@types";
 import type { CreatePaymentBody, PaymentListQuery, UpdatePaymentBody } from "./payments.types";
-
-const APPROVAL_ROLES = ["super_admin", "admin"];
 
 async function getPaymentOrThrow(id: string) {
   const db = getDb();
@@ -45,7 +45,16 @@ export const paymentsService = {
     return getPaymentOrThrow(id);
   },
 
-  async create(input: CreatePaymentBody, userId: string) {
+  async create(input: CreatePaymentBody, currentUser: AuthTokenPayload) {
+    // A freshly-created payment can only start as "approved"/"rejected" if the
+    // submitter is actually allowed to approve payments - otherwise anyone
+    // could bypass the approval workflow entirely by setting the status on
+    // create instead of going through update().
+    const requestedStatus = input.status ?? "draft";
+    if ((requestedStatus === "approved" || requestedStatus === "rejected") && !permissionService.canManage(currentUser)) {
+      throw new Error("Only admins can create a payment that is already approved or rejected");
+    }
+
     const db = getDb();
     const [payment] = await db
       .insert(payments)
@@ -58,11 +67,14 @@ export const paymentsService = {
         amount: String(input.amount),
         paymentDate: new Date(input.paymentDate),
         mode: input.mode,
-        status: input.status ?? "draft",
+        status: requestedStatus,
         purpose: input.purpose || null,
         remarks: input.remarks || null,
         evidence: input.evidence,
-        submittedBy: userId,
+        submittedBy: currentUser.id,
+        ...(requestedStatus === "approved" || requestedStatus === "rejected"
+          ? { approvedBy: currentUser.id }
+          : {}),
       })
       .returning();
 
@@ -70,7 +82,7 @@ export const paymentsService = {
     return payment;
   },
 
-  async update(id: string, input: UpdatePaymentBody, currentUser: { id: string; role: string }) {
+  async update(id: string, input: UpdatePaymentBody, currentUser: AuthTokenPayload) {
     const existing = await getPaymentOrThrow(id);
     const db = getDb();
 
@@ -80,7 +92,7 @@ export const paymentsService = {
     // for the non-admin who originally submitted it.
     const isApprovalTransition =
       (input.status === "approved" || input.status === "rejected") && input.status !== existing.status;
-    if (isApprovalTransition && !APPROVAL_ROLES.includes(currentUser.role)) {
+    if (isApprovalTransition && !permissionService.canManage(currentUser)) {
       throw new Error("Only admins can approve or reject payments");
     }
 
@@ -114,7 +126,10 @@ export const paymentsService = {
   },
 
   async remove(id: string) {
-    await getPaymentOrThrow(id);
+    const existing = await getPaymentOrThrow(id);
+    if (existing.status === "approved") {
+      throw new Error("Approved payments cannot be deleted. Please create a Void transaction instead to offset it.");
+    }
     const db = getDb();
     await db.delete(payments).where(eq(payments.id, id));
   },

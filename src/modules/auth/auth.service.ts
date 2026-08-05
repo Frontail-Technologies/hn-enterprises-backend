@@ -300,7 +300,7 @@ export const authService = {
     }
   },
 
-  async changePassword(userId: string, newPassword: string) {
+  async changePassword(userId: string, currentPassword: string, newPassword: string) {
     assertStrongPassword(newPassword);
     const db = getDb();
     const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
@@ -311,6 +311,17 @@ export const authService = {
 
     if (user.role !== "super_admin" && user.role !== "admin") {
       throw new Error("Password change is available for admin users only");
+    }
+
+    const currentPasswordValid = await verifyPassword(currentPassword, user.passwordHash);
+    if (!currentPasswordValid) {
+      await auditService.log({
+        userId,
+        module: "auth",
+        action: "password_change_failed",
+        description: "Current password did not match",
+      });
+      throw new Error("Current password is incorrect");
     }
 
     await db

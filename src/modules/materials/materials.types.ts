@@ -44,6 +44,7 @@ export type CreateMaterialTransactionBody = {
   siteId?: string;
   storeLabel?: string;
   customerId?: string;
+  paymentId?: string;
   reportNo?: string;
   condition?: string;
   adjustmentType?: string;

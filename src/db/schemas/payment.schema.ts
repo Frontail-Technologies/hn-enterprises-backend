@@ -5,6 +5,7 @@ import { paymentModeEnum } from "./common.schema";
 import { customers } from "./customer.schema";
 import { plumbers } from "./plumber.schema";
 import { projectSites } from "./project.schema";
+import { materialTransactions } from "./material.schema";
 
 export const paymentCategoryEnum = pgEnum("payment_category", [
   "worker_payment",
@@ -52,8 +53,9 @@ export const payments = pgTable(
   }),
 );
 
-export const paymentsRelations = relations(payments, ({ one }) => ({
+export const paymentsRelations = relations(payments, ({ one, many }) => ({
   plumber: one(plumbers, { fields: [payments.plumberId], references: [plumbers.id] }),
   site: one(projectSites, { fields: [payments.siteId], references: [projectSites.id] }),
   customer: one(customers, { fields: [payments.customerId], references: [customers.id] }),
+  transactions: many(materialTransactions),
 }));

@@ -1,4 +1,4 @@
-import { and, count, eq, ilike } from "drizzle-orm";
+import { and, count, eq, ilike, sql } from "drizzle-orm";
 import { getDb } from "@db";
 import { billPayments, bills } from "@db/schema";
 import { normalizeKey } from "@modules/master-import/master-import.mapper";
@@ -110,6 +110,23 @@ export const billsService = {
     return withPendingAmount(bill);
   },
 
+  async delete(id: string) {
+    const db = getDb();
+    const existing = await getBillOrThrow(id);
+    if (existing.status === "completed") {
+      throw new Error("Completed bills cannot be deleted. Please create a Void transaction instead to offset it.");
+    }
+
+    try {
+      await db.delete(bills).where(eq(bills.id, id));
+    } catch (error: any) {
+      if (error.code === "23503") {
+        throw new Error("Cannot delete this bill because it has associated payments. Please delete the payments first.");
+      }
+      throw error;
+    }
+  },
+
   async listPayments(billId: string) {
     await getBillOrThrow(billId);
     const db = getDb();
@@ -127,6 +144,14 @@ export const billsService = {
       const [bill] = await tx.select().from(bills).where(eq(bills.id, billId)).limit(1);
       if (!bill) throw new Error("Bill not found");
 
+      const totalPayable = Number(bill.totalAmount) + Number(bill.tax);
+      const currentPaid = Number(bill.paidAmount);
+      const newPayment = Number(input.amount);
+
+      if (currentPaid + newPayment > totalPayable) {
+        throw new Error(`Payment of ${newPayment} exceeds the remaining balance of ${totalPayable - currentPaid}`);
+      }
+
       const [payment] = await tx
         .insert(billPayments)
         .values({
@@ -141,20 +166,24 @@ export const billsService = {
 
       if (!payment) throw new Error("Unable to record payment");
 
-      const newPaidAmount = Number(bill.paidAmount) + input.amount;
-      const totalPayable = Number(bill.totalAmount) + Number(bill.tax);
-      const nextStatus =
-        newPaidAmount >= totalPayable ? "completed" : bill.status === "draft" ? "submitted" : bill.status;
-
-      await tx
+      const [updatedBill] = await tx
         .update(bills)
         .set({
-          paidAmount: String(newPaidAmount),
-          status: nextStatus,
+          paidAmount: sql`${bills.paidAmount} + ${input.amount}`,
           updatedBy: userId,
           updatedAt: new Date(),
         })
-        .where(eq(bills.id, billId));
+        .where(eq(bills.id, billId))
+        .returning();
+
+      const newPaidAmount = Number(updatedBill.paidAmount);
+      const newTotalPayable = Number(updatedBill.totalAmount) + Number(updatedBill.tax);
+      const nextStatus =
+        newPaidAmount >= newTotalPayable ? "completed" : updatedBill.status === "draft" ? "submitted" : updatedBill.status;
+
+      if (updatedBill.status !== nextStatus) {
+        await tx.update(bills).set({ status: nextStatus }).where(eq(bills.id, billId));
+      }
 
       return payment;
     });

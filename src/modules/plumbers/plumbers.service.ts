@@ -88,6 +88,13 @@ export const plumbersService = {
   async remove(id: string) {
     await getPlumberOrThrow(id);
     const db = getDb();
-    await db.delete(plumbers).where(eq(plumbers.id, id));
+    try {
+      await db.delete(plumbers).where(eq(plumbers.id, id));
+    } catch (error: any) {
+      if (error.code === "23503") {
+        throw new Error("Cannot delete this plumber because they have associated records. Please reassign or delete them first.");
+      }
+      throw error;
+    }
   },
 };

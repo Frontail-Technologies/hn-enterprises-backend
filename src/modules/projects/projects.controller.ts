@@ -1,6 +1,6 @@
 import type { AuthTokenPayload } from "@types";
 import type { SetContext } from "@modules/auth/auth.helpers";
-import { ok, paginated } from "@utils";
+import { errorMessage, ok, paginated, statusFromError } from "@utils";
 import { projectsService } from "./projects.service";
 import type {
   CreateProjectBody,
@@ -10,15 +10,6 @@ import type {
   UpdateProjectBody,
   UpdateProjectSiteBody,
 } from "./projects.types";
-
-function statusFromError(error: unknown) {
-  if (error instanceof Error && error.message.includes("not found")) return 404;
-  return 400;
-}
-
-function errorMessage(error: unknown, fallback: string) {
-  return error instanceof Error ? error.message : fallback;
-}
 
 export const projectsController = {
   async list({ query, set }: { query: ProjectListQuery; set: SetContext }) {
@@ -79,6 +70,17 @@ export const projectsController = {
     } catch (error) {
       set.status = statusFromError(error);
       return { success: false, message: errorMessage(error, "Unable to update project") };
+    }
+  },
+
+  async delete({ params, currentUser, set }: { params: { id: string }; currentUser: AuthTokenPayload | null; set: SetContext }) {
+    try {
+      if (!currentUser) throw new Error("Authentication required");
+      await projectsService.delete(params.id, currentUser.id);
+      return ok(null, "Project deleted");
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to delete project") };
     }
   },
 

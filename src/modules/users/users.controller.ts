@@ -1,16 +1,8 @@
+import type { AuthTokenPayload } from "@types";
 import type { SetContext } from "@modules/auth/auth.helpers";
-import { ok, paginated } from "@utils";
+import { assertUser, errorMessage, ok, paginated, statusFromError } from "@utils";
 import { usersService } from "./users.service";
 import type { CreateUserBody, ResetPasswordBody, UpdateUserBody, UserListQuery } from "./users.types";
-
-function statusFromError(error: unknown) {
-  if (error instanceof Error && error.message.includes("not found")) return 404;
-  return 400;
-}
-
-function errorMessage(error: unknown, fallback: string) {
-  return error instanceof Error ? error.message : fallback;
-}
 
 export const usersController = {
   async list({ query, set }: { query: UserListQuery; set: SetContext }) {
@@ -34,9 +26,18 @@ export const usersController = {
     }
   },
 
-  async create({ body, set }: { body: CreateUserBody; set: SetContext }) {
+  async create({
+    body,
+    currentUser,
+    set,
+  }: {
+    body: CreateUserBody;
+    currentUser: AuthTokenPayload | null;
+    set: SetContext;
+  }) {
     try {
-      const user = await usersService.create(body);
+      const actor = assertUser(currentUser);
+      const user = await usersService.create(body, actor.role);
       set.status = 201;
       return ok(user, "User created");
     } catch (error) {
@@ -45,9 +46,20 @@ export const usersController = {
     }
   },
 
-  async update({ params, body, set }: { params: { id: string }; body: UpdateUserBody; set: SetContext }) {
+  async update({
+    params,
+    body,
+    currentUser,
+    set,
+  }: {
+    params: { id: string };
+    body: UpdateUserBody;
+    currentUser: AuthTokenPayload | null;
+    set: SetContext;
+  }) {
     try {
-      const user = await usersService.update(params.id, body);
+      const actor = assertUser(currentUser);
+      const user = await usersService.update(params.id, body, actor.role);
       return ok(user, "User updated");
     } catch (error) {
       set.status = statusFromError(error);
@@ -70,6 +82,25 @@ export const usersController = {
     } catch (error) {
       set.status = statusFromError(error);
       return { success: false, message: errorMessage(error, "Unable to reset password") };
+    }
+  },
+
+  async delete({
+    params,
+    currentUser,
+    set,
+  }: {
+    params: { id: string };
+    currentUser: AuthTokenPayload | null;
+    set: SetContext;
+  }) {
+    try {
+      const actor = assertUser(currentUser);
+      await usersService.delete(params.id, actor.id);
+      return ok(null, "User deleted");
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to delete user") };
     }
   },
 };

@@ -2,6 +2,7 @@ import { and, count, eq, ilike, or } from "drizzle-orm";
 import { getDb } from "@db";
 import { projectDocuments, projectSites, projects, users } from "@db/schema";
 import { normalizeKey } from "@modules/master-import/master-import.mapper";
+import { auditService } from "@services";
 import { buildPaginationMeta, cleanObject, parsePagination, toSearchPattern } from "@utils";
 import type {
   CreateProjectBody,
@@ -106,6 +107,15 @@ export const projectsService = {
       .returning();
 
     if (!project) throw new Error("Unable to create project");
+
+    await auditService.log({
+      userId,
+      module: "Projects",
+      action: "Created Project",
+      recordId: project.id,
+      description: `Created project ${project.name} (${project.code})`,
+    });
+
     return project;
   },
 
@@ -144,7 +154,30 @@ export const projectsService = {
       .returning();
 
     if (!project) throw new Error("Unable to update project");
-    return project;
+    return getProjectOrThrow(project.id);
+  },
+
+  async delete(id: string, userId: string) {
+    const db = getDb();
+    
+    // Check if project exists
+    const existing = await getProjectOrThrow(id);
+
+    try {
+      await db.delete(projects).where(eq(projects.id, id));
+      await auditService.log({
+        userId,
+        module: "Projects",
+        action: "Deleted Project",
+        recordId: id,
+        description: `Deleted project ${existing.name} (${existing.code})`,
+      });
+    } catch (error: any) {
+      if (error.code === "23503") {
+        throw new Error("Cannot delete this project because it has associated records (e.g. customers or sites). Please reassign or delete them first.");
+      }
+      throw error;
+    }
   },
 
   async listSites(projectId: string) {

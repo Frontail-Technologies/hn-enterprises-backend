@@ -1,6 +1,6 @@
 import type { AuthTokenPayload } from "@types";
 import type { SetContext } from "@modules/auth/auth.helpers";
-import { ok } from "@utils";
+import { errorMessage, ok, statusFromError } from "@utils";
 import { planningService } from "./planning.service";
 import type {
   DprRecordListQuery,
@@ -9,17 +9,13 @@ import type {
   UpsertSitePlanBody,
 } from "./planning.types";
 
-function errorMessage(error: unknown, fallback: string) {
-  return error instanceof Error ? error.message : fallback;
-}
-
 export const planningController = {
   async listSitePlans({ query, set }: { query: SitePlanListQuery; set: SetContext }) {
     try {
       const rows = await planningService.listSitePlans(query);
       return ok(rows);
     } catch (error) {
-      set.status = 400;
+      set.status = statusFromError(error);
       return { success: false, message: errorMessage(error, "Unable to list site plans") };
     }
   },
@@ -38,7 +34,7 @@ export const planningController = {
       const record = await planningService.upsertSitePlan(body, currentUser.id);
       return ok(record, "Site plan saved");
     } catch (error) {
-      set.status = 400;
+      set.status = statusFromError(error);
       return { success: false, message: errorMessage(error, "Unable to save site plan") };
     }
   },
@@ -48,7 +44,7 @@ export const planningController = {
       const rows = await planningService.listDprRecords(query);
       return ok(rows);
     } catch (error) {
-      set.status = 400;
+      set.status = statusFromError(error);
       return { success: false, message: errorMessage(error, "Unable to list DPR records") };
     }
   },
@@ -67,7 +63,7 @@ export const planningController = {
       const record = await planningService.upsertDprRecord(body, currentUser.id);
       return ok(record, "DPR record saved");
     } catch (error) {
-      set.status = 400;
+      set.status = statusFromError(error);
       return { success: false, message: errorMessage(error, "Unable to save DPR record") };
     }
   },

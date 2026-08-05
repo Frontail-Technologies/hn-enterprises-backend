@@ -1,4 +1,5 @@
 import { COOKIE_CONFIGS } from "@constants";
+import { checkRateLimit } from "@utils";
 import { authService } from "./auth.service";
 import {
   accessTokenFromRequest,
@@ -16,6 +17,10 @@ import type {
   RequestPasswordResetBody,
   ResetPasswordBody,
 } from "./auth.schema";
+
+function isRateLimitError(error: unknown) {
+  return error instanceof Error && error.message.includes("Too many attempts");
+}
 
 async function requireCurrentUser({
   jwt,
@@ -55,12 +60,18 @@ export const authController = {
     set: SetContext;
   }) {
     try {
-      const result = await authService.login(body, requestMeta(request));
+      const meta = requestMeta(request);
+      checkRateLimit(
+        `login:${meta.ipAddress ?? "unknown"}:${body.identifier.trim().toLowerCase()}`,
+        15 * 60 * 1000,
+        10,
+      );
+      const result = await authService.login(body, meta);
       const accessToken = await signAccessToken(jwt, result.payload);
       const refreshToken = await authService.createRefreshToken(
         result.user.id,
         result.payload.sessionId,
-        requestMeta(request),
+        meta,
       );
 
       cookieSlot(cookie, "accessToken").set({
@@ -86,7 +97,7 @@ export const authController = {
             : result.user,
       };
     } catch (error) {
-      set.status = 401;
+      set.status = isRateLimitError(error) ? 429 : 401;
       return {
         success: false,
         message: error instanceof Error ? error.message : "Login failed",
@@ -140,6 +151,8 @@ export const authController = {
           : result.user,
       };
     } catch (error) {
+      cookieSlot(cookie, "accessToken").set({ value: "", ...COOKIE_CONFIGS.accessToken, maxAge: 0 });
+      cookieSlot(cookie, "refreshToken").set({ value: "", ...COOKIE_CONFIGS.refreshToken, maxAge: 0 });
       set.status = 401;
       return {
         success: false,
@@ -158,8 +171,8 @@ export const authController = {
     const refreshToken = cookie.refreshToken?.value ?? readBearerToken(headers);
     await authService.revokeRefreshToken(typeof refreshToken === "string" ? refreshToken : undefined);
 
-    cookieSlot(cookie, "accessToken").remove();
-    cookieSlot(cookie, "refreshToken").remove();
+    cookieSlot(cookie, "accessToken").set({ value: "", ...COOKIE_CONFIGS.accessToken, maxAge: 0 });
+    cookieSlot(cookie, "refreshToken").set({ value: "", ...COOKIE_CONFIGS.refreshToken, maxAge: 0 });
 
     return {
       success: true,
@@ -208,9 +221,9 @@ export const authController = {
   }) {
     try {
       const { user } = await requireCurrentUser({ jwt, cookie, headers });
-      await authService.changePassword(user.id, body.newPassword);
-      cookieSlot(cookie, "accessToken").remove();
-      cookieSlot(cookie, "refreshToken").remove();
+      await authService.changePassword(user.id, body.currentPassword, body.newPassword);
+      cookieSlot(cookie, "accessToken").set({ value: "", ...COOKIE_CONFIGS.accessToken, maxAge: 0 });
+      cookieSlot(cookie, "refreshToken").set({ value: "", ...COOKIE_CONFIGS.refreshToken, maxAge: 0 });
 
       return {
         success: true,
@@ -228,11 +241,26 @@ export const authController = {
   async requestPasswordReset({
     body,
     request,
+    set,
   }: {
     body: RequestPasswordResetBody;
     request: Request;
+    set: SetContext;
   }) {
-    const result = await authService.requestPasswordReset(body.identifier, requestMeta(request));
+    const meta = requestMeta(request);
+
+    try {
+      checkRateLimit(
+        `otp-request:${meta.ipAddress ?? "unknown"}:${body.identifier.trim().toLowerCase()}`,
+        15 * 60 * 1000,
+        5,
+      );
+    } catch (error) {
+      set.status = 429;
+      return { success: false, message: error instanceof Error ? error.message : "Too many attempts" };
+    }
+
+    const result = await authService.requestPasswordReset(body.identifier, meta);
 
     return {
       success: true,
@@ -243,12 +271,20 @@ export const authController = {
 
   async resetPassword({
     body,
+    request,
     set,
   }: {
     body: ResetPasswordBody;
+    request: Request;
     set: SetContext;
   }) {
     try {
+      const meta = requestMeta(request);
+      checkRateLimit(
+        `otp-verify:${meta.ipAddress ?? "unknown"}:${body.identifier.trim().toLowerCase()}`,
+        15 * 60 * 1000,
+        10,
+      );
       await authService.resetPassword(body.identifier, body.otp, body.newPassword);
 
       return {
@@ -256,7 +292,7 @@ export const authController = {
         message: "Password reset successfully",
       };
     } catch (error) {
-      set.status = 400;
+      set.status = isRateLimitError(error) ? 429 : 400;
       return {
         success: false,
         message: error instanceof Error ? error.message : "Password reset failed",

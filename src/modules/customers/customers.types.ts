@@ -17,6 +17,8 @@ export type CustomerListQuery = {
   status?: CustomerStatus;
   projectId?: string;
   siteId?: string;
+  statKey?: string;
+  city?: string;
 };
 
 export type CustomerJsonSections = {

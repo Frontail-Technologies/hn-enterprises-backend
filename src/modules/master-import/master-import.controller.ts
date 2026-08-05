@@ -1,5 +1,6 @@
 import type { AuthTokenPayload } from "@types";
 import type { SetContext } from "@modules/auth/auth.helpers";
+import { errorMessage, statusFromError } from "@utils";
 import { masterImportService } from "./master-import.service";
 
 function getUploadFile(body: unknown): File {
@@ -34,10 +35,10 @@ export const masterImportController = {
         data,
       };
     } catch (error) {
-      set.status = error instanceof Error && error.message.includes("permission") ? 403 : 400;
+      set.status = statusFromError(error);
       return {
         success: false,
-        message: error instanceof Error ? error.message : "Unable to preview import",
+        message: errorMessage(error, "Unable to preview import"),
       };
     }
   },
@@ -60,10 +61,10 @@ export const masterImportController = {
         data,
       };
     } catch (error) {
-      set.status = error instanceof Error && error.message.includes("not found") ? 404 : 400;
+      set.status = statusFromError(error);
       return {
         success: false,
-        message: error instanceof Error ? error.message : "Unable to fetch import batch",
+        message: errorMessage(error, "Unable to fetch import batch"),
       };
     }
   },
@@ -87,10 +88,10 @@ export const masterImportController = {
         data,
       };
     } catch (error) {
-      set.status = error instanceof Error && error.message.includes("not found") ? 404 : 400;
+      set.status = statusFromError(error);
       return {
         success: false,
-        message: error instanceof Error ? error.message : "Unable to confirm import",
+        message: errorMessage(error, "Unable to confirm import"),
       };
     }
   },

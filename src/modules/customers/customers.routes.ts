@@ -36,7 +36,15 @@ export const customersRoutes = new Elysia({ prefix: "/customers" })
     {
       params: t.Object({ id: t.String() }),
       body: updateCustomerBodySchema,
-      requireAuth: true,
+      requireRole: ["super_admin", "admin", "supervisor", "field_executive"],
+    },
+  )
+  .delete(
+    "/:id",
+    ({ params, currentUser, set }) => customersController.delete({ params, currentUser, set }),
+    {
+      params: t.Object({ id: t.String() }),
+      requireRole: ["super_admin", "admin"],
     },
   )
   .get(
@@ -71,10 +79,10 @@ export const customersRoutes = new Elysia({ prefix: "/customers" })
   )
   .delete(
     "/:id/documents/:documentId",
-    ({ params, set }) => customersController.deleteDocument({ params, set }),
+    ({ params, currentUser, set }) => customersController.deleteDocument({ params, currentUser, set }),
     {
       params: t.Object({ id: t.String(), documentId: t.String() }),
-      requireAuth: true,
+      requireRole: ["super_admin", "admin"],
     },
   )
   .get(

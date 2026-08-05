@@ -1,7 +1,15 @@
 import { and, count, eq, ilike, inArray, or } from "drizzle-orm";
 import { getDb } from "@db";
 import { users, type userRoleEnum } from "@db/schema";
-import { assertStrongPassword, buildPaginationMeta, cleanObject, hashPassword, parsePagination, toSearchPattern } from "@utils";
+import {
+  assertCanAssignRole,
+  assertStrongPassword,
+  buildPaginationMeta,
+  cleanObject,
+  hashPassword,
+  parsePagination,
+  toSearchPattern,
+} from "@utils";
 import type { CreateUserBody, ResetPasswordBody, UpdateUserBody, UserListQuery } from "./users.types";
 
 type UserRole = (typeof userRoleEnum.enumValues)[number];
@@ -91,7 +99,8 @@ export const usersService = {
     return sanitizeUser(user);
   },
 
-  async create(input: CreateUserBody) {
+  async create(input: CreateUserBody, actorRole: UserRole) {
+    assertCanAssignRole(actorRole, input.role);
     assertStrongPassword(input.password);
     const db = getDb();
     const email = input.email.toLowerCase().trim();
@@ -122,7 +131,8 @@ export const usersService = {
     return sanitizeUser(user);
   },
 
-  async update(id: string, input: UpdateUserBody) {
+  async update(id: string, input: UpdateUserBody, actorRole: UserRole) {
+    if (input.role) assertCanAssignRole(actorRole, input.role);
     await getUserOrThrow(id);
     const db = getDb();
 
@@ -160,5 +170,20 @@ export const usersService = {
 
     if (!user) throw new Error("Unable to reset password");
     return sanitizeUser(user);
+  },
+
+  async delete(id: string, currentUserId: string) {
+    if (id === currentUserId) throw new Error("Cannot delete your own account");
+    const db = getDb();
+    await getUserOrThrow(id);
+
+    try {
+      await db.delete(users).where(eq(users.id, id));
+    } catch (error: any) {
+      if (error.code === "23503") {
+        throw new Error("Cannot delete this user because they have associated records. Please reassign or delete them first.");
+      }
+      throw error;
+    }
   },
 };

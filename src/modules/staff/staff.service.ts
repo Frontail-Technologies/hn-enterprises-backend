@@ -1,7 +1,16 @@
 import { and, count, eq, ilike, or } from "drizzle-orm";
 import { getDb } from "@db";
 import { staff, users } from "@db/schema";
-import { assertStrongPassword, buildPaginationMeta, cleanObject, hashPassword, parsePagination, toSearchPattern } from "@utils";
+import {
+  assertCanAssignRole,
+  assertStrongPassword,
+  buildPaginationMeta,
+  cleanObject,
+  hashPassword,
+  parsePagination,
+  toSearchPattern,
+} from "@utils";
+import type { UserRole } from "@types";
 import type { CreateStaffBody, StaffListQuery, UpdateStaffBody } from "./staff.types";
 
 const staffSelection = {
@@ -85,7 +94,7 @@ export const staffService = {
     return getStaffOrThrow(id);
   },
 
-  async create(input: CreateStaffBody, actorId: string) {
+  async create(input: CreateStaffBody, actorId: string, actorRole: UserRole) {
     const db = getDb();
 
     const newId = await db.transaction(async (tx) => {
@@ -93,6 +102,7 @@ export const staffService = {
 
       if (!userId) {
         if (!input.newUser) throw new Error("Either userId or newUser is required");
+        assertCanAssignRole(actorRole, input.newUser.role);
         assertStrongPassword(input.newUser.password);
         const email = input.newUser.email.toLowerCase().trim();
         const username = input.newUser.username.toLowerCase().trim();
@@ -156,11 +166,12 @@ export const staffService = {
     return getStaffOrThrow(newId);
   },
 
-  async update(id: string, input: UpdateStaffBody, actorId: string) {
+  async update(id: string, input: UpdateStaffBody, actorId: string, actorRole: UserRole) {
     const existing = await getStaffOrThrow(id);
     const db = getDb();
 
     if (input.user) {
+      if (input.user.role) assertCanAssignRole(actorRole, input.user.role);
       const userPatch = cleanObject({
         name: input.user.name,
         mobile: input.user.mobile,

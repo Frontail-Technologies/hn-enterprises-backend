@@ -1,7 +1,7 @@
 import type { AuthTokenPayload } from "@types";
 import type { SetContext } from "@modules/auth/auth.helpers";
 import { uploadService } from "@services";
-import { ok } from "@utils";
+import { errorMessage, ok, statusFromError } from "@utils";
 
 function getUploadFile(body: unknown): File {
   const file = body && typeof body === "object" ? (body as Record<string, unknown>).file : null;
@@ -21,18 +21,6 @@ function getModule(body: unknown): string {
 function getRecordId(body: unknown): string | undefined {
   const recordId = body && typeof body === "object" ? (body as Record<string, unknown>).recordId : null;
   return typeof recordId === "string" && recordId ? recordId : undefined;
-}
-
-// Cloudinary's SDK rejects with plain {message, name, http_code} objects, not
-// real Error instances - `error instanceof Error` misses those entirely and
-// was masking the real failure reason (e.g. rate limiting) behind a generic
-// "Unable to upload file" message.
-function getErrorMessage(error: unknown, fallback: string): string {
-  if (error instanceof Error) return error.message;
-  if (error && typeof error === "object" && "message" in error && typeof error.message === "string") {
-    return error.message;
-  }
-  return fallback;
 }
 
 export const uploadsController = {
@@ -77,10 +65,10 @@ export const uploadsController = {
         error,
       });
 
-      set.status = 400;
+      set.status = statusFromError(error);
       return {
         success: false,
-        message: getErrorMessage(error, "Unable to upload file"),
+        message: errorMessage(error, "Unable to upload file"),
       };
     }
   },

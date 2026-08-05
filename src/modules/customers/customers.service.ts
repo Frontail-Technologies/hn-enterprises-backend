@@ -1,8 +1,10 @@
-import { and, count, desc, eq, ilike, or } from "drizzle-orm";
+import { and, count, desc, eq, ilike, or, sql } from "drizzle-orm";
 import { getDb } from "@db";
-import { customerDocuments, customerLmcPipeRecords, customerNotes, customers, plumbers, users } from "@db/schema";
+import { customerDocuments, customerLmcPipeRecords, customerNotes, customers, plumbers, users, workProgressUpdates } from "@db/schema";
 import { normalizeKey } from "@modules/master-import/master-import.mapper";
 import { buildPaginationMeta, cleanObject, parsePagination, toSearchPattern } from "@utils";
+import { auditService, permissionService } from "@services";
+import type { AuthTokenPayload } from "@types";
 import type {
   CreateCustomerBody,
   CreateCustomerNoteBody,
@@ -55,6 +57,22 @@ async function getCustomerOrThrow(id: string) {
   return customer;
 }
 
+function getStatKeyCondition(statKey: string) {
+  switch (statKey) {
+    case "survey-done": return sql`survey->>'surveyDate' IS NOT NULL`;
+    case "gi-done": return sql`commissioning_conversion->>'installationDate' IS NOT NULL`;
+    case "gc-done": return sql`commissioning_conversion->>'commissioningDate' IS NOT NULL OR commissioning_conversion->>'meterNo' IS NOT NULL`;
+    case "conversion-done": return sql`commissioning_conversion->>'conversionDate' IS NOT NULL`;
+    case "jmr-done": return sql`billing_completion->>'jmrDone' = 'true'`;
+    case "gi-bill-done": return sql`billing_completion->>'giBillDone' = 'true'`;
+    case "gc-bill-done": return sql`billing_completion->>'gcBillDone' = 'true'`;
+    case "conversion-bill-done": return sql`billing_completion->>'conversionBillDone' = 'true'`;
+    case "total-pbg-assignment": return sql`billing_completion->>'jmrSubmittedInPbg' = 'true'`;
+    case "connection-remark": return sql`(status = 'on_hold' OR survey->>'approvalStatus' IN ('Sent Back', 'Rejected') OR EXISTS (SELECT 1 FROM customer_lmc_pipe_records WHERE customer_id = customers.id AND laying_status = 'on_hold'))`;
+    default: return undefined;
+  }
+}
+
 export const customersService = {
   async list(query: CustomerListQuery) {
     const db = getDb();
@@ -65,6 +83,7 @@ export const customersService = {
       query.projectId ? eq(customers.projectId, query.projectId) : undefined,
       query.siteId ? eq(customers.siteId, query.siteId) : undefined,
       query.status ? eq(customers.status, query.status) : undefined,
+      query.city ? eq(customers.city, query.city) : undefined,
       searchPattern
         ? or(
             ilike(customers.customerName, searchPattern),
@@ -72,6 +91,7 @@ export const customersService = {
             ilike(customers.mobileNumber, searchPattern),
           )
         : undefined,
+      query.statKey ? getStatKeyCondition(query.statKey) : undefined,
     ].filter((condition): condition is NonNullable<typeof condition> => Boolean(condition));
 
     const where = conditions.length ? and(...conditions) : undefined;
@@ -111,37 +131,46 @@ export const customersService = {
     const [customer] = await db
       .insert(customers)
       .values({
-        projectId: input.projectId,
-        siteId: input.siteId,
         trBpNumber: input.trBpNumber,
         normalizedTrBpNumber: normalizeKey(input.trBpNumber),
-        mobileNumber: input.mobileNumber || null,
+        mobileNumber: input.mobileNumber,
         customerName: input.customerName,
         normalizedCustomerName: normalizeKey(input.customerName),
-        fullAddress: input.fullAddress || null,
-        city: input.city || null,
-        connectionType: input.connectionType || null,
-        houseType: input.houseType || null,
-        scheme: input.scheme || null,
-        plumberId: input.plumberId,
+        fullAddress: input.fullAddress,
+        city: input.city,
+        connectionType: input.connectionType,
+        houseType: input.houseType,
+        scheme: input.scheme,
+        plumberId: input.plumberId || null,
         plumberName,
         supervisorId: input.supervisorId || null,
-        supervisorName: supervisorName || null,
+        supervisorName,
         giReportNumber: input.giReportNumber || null,
         gcReportNumber: input.gcReportNumber || null,
         conversionReportNumber: input.conversionReportNumber || null,
         status: input.status ?? "active",
-        ...jsonSections,
+        projectId: input.projectId,
+        siteId: input.siteId,
         createdBy: userId,
         updatedBy: userId,
       })
       .returning();
 
     if (!customer) throw new Error("Unable to create customer");
+
+    await auditService.log({
+      userId,
+      module: "Customers",
+      action: "Created Customer",
+      recordId: customer.id,
+      description: `Created customer ${customer.customerName} (${customer.trBpNumber})`,
+    });
+
     return customer;
   },
 
-  async update(id: string, input: UpdateCustomerBody, userId: string) {
+  async update(id: string, input: UpdateCustomerBody, currentUser: AuthTokenPayload) {
+    const userId = currentUser.id;
     const existing = await getCustomerOrThrow(id);
     const db = getDb();
     const plumberName = input.plumberId ? await getPlumberNameOrThrow(input.plumberId) : undefined;
@@ -169,10 +198,52 @@ export const customersService = {
     });
 
     const jsonPatch: Record<string, Record<string, unknown>> = {};
+    const workProgressInserts: any[] = [];
+
     for (const key of JSON_SECTION_KEYS) {
-      const section = input[key];
+      const section = input[key] as Record<string, unknown> | undefined;
       if (section) {
-        jsonPatch[key] = { ...(existing[key] as Record<string, unknown> | null), ...section };
+        const oldSection = existing[key as keyof typeof existing] as Record<string, unknown> | null;
+        const oldStatus = oldSection?.approvalStatus;
+        const newStatus = section.approvalStatus;
+
+        if (oldStatus === "approved" && !permissionService.canManage(currentUser)) {
+          throw new Error(`Cannot modify ${key} because it is already approved. Contact an admin.`);
+        }
+
+        const isApprovalTransition =
+          (newStatus === "approved" || newStatus === "rejected") && newStatus !== oldStatus;
+        if (isApprovalTransition && !permissionService.canManage(currentUser)) {
+          throw new Error(`Only admins can approve or reject ${key}`);
+        }
+
+        jsonPatch[key] = { ...oldSection, ...section };
+
+        // Generate work progress update if status changed
+        if (newStatus && newStatus !== oldStatus) {
+          let stage = null;
+          if (key === "survey") stage = "survey";
+          else if (key === "giMeasurements") stage = "plumbing_gi";
+          else if (key === "lmcPipelineWork") stage = "workable";
+          else if (key === "commissioningConversion") stage = "commissioning";
+          else if (key === "billingCompletion") stage = "conversion";
+
+          let workStatus = "pending";
+          if (newStatus === "approved") workStatus = "completed";
+          else if (newStatus === "rejected") workStatus = "sent_back";
+          else if (newStatus === "on_hold") workStatus = "on_hold";
+          else if (newStatus === "submitted") workStatus = "pending";
+
+          if (stage) {
+            workProgressInserts.push({
+              customerId: id,
+              supervisorId: currentUser.id,
+              stage,
+              status: workStatus,
+              remarks: section.approvalComments || `Status updated to ${newStatus} via web dashboard`,
+            });
+          }
+        }
       }
     }
 
@@ -190,7 +261,33 @@ export const customersService = {
       .returning();
 
     if (!customer) throw new Error("Unable to update customer");
+
+    if (workProgressInserts.length > 0) {
+      await db.insert(workProgressUpdates).values(workProgressInserts);
+    }
+
     return customer;
+  },
+
+  async delete(id: string, userId: string) {
+    const db = getDb();
+    const existing = await getCustomerOrThrow(id);
+
+    try {
+      await db.delete(customers).where(eq(customers.id, id));
+      await auditService.log({
+        userId,
+        module: "Customers",
+        action: "Deleted Customer",
+        recordId: id,
+        description: `Deleted customer ${existing.customerName} (${existing.trBpNumber})`,
+      });
+    } catch (error: any) {
+      if (error.code === "23503") {
+        throw new Error("Cannot delete this customer because they have associated records (e.g. bills or payments). Please delete them first.");
+      }
+      throw error;
+    }
   },
 
   async listLmcPipeRecords(customerId: string) {

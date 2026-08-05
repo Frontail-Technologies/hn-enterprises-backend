@@ -33,6 +33,14 @@ export const billsRoutes = new Elysia({ prefix: "/bills" })
       requireRole: ["super_admin", "admin"],
     },
   )
+  .delete(
+    "/:id",
+    ({ params, set }) => billsController.delete({ params, set }),
+    {
+      params: t.Object({ id: t.String() }),
+      requireRole: ["super_admin", "admin"],
+    },
+  )
   .get(
     "/:id/payments",
     ({ params, set }) => billsController.listPayments({ params, set }),

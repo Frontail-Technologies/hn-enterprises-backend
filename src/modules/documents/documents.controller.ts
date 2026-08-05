@@ -1,5 +1,5 @@
 import type { SetContext } from "@modules/auth/auth.helpers";
-import { paginated } from "@utils";
+import { errorMessage, paginated, statusFromError } from "@utils";
 import { documentsService } from "./documents.service";
 import type { DocumentListQuery } from "./documents.types";
 
@@ -9,8 +9,8 @@ export const documentsController = {
       const { rows, pagination } = await documentsService.list(query);
       return paginated(rows, pagination);
     } catch (error) {
-      set.status = 400;
-      return { success: false, message: error instanceof Error ? error.message : "Unable to list documents" };
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to list documents") };
     }
   },
 };

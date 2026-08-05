@@ -50,6 +50,7 @@ export const createMaterialTransactionBodySchema = t.Object({
   siteId: t.Optional(t.String()),
   storeLabel: t.Optional(t.String()),
   customerId: t.Optional(t.String()),
+  paymentId: t.Optional(t.String()),
   reportNo: t.Optional(t.String()),
   condition: t.Optional(t.String()),
   adjustmentType: t.Optional(t.String()),

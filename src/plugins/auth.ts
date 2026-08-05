@@ -107,4 +107,10 @@ export const auth = (app: Elysia) =>
           },
         };
       },
+      // Elysia's bundled .macro() overloads describe a schema-object shape
+      // (expecting body/headers/query/params on the return value), but the
+      // object-returning `{ beforeHandle }` shape used above is the one that
+      // actually registers the hook at runtime. The two disagree only at the
+      // type level, so this cast is a deliberate, narrow escape hatch - not a
+      // sign the macro itself is broken.
     } as any);

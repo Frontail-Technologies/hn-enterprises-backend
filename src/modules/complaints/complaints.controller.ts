@@ -1,18 +1,8 @@
 import type { AuthTokenPayload } from "@types";
 import type { SetContext } from "@modules/auth/auth.helpers";
-import { ok, paginated } from "@utils";
+import { errorMessage, ok, paginated, statusFromError } from "@utils";
 import { complaintsService } from "./complaints.service";
 import type { ComplaintListQuery, CreateComplaintBody, UpdateComplaintBody } from "./complaints.types";
-
-function statusFromError(error: unknown) {
-  if (error instanceof Error && error.message.includes("not found")) return 404;
-  if (error instanceof Error && error.message.includes("Not authorized")) return 403;
-  return 400;
-}
-
-function errorMessage(error: unknown, fallback: string) {
-  return error instanceof Error ? error.message : fallback;
-}
 
 export const complaintsController = {
   async list({ query, set }: { query: ComplaintListQuery; set: SetContext }) {

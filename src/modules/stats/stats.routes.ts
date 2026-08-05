@@ -8,6 +8,9 @@ export const statsRoutes = new Elysia({ prefix: "/stats" })
   .get("/summary", ({ set }) => statsController.getSummary({ set }), {
     requireAuth: true,
   })
+  .get("/admin-summary", ({ query, set }) => statsController.getAdminSummary({ query: query as { projectId?: string; city?: string }, set }), {
+    requireAuth: true,
+  })
   .get(
     "/:type/details",
     ({ params, set }) => statsController.getDetails({ params, set }),

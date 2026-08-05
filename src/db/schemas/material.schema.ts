@@ -14,6 +14,7 @@ import { users } from "./auth.schema";
 import { customers } from "./customer.schema";
 import { plumbers } from "./plumber.schema";
 import { projectSites } from "./project.schema";
+import { payments } from "./payment.schema";
 
 export const materialTransactionTypeEnum = pgEnum("material_transaction_type", [
   "purchase",
@@ -66,6 +67,7 @@ export const materialTransactions = pgTable(
     siteId: uuid("site_id").references(() => projectSites.id, { onDelete: "set null" }),
     storeLabel: text("store_label"),
     customerId: uuid("customer_id").references(() => customers.id, { onDelete: "set null" }),
+    paymentId: uuid("payment_id").references(() => payments.id, { onDelete: "set null" }),
     reportNo: text("report_no"),
     condition: text("condition"),
     adjustmentType: text("adjustment_type"),
@@ -85,6 +87,7 @@ export const materialTransactions = pgTable(
     supervisorIdx: index("material_transactions_supervisor_idx").on(table.supervisorId),
     siteIdx: index("material_transactions_site_idx").on(table.siteId),
     customerIdx: index("material_transactions_customer_idx").on(table.customerId),
+    paymentIdx: index("material_transactions_payment_idx").on(table.paymentId),
     dateIdx: index("material_transactions_date_idx").on(table.transactionDate),
   }),
 );
@@ -109,5 +112,9 @@ export const materialTransactionsRelations = relations(materialTransactions, ({ 
   customer: one(customers, {
     fields: [materialTransactions.customerId],
     references: [customers.id],
+  }),
+  payment: one(payments, {
+    fields: [materialTransactions.paymentId],
+    references: [payments.id],
   }),
 }));

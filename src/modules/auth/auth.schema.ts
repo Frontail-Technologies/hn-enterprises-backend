@@ -7,6 +7,7 @@ export const loginBodySchema = t.Object({
 });
 
 export const changePasswordBodySchema = t.Object({
+  currentPassword: t.String({ minLength: 1 }),
   newPassword: t.String({ minLength: 8 }),
 });
 
@@ -27,6 +28,7 @@ export type LoginBody = {
 };
 
 export type ChangePasswordBody = {
+  currentPassword: string;
   newPassword: string;
 };
 
