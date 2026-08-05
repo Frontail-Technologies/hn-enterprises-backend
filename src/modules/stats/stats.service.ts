@@ -59,9 +59,7 @@ const STAT_ORDER: SupervisorStatId[] = [
 const UNTRACKED_STAT_IDS: SupervisorStatId[] = [
   "pole-marker",
   "route-marker",
-  "total-pbg-assignment",
   "total-connection-done",
-  "total-connection-remark",
   "customer-resolve",
 ];
 
@@ -101,13 +99,12 @@ function buildCustomerRow(customer: CustomerWithContext, statId: SupervisorStatI
   };
 
   if (statId === "survey-done") {
-    const approvalStatus = customer.survey?.approvalStatus;
-    const done = approvalStatus === "Approved";
+    const done = Boolean(customer.survey?.surveyDate);
     return {
       matches: done,
       row: {
         ...base,
-        status: done ? "Done" : approvalStatus === "Sent Back" ? "Sent Back" : "Pending",
+        status: boolStatus(done),
         updatedOn: customer.survey?.surveyDate || base.updatedOn,
         helper: customer.survey?.workableStatus ?? "-",
       },
@@ -115,7 +112,7 @@ function buildCustomerRow(customer: CustomerWithContext, statId: SupervisorStatI
   }
 
   if (statId === "gi-done") {
-    const done = Boolean(customer.giMeasurements?.totalGiPipeHalfInch);
+    const done = Boolean(customer.commissioningConversion?.installationDate);
     return {
       matches: done,
       row: {
@@ -128,7 +125,7 @@ function buildCustomerRow(customer: CustomerWithContext, statId: SupervisorStatI
   }
 
   if (statId === "gc-done") {
-    const done = Boolean(customer.billingCompletion?.gcBillDone);
+    const done = Boolean(customer.commissioningConversion?.commissioningDate || customer.commissioningConversion?.meterNo);
     return { matches: done, row: { ...base, status: boolStatus(done), helper: customer.billingCompletion?.remark ?? "-" } };
   }
 
@@ -210,6 +207,33 @@ function buildCustomerRow(customer: CustomerWithContext, statId: SupervisorStatI
         ...base,
         status: boolStatus(done),
         helper: customer.billingCompletion?.jmrSubmittedInPbg ? "Submitted in PBG" : "Not submitted",
+      },
+    };
+  }
+
+  if (statId === "total-pbg-assignment") {
+    const done = Boolean(customer.billingCompletion?.jmrSubmittedInPbg);
+    return {
+      matches: done,
+      row: {
+        ...base,
+        status: boolStatus(done),
+        helper: done ? "Submitted" : "Not submitted",
+      },
+    };
+  }
+
+  if (statId === "total-connection-remark") {
+    const done = customer.status === "on_hold" || 
+      customer.survey?.approvalStatus === "Sent Back" || 
+      customer.survey?.approvalStatus === "Rejected" || 
+      customer.lmcPipeRecords.some((r) => r.layingStatus === "on_hold");
+    return {
+      matches: done,
+      row: {
+        ...base,
+        status: done ? "On Hold" : "Pending",
+        helper: customer.status === "on_hold" ? "Customer on hold" : "Check survey or laying status",
       },
     };
   }
@@ -356,6 +380,8 @@ export const statsService = {
       "valve-chamber",
       "pre-commissioning",
       "commissioning",
+      "total-pbg-assignment",
+      "total-connection-remark",
     ];
 
     const counts: Partial<Record<SupervisorStatId, number>> = {};
