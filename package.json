@@ -25,7 +25,8 @@
     "elysia": "latest",
     "exceljs": "^4.4.0",
     "postgres": "^3.4.8",
-    "sharp": "^0.35.3"
+    "sharp": "^0.35.3",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "bun-types": "latest",

@@ -1,4 +1,5 @@
 import ExcelJS from "exceljs";
+import * as XLSX from "xlsx";
 import type { NormalizedImportRow, NormalizedLmcPipeRecord, RawSheetRow, SheetCellValue } from "./master-import.types";
 
 type FieldTarget =
@@ -220,31 +221,54 @@ export async function readSheetRows(file: File): Promise<RawSheetRow[]> {
     return parseCsvRows(buffer.toString("utf8"));
   }
 
+  // Try ExcelJS first (works well with .xlsx)
   const workbook = new ExcelJS.Workbook();
   try {
     await workbook.xlsx.load(buffer as unknown as Parameters<typeof workbook.xlsx.load>[0]);
-  } catch {
-    throw new Error(
-      "Unable to read this Excel file. It may be an older .xls format or saved by a tool this " +
-        "importer doesn't fully support - try re-saving/exporting it as .xlsx or .csv and upload again.",
-    );
+
+    const worksheet = workbook.worksheets[0];
+    if (!worksheet) {
+      throw new Error("No worksheet found in uploaded file");
+    }
+
+    const matrix: SheetCellValue[][] = [];
+    worksheet.eachRow({ includeEmpty: false }, (row) => {
+      const values = row.values;
+      const cells = Array.isArray(values) ? values.slice(1).map(extractCellValue) : [];
+      matrix.push(cells);
+    });
+
+    return matrixToRows(matrix);
+  } catch (excelJsError) {
+    // Fall back to SheetJS which supports .xls, .xlsb, and other legacy formats
+    try {
+      const xlsWorkbook = XLSX.read(buffer, { type: "buffer", cellDates: true });
+      const firstSheetName = xlsWorkbook.SheetNames[0];
+      if (!firstSheetName) {
+        throw new Error("No worksheet found in uploaded file");
+      }
+      const sheet = xlsWorkbook.Sheets[firstSheetName];
+      if (!sheet) {
+        throw new Error("No worksheet found in uploaded file");
+      }
+      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "", raw: false });
+      const matrix: SheetCellValue[][] = [
+        // Header row
+        Object.keys(rows[0] ?? {}),
+        // Data rows
+        ...rows.map((row) => Object.values(row) as SheetCellValue[]),
+      ];
+      return matrixToRows(matrix);
+    } catch (sheetJsError) {
+      const isFormatError = sheetJsError instanceof Error && sheetJsError.message.includes("No worksheet");
+      if (isFormatError) throw sheetJsError;
+      throw new Error(
+        "Unable to read this file. Please make sure it is a valid .xlsx, .xls, or .csv file and try again.",
+      );
+    }
   }
-
-  const worksheet = workbook.worksheets[0];
-
-  if (!worksheet) {
-    throw new Error("No worksheet found in uploaded file");
-  }
-
-  const matrix: SheetCellValue[][] = [];
-  worksheet.eachRow({ includeEmpty: false }, (row) => {
-    const values = row.values;
-    const cells = Array.isArray(values) ? values.slice(1).map(extractCellValue) : [];
-    matrix.push(cells);
-  });
-
-  return matrixToRows(matrix);
 }
+
 
 export function mapRows(rows: RawSheetRow[]): NormalizedImportRow[] {
   const seenTrBp = new Map<string, number>();
