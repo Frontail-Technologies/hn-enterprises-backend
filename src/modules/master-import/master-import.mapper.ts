@@ -47,7 +47,7 @@ const HEADER_ALIASES: Record<string, FieldTarget> = {
   sitecode: "siteCode",
   address: "fullAddress",
   fulladdress: "fullAddress",
-  siteaddress: "siteAddress",
+  siteaddress: "fullAddress",
   reportnogi: "giReportNumber",
   gireportno: "giReportNumber",
   reportnogc: "gcReportNumber",
@@ -287,6 +287,13 @@ export function mapRows(rows: RawSheetRow[]): NormalizedImportRow[] {
       }
 
       setMappedValue(normalized, target, value);
+    }
+
+    // Consolidate Address: If fullAddress is provided, use it for siteAddress as well, and vice-versa
+    if (!normalized.fullAddress && normalized.siteAddress) {
+      normalized.fullAddress = normalized.siteAddress;
+    } else if (normalized.fullAddress && !normalized.siteAddress) {
+      normalized.siteAddress = normalized.fullAddress;
     }
 
     if (!normalized.projectName) normalized.issues.push("Project is required");
