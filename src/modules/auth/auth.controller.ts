@@ -126,7 +126,20 @@ export const authController = {
         throw new Error("Refresh token is required");
       }
 
-      const result = await authService.rotateRefreshToken(oldRefreshToken, requestMeta(request));
+      let result;
+      try {
+        result = await authService.rotateRefreshToken(oldRefreshToken, requestMeta(request));
+      } catch (error: any) {
+        if (error.message === "Token recently rotated") {
+          return {
+            success: true,
+            message: "Token already refreshed",
+            data: null,
+          };
+        }
+        throw error;
+      }
+
       const accessToken = await signAccessToken(jwt, result.payload);
 
       cookieSlot(cookie, "accessToken").set({

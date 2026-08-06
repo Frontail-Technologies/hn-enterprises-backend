@@ -234,13 +234,20 @@ export const authService = {
       .where(
         and(
           eq(refreshTokens.tokenHash, tokenHash),
-          isNull(refreshTokens.revokedAt),
           gt(refreshTokens.expiresAt, now),
         ),
       )
       .limit(1);
 
     if (!refreshToken) {
+      throw new Error("Invalid or expired refresh token");
+    }
+
+    if (refreshToken.revokedAt) {
+      const diff = now.getTime() - refreshToken.revokedAt.getTime();
+      if (diff < 30 * 1000) {
+        throw new Error("Token recently rotated");
+      }
       throw new Error("Invalid or expired refresh token");
     }
 
