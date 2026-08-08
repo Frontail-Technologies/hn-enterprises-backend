@@ -1,4 +1,5 @@
 import type {
+  customFieldAccessEnum,
   customFieldStatusEnum,
   customFieldValueTypeEnum,
   holidayStatusEnum,
@@ -11,6 +12,7 @@ export type MasterValueCategory = (typeof masterValueCategoryEnum.enumValues)[nu
 export type MasterValueStatus = (typeof masterValueStatusEnum.enumValues)[number];
 export type CustomFieldValueType = (typeof customFieldValueTypeEnum.enumValues)[number];
 export type CustomFieldStatus = (typeof customFieldStatusEnum.enumValues)[number];
+export type CustomFieldAccess = (typeof customFieldAccessEnum.enumValues)[number];
 export type HolidayType = (typeof holidayTypeEnum.enumValues)[number];
 export type HolidayStatus = (typeof holidayStatusEnum.enumValues)[number];
 
@@ -34,17 +36,24 @@ export type CustomFieldListQuery = {
 };
 
 export type CreateCustomFieldBody = {
-  key: string;
   label: string;
   groupName: string;
   width?: number;
+  sortOrder?: number;
   valueType?: CustomFieldValueType;
   dropdownOptions?: string[];
   required?: boolean;
+  supervisorAccess?: CustomFieldAccess;
   status?: CustomFieldStatus;
 };
 
-export type UpdateCustomFieldBody = Partial<Omit<CreateCustomFieldBody, "key">>;
+export type UpdateCustomFieldBody = Partial<CreateCustomFieldBody>;
+
+export type ReorderCustomFieldsBody = {
+  id: string;
+  groupName: string;
+  sortOrder: number;
+}[];
 
 export type HolidayListQuery = {
   status?: HolidayStatus;

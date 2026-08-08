@@ -48,8 +48,7 @@ export const auth = (app: Elysia) =>
 
       return {
         currentUser:
-          user?.status === "active" &&
-          user.currentSessionId === payload.sessionId
+          user?.status === "active"
             ? (payload as AuthTokenPayload)
             : null,
       };

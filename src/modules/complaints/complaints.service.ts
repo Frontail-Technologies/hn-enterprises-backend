@@ -127,4 +127,10 @@ export const complaintsService = {
     if (!complaint) throw new Error("Unable to update complaint");
     return complaint;
   },
+
+  async delete(id: string) {
+    const db = getDb();
+    await getComplaintOrThrow(id); // Ensure it exists
+    await db.delete(complaints).where(eq(complaints.id, id));
+  },
 };

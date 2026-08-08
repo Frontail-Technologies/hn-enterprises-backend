@@ -33,4 +33,14 @@ export const wagesController = {
       return { success: false, message: errorMessage(error, "Unable to save wage record") };
     }
   },
+
+  async delete({ params, set }: { params: { id: string }; set: SetContext }) {
+    try {
+      await wagesService.delete(params.id);
+      return ok(null, "Wage record deleted");
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to delete wage record") };
+    }
+  },
 };

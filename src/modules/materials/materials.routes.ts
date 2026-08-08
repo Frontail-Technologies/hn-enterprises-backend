@@ -1,6 +1,6 @@
 import { Elysia, t } from "elysia";
 import { auth } from "@plugins";
-import { materialsController } from "./materials.controller";
+import { materialsController, materialsImportController } from "./materials.controller";
 import {
   createMaterialBodySchema,
   createMaterialTransactionBodySchema,
@@ -20,6 +20,28 @@ export const materialsRoutes = new Elysia({ prefix: "/materials" })
     "/",
     ({ body, currentUser, set }) => materialsController.create({ body, currentUser, set }),
     { body: createMaterialBodySchema, requireRole: ["super_admin", "admin"] },
+  )
+  .post(
+    "/import/preview",
+    ({ body, currentUser, set }) => materialsImportController.preview({ body, currentUser, set }),
+    { body: t.Object({ file: t.File() }), requireRole: ["super_admin", "admin"] },
+  )
+  .post(
+    "/import/confirm",
+    ({ body, currentUser, set }) => materialsImportController.confirm({ body, currentUser, set }),
+    {
+      body: t.Object({
+        validRows: t.Array(
+          t.Object({
+            name: t.String(),
+            category: t.String(),
+            unit: t.String(),
+            reorderLevel: t.Number(),
+          }),
+        ),
+      }),
+      requireRole: ["super_admin", "admin"],
+    },
   )
   .get(
     "/transactions",

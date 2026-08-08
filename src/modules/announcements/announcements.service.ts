@@ -102,4 +102,10 @@ export const announcementsService = {
 
     return row;
   },
+
+  async delete(id: string) {
+    const db = getDb();
+    await getAnnouncementOrThrow(id); // Ensure it exists
+    await db.delete(announcements).where(eq(announcements.id, id));
+  },
 };

@@ -55,4 +55,14 @@ export const complaintsController = {
       return { success: false, message: errorMessage(error, "Unable to update complaint") };
     }
   },
+
+  async delete({ params, set }: { params: { id: string }; set: SetContext }) {
+    try {
+      await complaintsService.delete(params.id);
+      return ok(null, "Complaint deleted");
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to delete complaint") };
+    }
+  },
 };

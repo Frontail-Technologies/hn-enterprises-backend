@@ -1,5 +1,5 @@
 import type { SetContext } from "@modules/auth/auth.helpers";
-import { errorMessage, ok, statusFromError } from "@utils";
+import { errorMessage, ok, paginated, statusFromError } from "@utils";
 import { statsService } from "./stats.service";
 import { dashboardStatsService } from "./dashboard-stats.service";
 
@@ -22,9 +22,18 @@ export const statsController = {
     }
   },
 
-  async getDetails({ params, set }: { params: { type: string }; set: SetContext }) {
+  async getDetails({
+    params,
+    query,
+    set,
+  }: {
+    params: { type: string };
+    query: { page?: string; limit?: string };
+    set: SetContext;
+  }) {
     try {
-      return ok(await statsService.getDetails(params.type));
+      const { rows, pagination } = await statsService.getDetails(params.type, query);
+      return paginated(rows, pagination);
     } catch (error) {
       set.status = statusFromError(error);
       return { success: false, message: errorMessage(error, "Unable to load stat details") };

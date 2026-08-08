@@ -197,9 +197,7 @@ export const customers = pgTable(
     projectId: uuid("project_id")
       .notNull()
       .references(() => projects.id, { onDelete: "restrict" }),
-    siteId: uuid("site_id")
-      .notNull()
-      .references(() => projectSites.id, { onDelete: "restrict" }),
+    siteId: uuid("site_id").references(() => projectSites.id, { onDelete: "restrict" }),
     trBpNumber: text("tr_bp_number").notNull(),
     normalizedTrBpNumber: text("normalized_tr_bp_number").notNull(),
     mobileNumber: text("mobile_number"),
@@ -305,9 +303,7 @@ export const customerDocuments = pgTable(
     projectId: uuid("project_id")
       .notNull()
       .references(() => projects.id, { onDelete: "restrict" }),
-    siteId: uuid("site_id")
-      .notNull()
-      .references(() => projectSites.id, { onDelete: "restrict" }),
+    siteId: uuid("site_id").references(() => projectSites.id, { onDelete: "restrict" }),
     documentType: text("document_type").notNull(),
     category: text("category"),
     referenceNumber: text("reference_number"),

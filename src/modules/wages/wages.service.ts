@@ -97,4 +97,10 @@ export const wagesService = {
     if (!record) throw new Error("Unable to save wage record");
     return withComputed(record);
   },
+
+  async delete(id: string) {
+    const db = getDb();
+    const [deleted] = await db.delete(wageRecords).where(eq(wageRecords.id, id)).returning();
+    if (!deleted) throw new Error("Wage record not found");
+  },
 };

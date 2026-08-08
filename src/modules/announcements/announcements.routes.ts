@@ -31,4 +31,9 @@ export const announcementsRoutes = new Elysia({ prefix: "/announcements" })
     "/:id/publish",
     ({ params, set }) => announcementsController.publish({ params, set }),
     { params: t.Object({ id: t.String() }), requireRole: ["super_admin", "admin"] },
+  )
+  .delete(
+    "/:id",
+    ({ params, set }) => announcementsController.delete({ params, set }),
+    { params: t.Object({ id: t.String() }), requireRole: ["super_admin", "admin"] },
   );

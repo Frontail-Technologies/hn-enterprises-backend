@@ -76,7 +76,7 @@ function getStatKeyCondition(statKey: string) {
 export const customersService = {
   async list(query: CustomerListQuery) {
     const db = getDb();
-    const { page, limit, offset } = parsePagination(query);
+    const { page, limit, offset } = parsePagination(query, 10000);
     const searchPattern = toSearchPattern(query.search);
 
     const conditions = [
@@ -101,7 +101,12 @@ export const customersService = {
         where,
         limit,
         offset,
-        orderBy: (fields, { desc }) => [desc(fields.createdAt)],
+        // createdAt alone isn't unique - rows bulk-inserted in one statement
+        // (e.g. via import) share an identical timestamp, and Postgres doesn't
+        // guarantee stable ordering among ties across separate LIMIT/OFFSET
+        // queries. That let the same customer reappear (or get skipped) across
+        // pages during pagination. id is unique, so it makes the sort stable.
+        orderBy: (fields, { desc }) => [desc(fields.createdAt), desc(fields.id)],
         with: {
           project: true,
           site: true,
@@ -150,7 +155,7 @@ export const customersService = {
         conversionReportNumber: input.conversionReportNumber || null,
         status: input.status ?? "active",
         projectId: input.projectId,
-        siteId: input.siteId,
+        siteId: input.siteId || null,
         createdBy: userId,
         updatedBy: userId,
       })

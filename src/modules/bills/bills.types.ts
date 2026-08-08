@@ -1,8 +1,10 @@
-import type { billStageEnum, billStatusEnum, paymentModeEnum } from "@db/schema";
+import type { billPaymentStatusEnum, billStageEnum, billStatusEnum } from "@db/schema";
 
 export type BillStage = (typeof billStageEnum.enumValues)[number];
 export type BillStatus = (typeof billStatusEnum.enumValues)[number];
-export type PaymentMode = (typeof paymentModeEnum.enumValues)[number];
+// Free text, managed as master data ("Payment Types") - not a fixed enum.
+export type PaymentMode = string;
+export type BillPaymentStatus = (typeof billPaymentStatusEnum.enumValues)[number];
 
 export type BillListQuery = {
   page?: number | string;
@@ -31,5 +33,10 @@ export type CreateBillPaymentBody = {
   amount: number;
   paymentDate: string;
   mode: PaymentMode;
+  status?: BillPaymentStatus;
   remarks?: string;
+};
+
+export type UpdateBillPaymentBody = {
+  status: BillPaymentStatus;
 };

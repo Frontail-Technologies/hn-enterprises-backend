@@ -1,5 +1,6 @@
 import { t } from "elysia";
 import {
+  customFieldAccessEnum,
   customFieldStatusEnum,
   customFieldValueTypeEnum,
   holidayStatusEnum,
@@ -12,6 +13,7 @@ const masterValueCategorySchema = t.Union(masterValueCategoryEnum.enumValues.map
 const masterValueStatusSchema = t.Union(masterValueStatusEnum.enumValues.map((value) => t.Literal(value)));
 const customFieldValueTypeSchema = t.Union(customFieldValueTypeEnum.enumValues.map((value) => t.Literal(value)));
 const customFieldStatusSchema = t.Union(customFieldStatusEnum.enumValues.map((value) => t.Literal(value)));
+const customFieldAccessSchema = t.Union(customFieldAccessEnum.enumValues.map((value) => t.Literal(value)));
 const holidayTypeSchema = t.Union(holidayTypeEnum.enumValues.map((value) => t.Literal(value)));
 const holidayStatusSchema = t.Union(holidayStatusEnum.enumValues.map((value) => t.Literal(value)));
 
@@ -39,24 +41,52 @@ export const customFieldListQuerySchema = t.Object({
 });
 
 export const createCustomFieldBodySchema = t.Object({
-  key: t.String({ minLength: 1 }),
   label: t.String({ minLength: 1 }),
   groupName: t.String({ minLength: 1 }),
-  width: t.Optional(t.Number()),
+  width: t.Optional(t.Number({ minimum: 60 })),
+  sortOrder: t.Optional(t.Number()),
   valueType: t.Optional(customFieldValueTypeSchema),
   dropdownOptions: t.Optional(t.Array(t.String())),
   required: t.Optional(t.Boolean()),
+  supervisorAccess: t.Optional(customFieldAccessSchema),
   status: t.Optional(customFieldStatusSchema),
 });
 
 export const updateCustomFieldBodySchema = t.Object({
   label: t.Optional(t.String({ minLength: 1 })),
   groupName: t.Optional(t.String({ minLength: 1 })),
-  width: t.Optional(t.Number()),
+  width: t.Optional(t.Number({ minimum: 60 })),
+  sortOrder: t.Optional(t.Number()),
   valueType: t.Optional(customFieldValueTypeSchema),
   dropdownOptions: t.Optional(t.Array(t.String())),
   required: t.Optional(t.Boolean()),
+  supervisorAccess: t.Optional(customFieldAccessSchema),
   status: t.Optional(customFieldStatusSchema),
+});
+
+export const reorderCustomFieldsBodySchema = t.Array(
+  t.Object({
+    id: t.String({ minLength: 1 }),
+    groupName: t.String({ minLength: 1 }),
+    sortOrder: t.Number(),
+  }),
+);
+
+const customFieldImportRowSchema = t.Object({
+  rowNumber: t.Number(),
+  label: t.String(),
+  groupName: t.String(),
+  valueType: customFieldValueTypeSchema,
+  dropdownOptions: t.Array(t.String()),
+  required: t.Boolean(),
+  supervisorAccess: customFieldAccessSchema,
+  sortOrder: t.Optional(t.Number()),
+  issues: t.Array(t.String()),
+  warnings: t.Array(t.String()),
+});
+
+export const confirmCustomFieldsImportBodySchema = t.Object({
+  rows: t.Array(customFieldImportRowSchema),
 });
 
 export const holidayListQuerySchema = t.Object({

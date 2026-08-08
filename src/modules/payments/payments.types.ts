@@ -1,8 +1,9 @@
-import type { paymentCategoryEnum, paymentModeEnum, paymentStatusEnum } from "@db/schema";
+import type { paymentCategoryEnum, paymentStatusEnum } from "@db/schema";
 
 export type PaymentCategory = (typeof paymentCategoryEnum.enumValues)[number];
 export type PaymentStatus = (typeof paymentStatusEnum.enumValues)[number];
-export type PaymentMode = (typeof paymentModeEnum.enumValues)[number];
+// Free text, managed as master data ("Payment Types") - not a fixed enum.
+export type PaymentMode = string;
 
 export type PaymentListQuery = {
   page?: number | string;
@@ -21,6 +22,7 @@ export type CreatePaymentBody = {
   plumberId?: string;
   paidTo?: string;
   siteId?: string;
+  address?: string;
   customerId?: string;
   amount: number;
   paymentDate: string;

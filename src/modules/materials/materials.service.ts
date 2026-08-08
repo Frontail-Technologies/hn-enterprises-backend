@@ -253,6 +253,7 @@ export const materialsService = {
           supervisorId: input.supervisorId || null,
           supervisorName: supervisorName || null,
           siteId: input.siteId || null,
+          address: input.address || null,
           storeLabel: input.storeLabel || null,
           customerId: input.customerId || null,
           paymentId: input.paymentId || null,

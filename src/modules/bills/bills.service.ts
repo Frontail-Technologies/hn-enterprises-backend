@@ -5,6 +5,7 @@ import { normalizeKey } from "@modules/master-import/master-import.mapper";
 import { buildPaginationMeta, cleanObject, parsePagination, toSearchPattern } from "@utils";
 import type {
   BillListQuery,
+  BillPaymentStatus,
   CreateBillBody,
   CreateBillPaymentBody,
   UpdateBillBody,
@@ -112,10 +113,7 @@ export const billsService = {
 
   async delete(id: string) {
     const db = getDb();
-    const existing = await getBillOrThrow(id);
-    if (existing.status === "completed") {
-      throw new Error("Completed bills cannot be deleted. Please create a Void transaction instead to offset it.");
-    }
+    await getBillOrThrow(id);
 
     try {
       await db.delete(bills).where(eq(bills.id, id));
@@ -159,6 +157,7 @@ export const billsService = {
           amount: String(input.amount),
           paymentDate: new Date(input.paymentDate),
           mode: input.mode,
+          status: input.status ?? "cleared",
           receivedBy: userId,
           remarks: input.remarks || null,
         })
@@ -187,5 +186,19 @@ export const billsService = {
 
       return payment;
     });
+  },
+
+  async updatePaymentStatus(billId: string, paymentId: string, status: BillPaymentStatus) {
+    const db = getDb();
+    await getBillOrThrow(billId);
+
+    const [payment] = await db
+      .update(billPayments)
+      .set({ status, updatedAt: new Date() })
+      .where(and(eq(billPayments.id, paymentId), eq(billPayments.billId, billId)))
+      .returning();
+
+    if (!payment) throw new Error("Payment not found");
+    return payment;
   },
 };

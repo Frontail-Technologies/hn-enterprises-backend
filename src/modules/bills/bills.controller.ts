@@ -7,6 +7,7 @@ import type {
   CreateBillBody,
   CreateBillPaymentBody,
   UpdateBillBody,
+  UpdateBillPaymentBody,
 } from "./bills.types";
 
 export const billsController = {
@@ -100,6 +101,24 @@ export const billsController = {
     } catch (error) {
       set.status = statusFromError(error);
       return { success: false, message: errorMessage(error, "Unable to record payment") };
+    }
+  },
+
+  async updatePaymentStatus({
+    params,
+    body,
+    set,
+  }: {
+    params: { id: string; paymentId: string };
+    body: UpdateBillPaymentBody;
+    set: SetContext;
+  }) {
+    try {
+      const payment = await billsService.updatePaymentStatus(params.id, params.paymentId, body.status);
+      return ok(payment, "Payment status updated");
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to update payment status") };
     }
   },
 

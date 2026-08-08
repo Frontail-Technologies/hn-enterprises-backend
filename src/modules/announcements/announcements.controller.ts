@@ -78,4 +78,14 @@ export const announcementsController = {
       return { success: false, message: errorMessage(error, "Unable to publish announcement") };
     }
   },
+
+  async delete({ params, set }: { params: { id: string }; set: SetContext }) {
+    try {
+      await announcementsService.delete(params.id);
+      return ok(null, "Announcement deleted");
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to delete announcement") };
+    }
+  },
 };

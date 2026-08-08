@@ -1,6 +1,6 @@
 import { Elysia, t } from "elysia";
 import { auth } from "@plugins";
-import { paymentsController } from "./payments.controller";
+import { paymentsController, paymentsImportController } from "./payments.controller";
 import { createPaymentBodySchema, paymentListQuerySchema, updatePaymentBodySchema } from "./payments.schema";
 
 export const paymentsRoutes = new Elysia({ prefix: "/payments" })
@@ -13,6 +13,33 @@ export const paymentsRoutes = new Elysia({ prefix: "/payments" })
     "/",
     ({ body, currentUser, set }) => paymentsController.create({ body, currentUser, set }),
     { body: createPaymentBodySchema, requireAuth: true },
+  )
+  .post(
+    "/import/preview",
+    ({ body, currentUser, set }) => paymentsImportController.preview({ body, currentUser, set }),
+    { body: t.Object({ file: t.File() }), requireRole: ["super_admin", "admin"] },
+  )
+  .post(
+    "/import/confirm",
+    ({ body, currentUser, set }) => paymentsImportController.confirm({ body, currentUser, set }),
+    {
+      body: t.Object({
+        validRows: t.Array(
+          t.Object({
+            category: t.String(),
+            paidTo: t.String(),
+            plumberName: t.String(),
+            amount: t.String(),
+            paymentDate: t.String(),
+            mode: t.String(),
+            purpose: t.String(),
+            remarks: t.String(),
+            address: t.String(),
+          }),
+        ),
+      }),
+      requireRole: ["super_admin", "admin"],
+    },
   )
   .get(
     "/:id",

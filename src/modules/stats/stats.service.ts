@@ -1,6 +1,7 @@
 import { desc, inArray } from "drizzle-orm";
 import { getDb } from "@db";
 import { complaints, workProgressUpdates } from "@db/schema";
+import { buildPaginationMeta, parsePagination } from "@utils";
 import type { SupervisorStat, SupervisorStatDetailRow, SupervisorStatId, SupervisorStatTone } from "./stats.types";
 
 const STAT_DEFINITIONS: Record<SupervisorStatId, { label: string; suffix: string; tone: SupervisorStatTone }> = {
@@ -416,23 +417,38 @@ export const statsService = {
     });
   },
 
-  async getDetails(type: string): Promise<SupervisorStatDetailRow[]> {
+  async getDetails(type: string, query: { page?: string; limit?: string } = {}) {
     if (!isStatId(type)) throw new Error("Stat not found");
 
-    if (type === "dpr") return fetchDprDetailRows();
-    if (type === "planning") return fetchPlanningDetailRows();
-    if (type === "complaint-customer") return fetchComplaintDetailRows();
-    if ((UNTRACKED_STAT_IDS as string[]).includes(type)) return [];
+    // Each stat's row list is still built in full here (status per stat id is
+    // derived in JS per customer, not a column any of these can filter on in
+    // SQL without a much bigger per-stat rewrite) - paginating afterwards at
+    // least keeps the HTTP response small, which is the bulk of what made
+    // this slow on mobile.
+    let allRows: SupervisorStatDetailRow[];
+    if (type === "dpr") {
+      allRows = await fetchDprDetailRows();
+    } else if (type === "planning") {
+      allRows = await fetchPlanningDetailRows();
+    } else if (type === "complaint-customer") {
+      allRows = await fetchComplaintDetailRows();
+    } else if ((UNTRACKED_STAT_IDS as string[]).includes(type)) {
+      allRows = [];
+    } else {
+      const customers = await fetchCustomers();
 
-    const customers = await fetchCustomers();
-
-    if (type === "flushing-testing") {
-      const latestWorkProgress = await fetchLatestWorkProgress();
-      const latestByCustomer = new Map(latestWorkProgress.map((row) => [row.customerId, row]));
-      return buildFlushingTestingRows(customers, latestByCustomer);
+      if (type === "flushing-testing") {
+        const latestWorkProgress = await fetchLatestWorkProgress();
+        const latestByCustomer = new Map(latestWorkProgress.map((row) => [row.customerId, row]));
+        allRows = buildFlushingTestingRows(customers, latestByCustomer);
+      } else {
+        const detailStatId = type === "total-conversion-done" ? "conversion-done" : type;
+        allRows = customers.map((customer) => buildCustomerRow(customer, detailStatId).row);
+      }
     }
 
-    const detailStatId = type === "total-conversion-done" ? "conversion-done" : type;
-    return customers.map((customer) => buildCustomerRow(customer, detailStatId).row);
+    const { page, limit, offset } = parsePagination(query);
+    const rows = allRows.slice(offset, offset + limit);
+    return { rows, pagination: buildPaginationMeta(page, limit, allRows.length) };
   },
 };

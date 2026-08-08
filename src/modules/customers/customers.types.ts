@@ -35,7 +35,7 @@ export type CustomerJsonSections = {
 
 export type CreateCustomerBody = CustomerJsonSections & {
   projectId: string;
-  siteId: string;
+  siteId?: string;
   trBpNumber: string;
   mobileNumber?: string;
   customerName: string;

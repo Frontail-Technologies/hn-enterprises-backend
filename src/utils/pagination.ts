@@ -9,9 +9,13 @@ function toPositiveInt(value: number | string | undefined, fallback: number) {
   return Math.floor(parsed);
 }
 
-export function parsePagination(input: PaginationInput = {}) {
+export function parsePagination(input: PaginationInput = {}, maxLimit: number = MAX_LIMIT) {
   const page = toPositiveInt(input.page, 1);
-  const limit = Math.min(toPositiveInt(input.limit, DEFAULT_LIMIT), MAX_LIMIT);
+  
+  // Allow passing -1 to get up to maxLimit
+  const requestedLimit = input.limit === -1 || input.limit === "-1" ? maxLimit : toPositiveInt(input.limit, DEFAULT_LIMIT);
+  const limit = Math.min(requestedLimit, maxLimit);
+  
   const offset = (page - 1) * limit;
 
   return { page, limit, offset };

@@ -6,6 +6,7 @@ import {
   createBillBodySchema,
   createBillPaymentBodySchema,
   updateBillBodySchema,
+  updateBillPaymentBodySchema,
 } from "./bills.schema";
 
 export const billsRoutes = new Elysia({ prefix: "/bills" })
@@ -53,6 +54,15 @@ export const billsRoutes = new Elysia({ prefix: "/bills" })
     {
       params: t.Object({ id: t.String() }),
       body: createBillPaymentBodySchema,
+      requireRole: ["super_admin", "admin"],
+    },
+  )
+  .patch(
+    "/:id/payments/:paymentId",
+    ({ params, body, set }) => billsController.updatePaymentStatus({ params, body, set }),
+    {
+      params: t.Object({ id: t.String(), paymentId: t.String() }),
+      body: updateBillPaymentBodySchema,
       requireRole: ["super_admin", "admin"],
     },
   );

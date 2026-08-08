@@ -65,4 +65,14 @@ export const staffController = {
       return { success: false, message: errorMessage(error, "Unable to update staff record") };
     }
   },
+
+  async delete({ params, set }: { params: { id: string }; set: SetContext }) {
+    try {
+      await staffService.delete(params.id);
+      return ok(null, "Staff record deleted");
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to delete staff record") };
+    }
+  },
 };

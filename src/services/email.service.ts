@@ -1,4 +1,15 @@
-import { EMAIL_FROM, EMAIL_PROVIDER, NODE_ENV, RESEND_API_KEY } from "@constants";
+import nodemailer, { type Transporter } from "nodemailer";
+import {
+  EMAIL_FROM,
+  EMAIL_PROVIDER,
+  NODE_ENV,
+  RESEND_API_KEY,
+  SMTP_HOST,
+  SMTP_PASSWORD,
+  SMTP_PORT,
+  SMTP_SECURE,
+  SMTP_USER,
+} from "@constants";
 
 type SendEmailInput = {
   to: string;
@@ -33,8 +44,44 @@ async function sendWithResend(input: SendEmailInput) {
   }
 }
 
+// Reused across calls instead of creating a fresh SMTP connection per email.
+let smtpTransport: Transporter | null = null;
+
+function getSmtpTransport() {
+  if (smtpTransport) return smtpTransport;
+
+  if (!SMTP_HOST || !SMTP_USER || !SMTP_PASSWORD) {
+    throw new Error("SMTP_HOST, SMTP_USER and SMTP_PASSWORD are required for the smtp email provider");
+  }
+
+  smtpTransport = nodemailer.createTransport({
+    host: SMTP_HOST,
+    port: SMTP_PORT,
+    secure: SMTP_SECURE,
+    auth: { user: SMTP_USER, pass: SMTP_PASSWORD },
+  });
+
+  return smtpTransport;
+}
+
+async function sendWithSmtp(input: SendEmailInput) {
+  const transport = getSmtpTransport();
+  await transport.sendMail({
+    from: EMAIL_FROM,
+    to: input.to,
+    subject: input.subject,
+    html: input.html,
+    text: input.text,
+  });
+}
+
 export const emailService = {
   async send(input: SendEmailInput) {
+    if (EMAIL_PROVIDER === "smtp") {
+      await sendWithSmtp(input);
+      return;
+    }
+
     if (EMAIL_PROVIDER === "resend") {
       await sendWithResend(input);
       return;

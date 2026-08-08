@@ -54,6 +54,12 @@ export const SEED_SUPERVISOR_PASSWORD = process.env.SEED_SUPERVISOR_PASSWORD || 
 export const EMAIL_PROVIDER = process.env.EMAIL_PROVIDER || "console";
 export const EMAIL_FROM = process.env.EMAIL_FROM || "HN Enterprises <no-reply@hnenterprises.com>";
 export const RESEND_API_KEY = process.env.RESEND_API_KEY;
+
+export const SMTP_HOST = process.env.SMTP_HOST;
+export const SMTP_PORT = Number(process.env.SMTP_PORT || 587);
+export const SMTP_SECURE = process.env.SMTP_SECURE === "true";
+export const SMTP_USER = process.env.SMTP_USER;
+export const SMTP_PASSWORD = process.env.SMTP_PASSWORD;
 export const PASSWORD_RESET_OTP_EXPIRY_MINUTES = Number(process.env.PASSWORD_RESET_OTP_EXPIRY_MINUTES || 10);
 export const PASSWORD_RESET_OTP_MAX_ATTEMPTS = Number(process.env.PASSWORD_RESET_OTP_MAX_ATTEMPTS || 5);
 

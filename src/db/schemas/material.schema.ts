@@ -65,6 +65,7 @@ export const materialTransactions = pgTable(
     supervisorName: text("supervisor_name"),
     supervisorId: uuid("supervisor_id").references(() => users.id, { onDelete: "set null" }),
     siteId: uuid("site_id").references(() => projectSites.id, { onDelete: "set null" }),
+    address: text("address"),
     storeLabel: text("store_label"),
     customerId: uuid("customer_id").references(() => customers.id, { onDelete: "set null" }),
     paymentId: uuid("payment_id").references(() => payments.id, { onDelete: "set null" }),

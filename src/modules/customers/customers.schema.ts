@@ -41,7 +41,7 @@ const customerJsonSectionsSchema = t.Object({
 const createCustomerFieldsSchema = t.Composite([
   t.Object({
     projectId: t.String({ minLength: 1 }),
-    siteId: t.String({ minLength: 1 }),
+    siteId: t.Optional(t.String()),
     trBpNumber: t.String({ minLength: 1 }),
     mobileNumber: t.Optional(t.String()),
     customerName: t.String({ minLength: 1 }),

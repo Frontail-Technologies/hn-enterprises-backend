@@ -3,6 +3,7 @@ import type { SetContext } from "@modules/auth/auth.helpers";
 import { uploadService } from "@services";
 import { errorMessage, ok, paginated, statusFromError } from "@utils";
 import { materialsService } from "./materials.service";
+import { materialsImportService } from "./materials.import.service";
 import type {
   CreateMaterialBody,
   CreateMaterialTransactionBody,
@@ -148,3 +149,52 @@ export const materialsController = {
     }
   },
 };
+
+export const materialsImportController = {
+  async preview({
+    body,
+    currentUser,
+    set,
+  }: {
+    body: unknown;
+    currentUser: AuthTokenPayload | null;
+    set: SetContext;
+  }) {
+    try {
+      if (!currentUser) throw new Error("Authentication required");
+      const file = getUploadFile(body);
+      return ok(await materialsImportService.preview(file, currentUser));
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to preview import") };
+    }
+  },
+
+  async confirm({
+    body,
+    currentUser,
+    set,
+  }: {
+    body: { validRows: { name: string; category: string; unit: string; reorderLevel: number }[] };
+    currentUser: AuthTokenPayload | null;
+    set: SetContext;
+  }) {
+    try {
+      if (!currentUser) throw new Error("Authentication required");
+      return ok(await materialsImportService.confirm(body.validRows, currentUser), "Import successful");
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to confirm import") };
+    }
+  },
+};
+
+function getUploadFile(body: unknown): File {
+  const file = body && typeof body === "object" ? (body as Record<string, unknown>).file : null;
+
+  if (!(file instanceof File)) {
+    throw new Error("Import file is required");
+  }
+
+  return file;
+}

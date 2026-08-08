@@ -10,7 +10,6 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { users } from "./auth.schema";
-import { paymentModeEnum } from "./common.schema";
 import { customers } from "./customer.schema";
 
 export const billStageEnum = pgEnum("bill_stage", [
@@ -26,6 +25,12 @@ export const billStatusEnum = pgEnum("bill_status", [
   "submitted",
   "completed",
   "overdue",
+]);
+
+export const billPaymentStatusEnum = pgEnum("bill_payment_status", [
+  "pending",
+  "cleared",
+  "bounced",
 ]);
 
 export const bills = pgTable(
@@ -69,7 +74,10 @@ export const billPayments = pgTable(
       .references(() => bills.id, { onDelete: "cascade" }),
     amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
     paymentDate: timestamp("payment_date", { withTimezone: true }).notNull(),
-    mode: paymentModeEnum("mode").notNull(),
+    // Free text, not an enum - see the matching note on payments.mode in
+    // payment.schema.ts.
+    mode: text("mode").notNull(),
+    status: billPaymentStatusEnum("status").notNull().default("cleared"),
     receivedBy: uuid("received_by").references(() => users.id, { onDelete: "set null" }),
     remarks: text("remarks"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

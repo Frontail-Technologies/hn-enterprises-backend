@@ -27,4 +27,9 @@ export const staffRoutes = new Elysia({ prefix: "/staff" })
       body: updateStaffBodySchema,
       requireRole: ["super_admin", "admin"],
     },
+  )
+  .delete(
+    "/:id",
+    ({ params, set }) => staffController.delete({ params, set }),
+    { params: t.Object({ id: t.String() }), requireRole: ["super_admin", "admin"] },
   );

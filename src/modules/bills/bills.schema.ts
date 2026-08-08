@@ -1,9 +1,9 @@
 import { t } from "elysia";
-import { billStageEnum, billStatusEnum, paymentModeEnum } from "@db/schema";
+import { billPaymentStatusEnum, billStageEnum, billStatusEnum } from "@db/schema";
 
 const billStageSchema = t.Union(billStageEnum.enumValues.map((value) => t.Literal(value)));
 const billStatusSchema = t.Union(billStatusEnum.enumValues.map((value) => t.Literal(value)));
-const paymentModeSchema = t.Union(paymentModeEnum.enumValues.map((value) => t.Literal(value)));
+const billPaymentStatusSchema = t.Union(billPaymentStatusEnum.enumValues.map((value) => t.Literal(value)));
 
 export const billListQuerySchema = t.Object({
   page: t.Optional(t.String()),
@@ -31,6 +31,11 @@ export const updateBillBodySchema = t.Partial(createBillBodySchema);
 export const createBillPaymentBodySchema = t.Object({
   amount: t.Number(),
   paymentDate: t.String({ minLength: 1 }),
-  mode: paymentModeSchema,
+  mode: t.String({ minLength: 1 }),
+  status: t.Optional(billPaymentStatusSchema),
   remarks: t.Optional(t.String()),
+});
+
+export const updateBillPaymentBodySchema = t.Object({
+  status: billPaymentStatusSchema,
 });

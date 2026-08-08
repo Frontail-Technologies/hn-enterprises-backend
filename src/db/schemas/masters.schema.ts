@@ -18,10 +18,8 @@ export const masterValueCategoryEnum = pgEnum("master_value_category", [
   "house_types",
   "schemes",
   "document_categories",
-  "staff_roles",
-  "bank_types",
-  "upi_types",
   "material_categories",
+  "meter_types",
 ]);
 
 export const masterValueStatusEnum = pgEnum("master_value_status", ["active", "inactive"]);
@@ -56,6 +54,7 @@ export const customFieldValueTypeEnum = pgEnum("custom_field_value_type", [
 ]);
 
 export const customFieldStatusEnum = pgEnum("custom_field_status", ["active", "inactive"]);
+export const customFieldAccessEnum = pgEnum("custom_field_access", ["admin_only", "supervisor_view", "supervisor_edit"]);
 
 export const customFieldDefinitions = pgTable(
   "custom_field_definitions",
@@ -68,6 +67,8 @@ export const customFieldDefinitions = pgTable(
     valueType: customFieldValueTypeEnum("value_type").notNull().default("text"),
     dropdownOptions: jsonb("dropdown_options").$type<string[]>(),
     required: boolean("required").notNull().default(false),
+    sortOrder: integer("sort_order").notNull().default(0),
+    supervisorAccess: customFieldAccessEnum("supervisor_access").notNull().default("admin_only"),
     status: customFieldStatusEnum("status").notNull().default("active"),
     createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
     updatedBy: uuid("updated_by").references(() => users.id, { onDelete: "set null" }),

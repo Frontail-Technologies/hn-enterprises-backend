@@ -1,6 +1,6 @@
 import { Elysia, t } from "elysia";
 import { auth } from "@plugins";
-import { usersController } from "./users.controller";
+import { usersController, usersImportController } from "./users.controller";
 import {
   createUserBodySchema,
   resetPasswordBodySchema,
@@ -14,6 +14,26 @@ export const usersRoutes = new Elysia({ prefix: "/users" })
     query: userListQuerySchema,
     requireRole: ["super_admin", "admin"],
   })
+  .post(
+    "/import/preview",
+    ({ body, currentUser, set }) => usersImportController.preview({ body: body as any, currentUser, set }),
+    {
+      body: t.Object({
+        file: t.File(),
+      }),
+      requireRole: ["super_admin", "admin"],
+    },
+  )
+  .post(
+    "/import/confirm",
+    ({ body, currentUser, set }) => usersImportController.confirm({ body: body as any, currentUser, set }),
+    {
+      body: t.Object({
+        validRows: t.Array(t.Any()),
+      }),
+      requireRole: ["super_admin", "admin"],
+    },
+  )
   .post(
     "/",
     ({ body, currentUser, set }) => usersController.create({ body, currentUser, set }),

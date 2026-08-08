@@ -1,7 +1,6 @@
 import { relations } from "drizzle-orm";
 import { index, jsonb, numeric, pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { users } from "./auth.schema";
-import { paymentModeEnum } from "./common.schema";
 import { customers } from "./customer.schema";
 import { plumbers } from "./plumber.schema";
 import { projectSites } from "./project.schema";
@@ -31,10 +30,14 @@ export const payments = pgTable(
     plumberId: uuid("plumber_id").references(() => plumbers.id, { onDelete: "set null" }),
     paidTo: text("paid_to"),
     siteId: uuid("site_id").references(() => projectSites.id, { onDelete: "set null" }),
+    address: text("address"),
     customerId: uuid("customer_id").references(() => customers.id, { onDelete: "set null" }),
     amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
     paymentDate: timestamp("payment_date", { withTimezone: true }).notNull(),
-    mode: paymentModeEnum("mode").notNull(),
+    // Free text, not an enum - payment modes are managed as master data
+    // ("Payment Types"), so any value an admin adds there must be storable
+    // without a code change/migration.
+    mode: text("mode").notNull(),
     status: paymentStatusEnum("status").notNull().default("draft"),
     purpose: text("purpose"),
     remarks: text("remarks"),

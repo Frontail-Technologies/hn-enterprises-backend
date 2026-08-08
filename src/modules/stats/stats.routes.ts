@@ -1,7 +1,7 @@
 import { Elysia } from "elysia";
 import { auth } from "@plugins";
 import { statsController } from "./stats.controller";
-import { statDetailParamsSchema } from "./stats.schema";
+import { statDetailParamsSchema, statDetailQuerySchema } from "./stats.schema";
 
 export const statsRoutes = new Elysia({ prefix: "/stats" })
   .use(auth)
@@ -13,6 +13,6 @@ export const statsRoutes = new Elysia({ prefix: "/stats" })
   })
   .get(
     "/:type/details",
-    ({ params, set }) => statsController.getDetails({ params, set }),
-    { params: statDetailParamsSchema, requireAuth: true },
+    ({ params, query, set }) => statsController.getDetails({ params, query, set }),
+    { params: statDetailParamsSchema, query: statDetailQuerySchema, requireAuth: true },
   );

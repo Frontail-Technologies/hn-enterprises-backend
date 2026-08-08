@@ -26,4 +26,9 @@ export const complaintsRoutes = new Elysia({ prefix: "/complaints" })
       body: updateComplaintBodySchema,
       requireAuth: true,
     },
+  )
+  .delete(
+    "/:id",
+    ({ params, set }) => complaintsController.delete({ params, set }),
+    { params: t.Object({ id: t.String() }), requireRole: ["super_admin", "admin"] },
   );

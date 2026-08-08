@@ -10,10 +10,24 @@ import type {
   CustomFieldListQuery,
   HolidayListQuery,
   MasterValueListQuery,
+  ReorderCustomFieldsBody,
   UpdateCustomFieldBody,
   UpdateHolidayBody,
   UpdateMasterValueBody,
 } from "./masters.types";
+
+// Deterministic label -> camelCase key derivation, shared by single-create and
+// bulk import so the two paths can't drift into generating different keys for
+// the same label. Callers are responsible for resolving uniqueness (a DB
+// lookup for one-off creates, an in-memory set for a batch import).
+export function buildCustomFieldKey(label: string): string {
+  return label
+    .trim()
+    .replace(/[^a-zA-Z0-9\s]/g, "")
+    .split(/\s+/)
+    .map((word, i) => (i === 0 ? word.toLowerCase() : word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()))
+    .join("");
+}
 
 async function getMasterValueOrThrow(id: string) {
   const db = getDb();
@@ -81,6 +95,12 @@ export const masterValuesService = {
     if (!row) throw new Error("Unable to update master value");
     return row;
   },
+
+  async delete(id: string) {
+    const db = getDb();
+    await getMasterValueOrThrow(id);
+    await db.delete(masterValues).where(eq(masterValues.id, id));
+  },
 };
 
 async function getCustomFieldOrThrow(id: string) {
@@ -94,34 +114,43 @@ export const customFieldDefinitionsService = {
   async list(query: CustomFieldListQuery) {
     const db = getDb();
     const where = query.status ? eq(customFieldDefinitions.status, query.status) : undefined;
-    return db.select().from(customFieldDefinitions).where(where).orderBy(customFieldDefinitions.label);
+    return db.select().from(customFieldDefinitions).where(where)
+      .orderBy(customFieldDefinitions.groupName, customFieldDefinitions.sortOrder, customFieldDefinitions.label);
+  },
+
+  async getGroups() {
+    const db = getDb();
+    const rows = await db
+      .selectDistinct({ groupName: customFieldDefinitions.groupName })
+      .from(customFieldDefinitions)
+      .orderBy(customFieldDefinitions.groupName);
+    return rows.map((r) => r.groupName);
   },
 
   async create(input: CreateCustomFieldBody, userId: string) {
     const db = getDb();
-    // Not run through normalizeKey: this is a programmatic identifier used to
-    // read/write a specific customers.customFields JSONB property, not
-    // freeform text - normalizing it would make it unable to match keys
-    // already written under the original casing.
-    const key = input.key.trim();
+    const key = buildCustomFieldKey(input.label);
 
+    // Make key unique if collision
     const [existing] = await db
       .select({ id: customFieldDefinitions.id })
       .from(customFieldDefinitions)
       .where(eq(customFieldDefinitions.key, key))
       .limit(1);
-    if (existing) throw new Error("A custom field with this key already exists");
+    const finalKey = existing ? `${key}_${Date.now()}` : key;
 
     const [row] = await db
       .insert(customFieldDefinitions)
       .values({
-        key,
+        key: finalKey,
         label: input.label,
         groupName: input.groupName,
         width: input.width ?? 150,
         valueType: input.valueType ?? "text",
         dropdownOptions: input.valueType === "dropdown" ? input.dropdownOptions ?? [] : null,
         required: input.required ?? false,
+        sortOrder: input.sortOrder ?? 0,
+        supervisorAccess: input.supervisorAccess ?? "admin_only",
         status: input.status ?? "active",
         createdBy: userId,
         updatedBy: userId,
@@ -140,8 +169,10 @@ export const customFieldDefinitionsService = {
       label: input.label,
       groupName: input.groupName,
       width: input.width,
+      sortOrder: input.sortOrder,
       valueType: input.valueType,
       required: input.required,
+      supervisorAccess: input.supervisorAccess,
       status: input.status,
     });
 
@@ -158,6 +189,28 @@ export const customFieldDefinitionsService = {
 
     if (!row) throw new Error("Unable to update custom field");
     return row;
+  },
+
+  async delete(id: string) {
+    const db = getDb();
+    await getCustomFieldOrThrow(id);
+    await db.delete(customFieldDefinitions).where(eq(customFieldDefinitions.id, id));
+  },
+
+  // Bulk position/group update from drag-and-drop reordering - one transaction
+  // so a partial failure can't leave the list in a half-reordered state.
+  async reorder(items: ReorderCustomFieldsBody, userId: string) {
+    if (!items.length) return;
+
+    const db = getDb();
+    await db.transaction(async (tx) => {
+      for (const item of items) {
+        await tx
+          .update(customFieldDefinitions)
+          .set({ groupName: item.groupName, sortOrder: item.sortOrder, updatedBy: userId, updatedAt: new Date() })
+          .where(eq(customFieldDefinitions.id, item.id));
+      }
+    });
   },
 };
 
@@ -218,5 +271,11 @@ export const holidaysService = {
 
     if (!row) throw new Error("Unable to update holiday");
     return row;
+  },
+
+  async delete(id: string) {
+    const db = getDb();
+    await getHolidayOrThrow(id);
+    await db.delete(holidays).where(eq(holidays.id, id));
   },
 };

@@ -209,4 +209,11 @@ export const staffService = {
 
     return getStaffOrThrow(id);
   },
+
+  async delete(id: string) {
+    const existing = await getStaffOrThrow(id);
+    const db = getDb();
+    // Soft delete: set user status to inactive
+    await db.update(users).set({ status: "inactive", updatedAt: new Date() }).where(eq(users.id, existing.userId));
+  },
 };

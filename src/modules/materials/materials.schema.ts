@@ -48,6 +48,7 @@ export const createMaterialTransactionBodySchema = t.Object({
   plumberId: t.Optional(t.String()),
   supervisorId: t.Optional(t.String()),
   siteId: t.Optional(t.String()),
+  address: t.Optional(t.String()),
   storeLabel: t.Optional(t.String()),
   customerId: t.Optional(t.String()),
   paymentId: t.Optional(t.String()),

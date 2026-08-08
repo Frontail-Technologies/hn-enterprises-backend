@@ -11,6 +11,7 @@
     "migrate": "drizzle-kit push",
     "seed:admin": "bun run src/scripts/seed-admin.ts",
     "seed:supervisor": "bun run src/scripts/seed-supervisor.ts",
+    "seed:payment-modes": "bun run src/scripts/seed-payment-modes.ts",
     "backfill:plumbers": "bun run src/scripts/backfill-plumbers.ts",
     "studio": "drizzle-kit studio"
   },
@@ -24,11 +25,13 @@
     "drizzle-orm": "^0.45.1",
     "elysia": "latest",
     "exceljs": "^4.4.0",
+    "nodemailer": "^9.0.5",
     "postgres": "^3.4.8",
     "sharp": "^0.35.3",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@types/nodemailer": "^8.0.1",
     "bun-types": "latest",
     "drizzle-kit": "^0.31.9",
     "typescript": "^5.8.3"

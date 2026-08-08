@@ -2,6 +2,7 @@ import type { AuthTokenPayload } from "@types";
 import type { SetContext } from "@modules/auth/auth.helpers";
 import { errorMessage, ok, statusFromError } from "@utils";
 import { customFieldDefinitionsService, holidaysService, masterValuesService } from "./masters.service";
+import { masterValuesImportService } from "./masters.import.service";
 import type {
   CreateCustomFieldBody,
   CreateHolidayBody,
@@ -9,6 +10,7 @@ import type {
   CustomFieldListQuery,
   HolidayListQuery,
   MasterValueListQuery,
+  ReorderCustomFieldsBody,
   UpdateCustomFieldBody,
   UpdateHolidayBody,
   UpdateMasterValueBody,
@@ -60,6 +62,15 @@ export const masterValuesController = {
       return { success: false, message: errorMessage(error, "Unable to update master value") };
     }
   },
+  async delete({ params, set }: { params: { id: string }; set: SetContext }) {
+    try {
+      await masterValuesService.delete(params.id);
+      return ok(null, "Master value deleted");
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to delete master value") };
+    }
+  },
 };
 
 export const customFieldDefinitionsController = {
@@ -69,6 +80,14 @@ export const customFieldDefinitionsController = {
     } catch (error) {
       set.status = statusFromError(error);
       return { success: false, message: errorMessage(error, "Unable to list custom fields") };
+    }
+  },
+  async getGroups({ set }: { set: SetContext }) {
+    try {
+      return ok(await customFieldDefinitionsService.getGroups());
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to list groups") };
     }
   },
   async create({
@@ -106,6 +125,33 @@ export const customFieldDefinitionsController = {
     } catch (error) {
       set.status = statusFromError(error);
       return { success: false, message: errorMessage(error, "Unable to update custom field") };
+    }
+  },
+  async delete({ params, set }: { params: { id: string }; set: SetContext }) {
+    try {
+      await customFieldDefinitionsService.delete(params.id);
+      return ok(null, "Custom field deleted");
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to delete custom field") };
+    }
+  },
+  async reorder({
+    body,
+    currentUser,
+    set,
+  }: {
+    body: ReorderCustomFieldsBody;
+    currentUser: AuthTokenPayload | null;
+    set: SetContext;
+  }) {
+    try {
+      if (!currentUser) throw new Error("Authentication required");
+      await customFieldDefinitionsService.reorder(body, currentUser.id);
+      return ok(null, "Custom fields reordered");
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to reorder custom fields") };
     }
   },
 };
@@ -156,4 +202,65 @@ export const holidaysController = {
       return { success: false, message: errorMessage(error, "Unable to update holiday") };
     }
   },
+  async delete({ params, set }: { params: { id: string }; set: SetContext }) {
+    try {
+      await holidaysService.delete(params.id);
+      return ok(null, "Holiday deleted");
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to delete holiday") };
+    }
+  },
+};
+
+function getUploadFile(body: unknown): File {
+  const file = body && typeof body === "object" ? (body as Record<string, unknown>).file : null;
+
+  if (!(file instanceof File)) {
+    throw new Error("Import file is required");
+  }
+
+  return file;
+}
+
+export const masterValuesImportController = {
+  async preview({
+    body,
+    currentUser,
+    set,
+  }: {
+    body: { file: File; category: string };
+    currentUser: AuthTokenPayload | null;
+    set: SetContext;
+  }) {
+    try {
+      if (!currentUser) throw new Error("Authentication required");
+      const file = getUploadFile(body);
+      const category = body.category as any;
+      return ok(await masterValuesImportService.preview(file, category, currentUser));
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to preview import") };
+    }
+  },
+  async confirm({
+    body,
+    currentUser,
+    set,
+  }: {
+    body: { validRows: { value: string; description: string }[]; category: string };
+    currentUser: AuthTokenPayload | null;
+    set: SetContext;
+  }) {
+    try {
+      if (!currentUser) throw new Error("Authentication required");
+      return ok(
+        await masterValuesImportService.confirm(body.validRows, body.category as any, currentUser),
+        "Import successful"
+      );
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to confirm import") };
+    }
+  }
 };

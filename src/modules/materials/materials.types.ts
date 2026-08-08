@@ -42,6 +42,7 @@ export type CreateMaterialTransactionBody = {
   plumberId?: string;
   supervisorId?: string;
   siteId?: string;
+  address?: string;
   storeLabel?: string;
   customerId?: string;
   paymentId?: string;

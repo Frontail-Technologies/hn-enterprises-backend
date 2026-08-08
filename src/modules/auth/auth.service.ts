@@ -104,7 +104,7 @@ async function getActiveUserBySession(userId: string, sessionId: string) {
   const db = getDb();
   const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
 
-  if (!user || user.status !== "active" || user.currentSessionId !== sessionId) {
+  if (!user || user.status !== "active") {
     throw new Error("Session expired. Please login again.");
   }
 
