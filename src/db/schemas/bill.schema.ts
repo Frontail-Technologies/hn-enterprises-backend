@@ -11,6 +11,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { users } from "./auth.schema";
 import { customers } from "./customer.schema";
+import { projects } from "./project.schema";
 
 export const billStageEnum = pgEnum("bill_stage", [
   "gi",
@@ -37,9 +38,15 @@ export const bills = pgTable(
   "bills",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    customerId: uuid("customer_id")
+    // Billing now happens at the project level - projectId is the real
+    // ownership link. customerId is kept (nullable) as an optional reference
+    // to which customer's work a bill relates to, not as the bill's owner.
+    // (Existing rows were backfilled via backfill-bill-projects.ts before
+    // this was made required.)
+    projectId: uuid("project_id")
       .notNull()
-      .references(() => customers.id, { onDelete: "restrict" }),
+      .references(() => projects.id, { onDelete: "restrict" }),
+    customerId: uuid("customer_id").references(() => customers.id, { onDelete: "set null" }),
     billNumber: text("bill_number").notNull(),
     normalizedBillNumber: text("normalized_bill_number").notNull(),
     stage: billStageEnum("stage").notNull().default("other"),
@@ -59,6 +66,7 @@ export const bills = pgTable(
     normalizedBillNumberIdx: uniqueIndex("bills_normalized_bill_number_idx").on(
       table.normalizedBillNumber,
     ),
+    projectIdx: index("bills_project_idx").on(table.projectId),
     customerIdx: index("bills_customer_idx").on(table.customerId),
     statusIdx: index("bills_status_idx").on(table.status),
     stageIdx: index("bills_stage_idx").on(table.stage),
@@ -89,6 +97,10 @@ export const billPayments = pgTable(
 );
 
 export const billsRelations = relations(bills, ({ one, many }) => ({
+  project: one(projects, {
+    fields: [bills.projectId],
+    references: [projects.id],
+  }),
   customer: one(customers, {
     fields: [bills.customerId],
     references: [customers.id],

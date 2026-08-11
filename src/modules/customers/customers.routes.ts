@@ -1,6 +1,6 @@
 import { Elysia, t } from "elysia";
 import { auth } from "@plugins";
-import { customersController } from "./customers.controller";
+import { customersController, customersBulkController } from "./customers.controller";
 import {
   createCustomerBodySchema,
   createCustomerDocumentBodySchema,
@@ -9,6 +9,7 @@ import {
   updateCustomerBodySchema,
   upsertLmcPipeRecordBodySchema,
 } from "./customers.schema";
+import { bulkDeleteBodySchema, bulkRemarkBodySchema, bulkUpdateBodySchema } from "./customers-bulk.schema";
 
 export const customersRoutes = new Elysia({ prefix: "/customers" })
   .use(auth)
@@ -44,6 +45,33 @@ export const customersRoutes = new Elysia({ prefix: "/customers" })
     ({ params, currentUser, set }) => customersController.delete({ params, currentUser, set }),
     {
       params: t.Object({ id: t.String() }),
+      requireRole: ["super_admin", "admin"],
+    },
+  )
+  // Bulk operations (§15) - static paths, registered ahead of any future
+  // dynamic collision risk even though Elysia already prioritizes static
+  // routes over `/:id`-style params.
+  .post(
+    "/bulk/update",
+    ({ body, currentUser, set }) => customersBulkController.update({ body, currentUser, set }),
+    {
+      body: bulkUpdateBodySchema,
+      requireRole: ["super_admin", "admin"],
+    },
+  )
+  .post(
+    "/bulk/remark",
+    ({ body, currentUser, set }) => customersBulkController.remark({ body, currentUser, set }),
+    {
+      body: bulkRemarkBodySchema,
+      requireRole: ["super_admin", "admin", "supervisor"],
+    },
+  )
+  .post(
+    "/bulk/delete",
+    ({ body, currentUser, set }) => customersBulkController.remove({ body, currentUser, set }),
+    {
+      body: bulkDeleteBodySchema,
       requireRole: ["super_admin", "admin"],
     },
   )

@@ -3,7 +3,7 @@ import { index, jsonb, numeric, pgEnum, pgTable, text, timestamp, uuid } from "d
 import { users } from "./auth.schema";
 import { customers } from "./customer.schema";
 import { plumbers } from "./plumber.schema";
-import { projectSites } from "./project.schema";
+import { projects, projectSites } from "./project.schema";
 import { materialTransactions } from "./material.schema";
 
 export const paymentCategoryEnum = pgEnum("payment_category", [
@@ -32,6 +32,11 @@ export const payments = pgTable(
     siteId: uuid("site_id").references(() => projectSites.id, { onDelete: "set null" }),
     address: text("address"),
     customerId: uuid("customer_id").references(() => customers.id, { onDelete: "set null" }),
+    // Nullable, additive (Command Center Phase 1) - most historical rows resolve
+    // their project via siteId/customerId instead. This exists so expenses with
+    // no site or customer (rent, transport, misc project cost) can still be
+    // attributed to a project directly, without requiring one.
+    projectId: uuid("project_id").references(() => projects.id, { onDelete: "set null" }),
     amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
     paymentDate: timestamp("payment_date", { withTimezone: true }).notNull(),
     // Free text, not an enum - payment modes are managed as master data
@@ -52,6 +57,7 @@ export const payments = pgTable(
     statusIdx: index("payments_status_idx").on(table.status),
     plumberIdx: index("payments_plumber_idx").on(table.plumberId),
     siteIdx: index("payments_site_idx").on(table.siteId),
+    projectIdx: index("payments_project_idx").on(table.projectId),
     dateIdx: index("payments_date_idx").on(table.paymentDate),
   }),
 );
@@ -60,5 +66,6 @@ export const paymentsRelations = relations(payments, ({ one, many }) => ({
   plumber: one(plumbers, { fields: [payments.plumberId], references: [plumbers.id] }),
   site: one(projectSites, { fields: [payments.siteId], references: [projectSites.id] }),
   customer: one(customers, { fields: [payments.customerId], references: [customers.id] }),
+  project: one(projects, { fields: [payments.projectId], references: [projects.id] }),
   transactions: many(materialTransactions),
 }));

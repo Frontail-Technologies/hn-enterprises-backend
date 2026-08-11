@@ -25,6 +25,16 @@ export const projectsRoutes = new Elysia({ prefix: "/projects" })
     ({ params, set }) => projectsController.get({ params, set }),
     { params: t.Object({ id: t.String() }), requireAuth: true },
   )
+  .get(
+    "/:id/summary",
+    ({ params, set }) => projectsController.getSummary({ params, set }),
+    { params: t.Object({ id: t.String() }), requireAuth: true },
+  )
+  .get(
+    "/:id/team",
+    ({ params, set }) => projectsController.getTeam({ params, set }),
+    { params: t.Object({ id: t.String() }), requireAuth: true },
+  )
   .patch(
     "/:id",
     ({ params, body, currentUser, set }) =>

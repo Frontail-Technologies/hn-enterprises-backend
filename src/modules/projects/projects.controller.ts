@@ -2,6 +2,8 @@ import type { AuthTokenPayload } from "@types";
 import type { SetContext } from "@modules/auth/auth.helpers";
 import { errorMessage, ok, paginated, statusFromError } from "@utils";
 import { projectsService } from "./projects.service";
+import { projectsSummaryService } from "./projects-summary.service";
+import { projectsTeamService } from "./projects-team.service";
 import type {
   CreateProjectBody,
   CreateProjectDocumentBody,
@@ -186,6 +188,26 @@ export const projectsController = {
     } catch (error) {
       set.status = statusFromError(error);
       return { success: false, message: errorMessage(error, "Unable to delete project document") };
+    }
+  },
+
+  async getSummary({ params, set }: { params: { id: string }; set: SetContext }) {
+    try {
+      const summary = await projectsSummaryService.getSummary(params.id);
+      return ok(summary);
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to load project summary") };
+    }
+  },
+
+  async getTeam({ params, set }: { params: { id: string }; set: SetContext }) {
+    try {
+      const team = await projectsTeamService.getTeam(params.id);
+      return ok(team);
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to load project team") };
     }
   },
 };

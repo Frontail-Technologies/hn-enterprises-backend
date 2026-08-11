@@ -35,6 +35,7 @@ export const billsService = {
     const searchPattern = toSearchPattern(query.search);
 
     const conditions = [
+      query.projectId ? eq(bills.projectId, query.projectId) : undefined,
       query.customerId ? eq(bills.customerId, query.customerId) : undefined,
       query.stage ? eq(bills.stage, query.stage) : undefined,
       query.status ? eq(bills.status, query.status) : undefined,
@@ -61,7 +62,8 @@ export const billsService = {
     const [bill] = await db
       .insert(bills)
       .values({
-        customerId: input.customerId,
+        projectId: input.projectId,
+        customerId: input.customerId || null,
         billNumber: input.billNumber,
         normalizedBillNumber: normalizeKey(input.billNumber),
         stage: input.stage ?? "other",
@@ -85,6 +87,7 @@ export const billsService = {
     const db = getDb();
 
     const patch = cleanObject({
+      projectId: input.projectId,
       customerId: input.customerId,
       billNumber: input.billNumber,
       stage: input.stage,

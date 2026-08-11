@@ -10,13 +10,15 @@ export type BillListQuery = {
   page?: number | string;
   limit?: number | string;
   search?: string;
+  projectId?: string;
   customerId?: string;
   stage?: BillStage;
   status?: BillStatus;
 };
 
 export type CreateBillBody = {
-  customerId: string;
+  projectId: string;
+  customerId?: string;
   billNumber: string;
   stage?: BillStage;
   billDate?: string;

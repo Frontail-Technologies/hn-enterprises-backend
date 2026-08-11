@@ -113,6 +113,7 @@ export const projectsService = {
       module: "Projects",
       action: "Created Project",
       recordId: project.id,
+      projectId: project.id,
       description: `Created project ${project.name} (${project.code})`,
     });
 
@@ -154,6 +155,16 @@ export const projectsService = {
       .returning();
 
     if (!project) throw new Error("Unable to update project");
+
+    await auditService.log({
+      userId,
+      module: "Projects",
+      action: "Updated Project",
+      recordId: project.id,
+      projectId: project.id,
+      description: `Updated project ${project.name}`,
+    });
+
     return getProjectOrThrow(project.id);
   },
 
@@ -170,6 +181,9 @@ export const projectsService = {
         module: "Projects",
         action: "Deleted Project",
         recordId: id,
+        // No projectId here - the row is already gone by this point, and
+        // auditLogs.projectId is a real FK, so pointing it at a
+        // just-deleted project would fail the constraint.
         description: `Deleted project ${existing.name} (${existing.code})`,
       });
     } catch (error: any) {

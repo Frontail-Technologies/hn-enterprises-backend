@@ -13,6 +13,7 @@ export type PaymentListQuery = {
   status?: PaymentStatus;
   siteId?: string;
   plumberId?: string;
+  projectId?: string;
   from?: string;
   to?: string;
 };
@@ -24,6 +25,7 @@ export type CreatePaymentBody = {
   siteId?: string;
   address?: string;
   customerId?: string;
+  projectId?: string;
   amount: number;
   paymentDate: string;
   mode: PaymentMode;

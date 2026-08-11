@@ -3,6 +3,7 @@ export type AuditLogListQuery = {
   limit?: number | string;
   module?: string;
   userId?: string;
+  projectId?: string;
   from?: string;
   to?: string;
 };

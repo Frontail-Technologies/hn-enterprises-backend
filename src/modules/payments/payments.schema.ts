@@ -12,6 +12,7 @@ export const paymentListQuerySchema = t.Object({
   status: t.Optional(paymentStatusSchema),
   siteId: t.Optional(t.String()),
   plumberId: t.Optional(t.String()),
+  projectId: t.Optional(t.String()),
   from: t.Optional(t.String()),
   to: t.Optional(t.String()),
 });
@@ -23,6 +24,10 @@ export const createPaymentBodySchema = t.Object({
   siteId: t.Optional(t.String()),
   address: t.Optional(t.String()),
   customerId: t.Optional(t.String()),
+  // Nullable, additive - lets an expense be attributed to a project directly
+  // when it has no site or customer (rent, transport, misc). See
+  // payment.schema.ts for why this exists alongside siteId/customerId.
+  projectId: t.Optional(t.String()),
   // t.Numeric() (not t.Number()) so this also accepts the numeric strings a
   // multipart/form-data body delivers - the mobile app embeds attachments in
   // the same request instead of calling the separate /uploads route first.

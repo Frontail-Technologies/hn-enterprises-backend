@@ -3,6 +3,7 @@ import type { SetContext } from "@modules/auth/auth.helpers";
 import { auditService, uploadService } from "@services";
 import { errorMessage, ok, paginated, statusFromError } from "@utils";
 import { customersService } from "./customers.service";
+import { customersBulkService, type CustomerBulkChanges, type CustomerBulkSelection } from "./customers-bulk.service";
 import type {
   CreateCustomerBody,
   CreateCustomerDocumentBody,
@@ -294,6 +295,65 @@ export const customersController = {
     } catch (error) {
       set.status = statusFromError(error);
       return { success: false, message: errorMessage(error, "Unable to add customer note") };
+    }
+  },
+};
+
+export const customersBulkController = {
+  async update({
+    body,
+    currentUser,
+    set,
+  }: {
+    body: { selection: CustomerBulkSelection; changes: CustomerBulkChanges };
+    currentUser: AuthTokenPayload | null;
+    set: SetContext;
+  }) {
+    try {
+      if (!currentUser) throw new Error("Authentication required");
+      const result = await customersBulkService.bulkUpdate(body.selection, body.changes, currentUser);
+      return ok(result, `${result.count} customer${result.count === 1 ? "" : "s"} updated`);
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to bulk update customers") };
+    }
+  },
+
+  async remark({
+    body,
+    currentUser,
+    set,
+  }: {
+    body: { selection: CustomerBulkSelection; note: string };
+    currentUser: AuthTokenPayload | null;
+    set: SetContext;
+  }) {
+    try {
+      if (!currentUser) throw new Error("Authentication required");
+      const result = await customersBulkService.bulkRemark(body.selection, body.note, currentUser);
+      return ok(result, `Remark added to ${result.count} customer${result.count === 1 ? "" : "s"}`);
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to add bulk remark") };
+    }
+  },
+
+  async remove({
+    body,
+    currentUser,
+    set,
+  }: {
+    body: { selection: CustomerBulkSelection };
+    currentUser: AuthTokenPayload | null;
+    set: SetContext;
+  }) {
+    try {
+      if (!currentUser) throw new Error("Authentication required");
+      const result = await customersBulkService.bulkDelete(body.selection, currentUser);
+      return ok(result, `${result.count} customer${result.count === 1 ? "" : "s"} deleted`);
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to bulk delete customers") };
     }
   },
 };

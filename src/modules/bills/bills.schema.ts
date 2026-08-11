@@ -9,13 +9,15 @@ export const billListQuerySchema = t.Object({
   page: t.Optional(t.String()),
   limit: t.Optional(t.String()),
   search: t.Optional(t.String()),
+  projectId: t.Optional(t.String()),
   customerId: t.Optional(t.String()),
   stage: t.Optional(billStageSchema),
   status: t.Optional(billStatusSchema),
 });
 
 export const createBillBodySchema = t.Object({
-  customerId: t.String({ minLength: 1 }),
+  projectId: t.String({ minLength: 1 }),
+  customerId: t.Optional(t.String({ minLength: 1 })),
   billNumber: t.String({ minLength: 1 }),
   stage: t.Optional(billStageSchema),
   billDate: t.Optional(t.String()),

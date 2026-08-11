@@ -1,6 +1,6 @@
-import { and, count, eq, gte, ilike, isNotNull, lte, sql } from "drizzle-orm";
+import { and, count, eq, gte, ilike, inArray, isNotNull, lte, or, sql } from "drizzle-orm";
 import { getDb } from "@db";
-import { materialTransactions, materials, users } from "@db/schema";
+import { customers, materialTransactions, materials, projectSites, users } from "@db/schema";
 import { normalizeKey } from "@modules/master-import/master-import.mapper";
 import { auditService } from "@services";
 import {
@@ -55,6 +55,27 @@ function computeQuantityDelta(type: MaterialTransactionType, quantity: number) {
     default:
       return quantity;
   }
+}
+
+// A material transaction belongs to a project via its site (issued/consumed
+// at a project site) or, where present, its customer. Materials themselves
+// stay a global catalog (§ audit) - only transactions resolve to a project,
+// and only when they were actually allocated there; a bare warehouse
+// purchase with no site/customer legitimately matches nothing here.
+// Exported so the project summary/materials-tab logic reuses this exact
+// definition instead of re-deriving it.
+export function projectMaterialTransactionCondition(projectId: string) {
+  const db = getDb();
+  return or(
+    inArray(
+      materialTransactions.siteId,
+      db.select({ id: projectSites.id }).from(projectSites).where(eq(projectSites.projectId, projectId)),
+    ),
+    inArray(
+      materialTransactions.customerId,
+      db.select({ id: customers.id }).from(customers).where(eq(customers.projectId, projectId)),
+    ),
+  );
 }
 
 export const materialsService = {
@@ -185,6 +206,7 @@ export const materialsService = {
       query.customerId
         ? eq(materialTransactions.customerId, query.customerId)
         : undefined,
+      query.projectId ? projectMaterialTransactionCondition(query.projectId) : undefined,
       query.from
         ? gte(materialTransactions.transactionDate, new Date(query.from))
         : undefined,

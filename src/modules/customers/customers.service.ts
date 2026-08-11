@@ -57,7 +57,7 @@ async function getCustomerOrThrow(id: string) {
   return customer;
 }
 
-function getStatKeyCondition(statKey: string) {
+export function getStatKeyCondition(statKey: string) {
   switch (statKey) {
     case "survey-done": return sql`survey->>'surveyDate' IS NOT NULL`;
     case "gi-done": return sql`commissioning_conversion->>'installationDate' IS NOT NULL`;
@@ -168,6 +168,7 @@ export const customersService = {
       module: "Customers",
       action: "Created Customer",
       recordId: customer.id,
+      projectId: customer.projectId,
       description: `Created customer ${customer.customerName} (${customer.trBpNumber})`,
     });
 
@@ -271,6 +272,15 @@ export const customersService = {
       await db.insert(workProgressUpdates).values(workProgressInserts);
     }
 
+    await auditService.log({
+      userId,
+      module: "Customers",
+      action: "Updated Customer",
+      recordId: customer.id,
+      projectId: customer.projectId,
+      description: `Updated customer ${customer.customerName} (${customer.trBpNumber})`,
+    });
+
     return customer;
   },
 
@@ -285,6 +295,7 @@ export const customersService = {
         module: "Customers",
         action: "Deleted Customer",
         recordId: id,
+        projectId: existing.projectId,
         description: `Deleted customer ${existing.customerName} (${existing.trBpNumber})`,
       });
     } catch (error: any) {

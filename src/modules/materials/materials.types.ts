@@ -26,6 +26,7 @@ export type MaterialTransactionListQuery = {
   plumberId?: string;
   siteId?: string;
   customerId?: string;
+  projectId?: string;
   from?: string;
   to?: string;
 };

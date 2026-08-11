@@ -29,6 +29,7 @@ export const materialTransactionListQuerySchema = t.Object({
   plumberId: t.Optional(t.String()),
   siteId: t.Optional(t.String()),
   customerId: t.Optional(t.String()),
+  projectId: t.Optional(t.String()),
   from: t.Optional(t.String()),
   to: t.Optional(t.String()),
 });

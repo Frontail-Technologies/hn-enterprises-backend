@@ -1,6 +1,6 @@
-import { and, count, eq, gte, ilike, lte, or } from "drizzle-orm";
+import { and, count, eq, gte, ilike, inArray, lte, or } from "drizzle-orm";
 import { getDb } from "@db";
-import { payments } from "@db/schema";
+import { customers, payments, projectSites } from "@db/schema";
 import { permissionService } from "@services";
 import { buildPaginationMeta, cleanObject, parsePagination, toSearchPattern } from "@utils";
 import type { AuthTokenPayload } from "@types";
@@ -11,6 +11,28 @@ async function getPaymentOrThrow(id: string) {
   const [payment] = await db.select().from(payments).where(eq(payments.id, id)).limit(1);
   if (!payment) throw new Error("Payment not found");
   return payment;
+}
+
+// A payment belongs to a project via any of three paths, in order of how
+// directly it's known: its own `projectId` (only set going forward - see
+// payment.schema.ts), its site's project, or its customer's project. Most
+// historical rows only resolve through the latter two, so all three are
+// checked - this stays backward compatible without requiring a backfill.
+// Exported so the project summary endpoint can reuse the exact same
+// definition of "belongs to this project" instead of re-deriving it.
+export function projectPaymentCondition(projectId: string) {
+  const db = getDb();
+  return or(
+    eq(payments.projectId, projectId),
+    inArray(
+      payments.siteId,
+      db.select({ id: projectSites.id }).from(projectSites).where(eq(projectSites.projectId, projectId)),
+    ),
+    inArray(
+      payments.customerId,
+      db.select({ id: customers.id }).from(customers).where(eq(customers.projectId, projectId)),
+    ),
+  );
 }
 
 export const paymentsService = {
@@ -24,6 +46,7 @@ export const paymentsService = {
       query.status ? eq(payments.status, query.status) : undefined,
       query.siteId ? eq(payments.siteId, query.siteId) : undefined,
       query.plumberId ? eq(payments.plumberId, query.plumberId) : undefined,
+      query.projectId ? projectPaymentCondition(query.projectId) : undefined,
       query.from ? gte(payments.paymentDate, new Date(query.from)) : undefined,
       query.to ? lte(payments.paymentDate, new Date(query.to)) : undefined,
       searchPattern
@@ -65,6 +88,7 @@ export const paymentsService = {
         siteId: input.siteId || null,
         address: input.address || null,
         customerId: input.customerId || null,
+        projectId: input.projectId || null,
         amount: String(input.amount),
         paymentDate: new Date(input.paymentDate),
         mode: input.mode,
@@ -104,6 +128,7 @@ export const paymentsService = {
       siteId: input.siteId,
       address: input.address,
       customerId: input.customerId,
+      projectId: input.projectId,
       amount: input.amount != null ? String(input.amount) : undefined,
       paymentDate: input.paymentDate ? new Date(input.paymentDate) : undefined,
       mode: input.mode,
