@@ -1,9 +1,16 @@
 import type { AuthTokenPayload } from "@types";
 import type { SetContext } from "@modules/auth/auth.helpers";
 import { auditService, uploadService } from "@services";
-import { errorMessage, ok, paginated, statusFromError } from "@utils";
+import { errorCode, errorMessage, ok, paginated, statusFromError } from "@utils";
 import { customersService } from "./customers.service";
+import { customersDeletionService } from "./customers-deletion.service";
 import { customersBulkService, type CustomerBulkChanges, type CustomerBulkSelection } from "./customers-bulk.service";
+import {
+  resetCustomerColumnPreferences,
+  resolveCustomerColumns,
+  saveCustomerColumnPreferences,
+} from "./customer-columns.service";
+import type { ColumnPreferenceEntry } from "@db/schema";
 import type {
   CreateCustomerBody,
   CreateCustomerDocumentBody,
@@ -98,6 +105,48 @@ export const customersController = {
     }
   },
 
+  async getColumns({ currentUser, set }: { currentUser: AuthTokenPayload | null; set: SetContext }) {
+    try {
+      const columns = await resolveCustomerColumns(currentUser?.id ?? null);
+      return ok(columns);
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to load column preferences") };
+    }
+  },
+
+  async saveColumns({
+    body,
+    currentUser,
+    set,
+  }: {
+    body: { columns: ColumnPreferenceEntry[] };
+    currentUser: AuthTokenPayload | null;
+    set: SetContext;
+  }) {
+    try {
+      if (!currentUser) throw new Error("Authentication required");
+      await saveCustomerColumnPreferences(currentUser.id, body.columns);
+      const columns = await resolveCustomerColumns(currentUser.id);
+      return ok(columns, "Column preferences saved");
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to save column preferences") };
+    }
+  },
+
+  async resetColumns({ currentUser, set }: { currentUser: AuthTokenPayload | null; set: SetContext }) {
+    try {
+      if (!currentUser) throw new Error("Authentication required");
+      await resetCustomerColumnPreferences(currentUser.id);
+      const columns = await resolveCustomerColumns(currentUser.id);
+      return ok(columns, "Column preferences reset");
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to reset column preferences") };
+    }
+  },
+
   async get({ params, set }: { params: { id: string }; set: SetContext }) {
     try {
       const customer = await customersService.get(params.id);
@@ -151,6 +200,32 @@ export const customersController = {
     }
   },
 
+  async setSectionCompletion({
+    params,
+    body,
+    currentUser,
+    set,
+  }: {
+    params: { id: string; sectionKey: string };
+    body: { completed: boolean };
+    currentUser: AuthTokenPayload | null;
+    set: SetContext;
+  }) {
+    try {
+      if (!currentUser) throw new Error("Authentication required");
+      const customer = await customersService.setSectionCompletion(
+        params.id,
+        params.sectionKey,
+        body.completed,
+        currentUser,
+      );
+      return ok(customer, body.completed ? "Section marked complete" : "Section reopened");
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to update section completion") };
+    }
+  },
+
   async delete({ params, currentUser, set }: { params: { id: string }; currentUser: AuthTokenPayload | null; set: SetContext }) {
     try {
       if (!currentUser) throw new Error("Authentication required");
@@ -158,7 +233,18 @@ export const customersController = {
       return ok(null, "Customer deleted");
     } catch (error) {
       set.status = statusFromError(error);
-      return { success: false, message: errorMessage(error, "Unable to delete customer") };
+      const code = errorCode(error);
+      return { success: false, message: errorMessage(error, "Unable to delete customer"), ...(code ? { code } : {}) };
+    }
+  },
+
+  async deleteImpact({ params, set }: { params: { id: string }; set: SetContext }) {
+    try {
+      const impact = await customersDeletionService.getDeleteImpact(params.id);
+      return ok(impact);
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to compute delete impact") };
     }
   },
 
@@ -353,7 +439,8 @@ export const customersBulkController = {
       return ok(result, `${result.count} customer${result.count === 1 ? "" : "s"} deleted`);
     } catch (error) {
       set.status = statusFromError(error);
-      return { success: false, message: errorMessage(error, "Unable to bulk delete customers") };
+      const code = errorCode(error);
+      return { success: false, message: errorMessage(error, "Unable to bulk delete customers"), ...(code ? { code } : {}) };
     }
   },
 };

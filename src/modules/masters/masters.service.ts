@@ -1,8 +1,9 @@
-import { and, eq, ilike, or } from "drizzle-orm";
+import { and, eq, ilike, inArray, or } from "drizzle-orm";
 import { getDb } from "@db";
 import { customFieldDefinitions, holidays, masterValues } from "@db/schema";
 import { normalizeKey } from "@modules/master-import/master-import.mapper";
-import { cleanObject, toSearchPattern } from "@utils";
+import { cleanObject, EntityInUseError, toSearchPattern } from "@utils";
+import { masterValuesDeletionService } from "./master-values-deletion.service";
 import type {
   CreateCustomFieldBody,
   CreateHolidayBody,
@@ -96,10 +97,35 @@ export const masterValuesService = {
     return row;
   },
 
+  // Delegates to the Delete Impact architecture (master-values-deletion.service.ts):
+  // blocks whenever any business record still uses this value (matched by string
+  // equality against the one column that category actually feeds - see that file).
   async delete(id: string) {
+    return masterValuesDeletionService.execute(id);
+  },
+
+  /** Same in-use policy as the single-delete flow, rechecked per value inside the
+   * transaction (§11) - one in-use value fails the whole batch. */
+  async bulkDelete(ids: string[]) {
     const db = getDb();
-    await getMasterValueOrThrow(id);
-    await db.delete(masterValues).where(eq(masterValues.id, id));
+    const uniqueIds = Array.from(new Set(ids));
+    const existing = await db.select({ id: masterValues.id, value: masterValues.value }).from(masterValues).where(inArray(masterValues.id, uniqueIds));
+    if (!existing.length) return { count: 0 };
+
+    const resolvedIds = existing.map((row) => row.id);
+    await db.transaction(async (tx) => {
+      for (const id of resolvedIds) {
+        const impact = await masterValuesDeletionService.getDeleteImpact(id);
+        if (!impact.canDelete) {
+          throw new EntityInUseError(
+            `Some selected values cannot be deleted: "${impact.entity.label}" ${impact.blockers.map((b) => b.reason).join(" ")} Deactivate them instead.`,
+          );
+        }
+      }
+      await tx.delete(masterValues).where(inArray(masterValues.id, resolvedIds));
+    });
+
+    return { count: resolvedIds.length };
   },
 };
 
@@ -197,6 +223,27 @@ export const customFieldDefinitionsService = {
     await db.delete(customFieldDefinitions).where(eq(customFieldDefinitions.id, id));
   },
 
+  // Same safety gate as the single-field delete flow (see DynamicFieldGrid on
+  // the frontend): only fields already deactivated may be permanently
+  // deleted. Active fields in the selection are silently skipped rather than
+  // failing the whole batch, and the count reflects that.
+  async bulkDelete(ids: string[]) {
+    const db = getDb();
+    const uniqueIds = Array.from(new Set(ids));
+    const rows = await db
+      .select({ id: customFieldDefinitions.id, status: customFieldDefinitions.status })
+      .from(customFieldDefinitions)
+      .where(inArray(customFieldDefinitions.id, uniqueIds));
+    if (!rows.length) return { count: 0, skippedActive: 0 };
+
+    const deletableIds = rows.filter((row) => row.status === "inactive").map((row) => row.id);
+    const skippedActive = rows.length - deletableIds.length;
+    if (!deletableIds.length) return { count: 0, skippedActive };
+
+    await db.delete(customFieldDefinitions).where(inArray(customFieldDefinitions.id, deletableIds));
+    return { count: deletableIds.length, skippedActive };
+  },
+
   // Bulk position/group update from drag-and-drop reordering - one transaction
   // so a partial failure can't leave the list in a half-reordered state.
   async reorder(items: ReorderCustomFieldsBody, userId: string) {
@@ -277,5 +324,16 @@ export const holidaysService = {
     const db = getDb();
     await getHolidayOrThrow(id);
     await db.delete(holidays).where(eq(holidays.id, id));
+  },
+
+  async bulkDelete(ids: string[]) {
+    const db = getDb();
+    const uniqueIds = Array.from(new Set(ids));
+    const existing = await db.select({ id: holidays.id }).from(holidays).where(inArray(holidays.id, uniqueIds));
+    if (!existing.length) return { count: 0 };
+
+    const resolvedIds = existing.map((row) => row.id);
+    await db.delete(holidays).where(inArray(holidays.id, resolvedIds));
+    return { count: resolvedIds.length };
   },
 };

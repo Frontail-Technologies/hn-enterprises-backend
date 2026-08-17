@@ -1,7 +1,6 @@
 import { t } from "elysia";
-import { billPaymentStatusEnum, billStageEnum, billStatusEnum } from "@db/schema";
+import { billPaymentStatusEnum, billStatusEnum } from "@db/schema";
 
-const billStageSchema = t.Union(billStageEnum.enumValues.map((value) => t.Literal(value)));
 const billStatusSchema = t.Union(billStatusEnum.enumValues.map((value) => t.Literal(value)));
 const billPaymentStatusSchema = t.Union(billPaymentStatusEnum.enumValues.map((value) => t.Literal(value)));
 
@@ -10,16 +9,12 @@ export const billListQuerySchema = t.Object({
   limit: t.Optional(t.String()),
   search: t.Optional(t.String()),
   projectId: t.Optional(t.String()),
-  customerId: t.Optional(t.String()),
-  stage: t.Optional(billStageSchema),
   status: t.Optional(billStatusSchema),
 });
 
 export const createBillBodySchema = t.Object({
   projectId: t.String({ minLength: 1 }),
-  customerId: t.Optional(t.String({ minLength: 1 })),
   billNumber: t.String({ minLength: 1 }),
-  stage: t.Optional(billStageSchema),
   billDate: t.Optional(t.String()),
   dueDate: t.Optional(t.String()),
   totalAmount: t.Number(),

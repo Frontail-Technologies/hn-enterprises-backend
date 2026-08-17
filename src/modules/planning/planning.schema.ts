@@ -30,12 +30,14 @@ export const sitePlanListQuerySchema = t.Object({
   projectId: t.Optional(t.String()),
   siteId: t.Optional(t.String()),
   supervisorId: t.Optional(t.String()),
+  customerId: t.Optional(t.String()),
   date: t.Optional(t.String()),
   from: t.Optional(t.String()),
   to: t.Optional(t.String()),
 });
 
 export const upsertSitePlanBodySchema = t.Object({
+  customerId: t.String({ minLength: 1 }),
   projectId: t.String({ minLength: 1 }),
   siteId: t.String({ minLength: 1 }),
   date: t.String({ minLength: 1 }),
@@ -46,6 +48,7 @@ export const dprRecordListQuerySchema = t.Object({
   projectId: t.Optional(t.String()),
   siteId: t.Optional(t.String()),
   supervisorId: t.Optional(t.String()),
+  customerId: t.Optional(t.String()),
   date: t.Optional(t.String()),
   from: t.Optional(t.String()),
   to: t.Optional(t.String()),
@@ -53,6 +56,7 @@ export const dprRecordListQuerySchema = t.Object({
 });
 
 export const upsertDprRecordBodySchema = t.Object({
+  customerId: t.String({ minLength: 1 }),
   projectId: t.String({ minLength: 1 }),
   siteId: t.String({ minLength: 1 }),
   date: t.String({ minLength: 1 }),

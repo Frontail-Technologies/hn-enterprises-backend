@@ -10,16 +10,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { users } from "./auth.schema";
-import { customers } from "./customer.schema";
 import { projects } from "./project.schema";
-
-export const billStageEnum = pgEnum("bill_stage", [
-  "gi",
-  "gc",
-  "commissioning",
-  "conversion",
-  "other",
-]);
 
 export const billStatusEnum = pgEnum("bill_status", [
   "draft",
@@ -38,18 +29,14 @@ export const bills = pgTable(
   "bills",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    // Billing now happens at the project level - projectId is the real
-    // ownership link. customerId is kept (nullable) as an optional reference
-    // to which customer's work a bill relates to, not as the bill's owner.
-    // (Existing rows were backfilled via backfill-bill-projects.ts before
-    // this was made required.)
+    // Billing happens at the project level - projectId is the bill's only
+    // ownership link. (Existing rows were backfilled via
+    // backfill-bill-projects.ts before this was made required.)
     projectId: uuid("project_id")
       .notNull()
       .references(() => projects.id, { onDelete: "restrict" }),
-    customerId: uuid("customer_id").references(() => customers.id, { onDelete: "set null" }),
     billNumber: text("bill_number").notNull(),
     normalizedBillNumber: text("normalized_bill_number").notNull(),
-    stage: billStageEnum("stage").notNull().default("other"),
     billDate: timestamp("bill_date", { withTimezone: true }),
     dueDate: timestamp("due_date", { withTimezone: true }),
     totalAmount: numeric("total_amount", { precision: 14, scale: 2 }).notNull(),
@@ -67,9 +54,7 @@ export const bills = pgTable(
       table.normalizedBillNumber,
     ),
     projectIdx: index("bills_project_idx").on(table.projectId),
-    customerIdx: index("bills_customer_idx").on(table.customerId),
     statusIdx: index("bills_status_idx").on(table.status),
-    stageIdx: index("bills_stage_idx").on(table.stage),
   }),
 );
 
@@ -100,10 +85,6 @@ export const billsRelations = relations(bills, ({ one, many }) => ({
   project: one(projects, {
     fields: [bills.projectId],
     references: [projects.id],
-  }),
-  customer: one(customers, {
-    fields: [bills.customerId],
-    references: [customers.id],
   }),
   payments: many(billPayments),
 }));

@@ -1,5 +1,6 @@
 import { Elysia, t } from "elysia";
 import { auth } from "@plugins";
+import { bulkDeleteByIdsBodySchema } from "@utils";
 import { usersController, usersImportController } from "./users.controller";
 import {
   createUserBodySchema,
@@ -14,6 +15,11 @@ export const usersRoutes = new Elysia({ prefix: "/users" })
     query: userListQuerySchema,
     requireRole: ["super_admin", "admin"],
   })
+  .post(
+    "/bulk/delete",
+    ({ body, currentUser, set }) => usersController.bulkDelete({ body, currentUser, set }),
+    { body: bulkDeleteByIdsBodySchema, requireRole: ["super_admin", "admin"] },
+  )
   .post(
     "/import/preview",
     ({ body, currentUser, set }) => usersImportController.preview({ body: body as any, currentUser, set }),
@@ -61,6 +67,11 @@ export const usersRoutes = new Elysia({ prefix: "/users" })
       body: resetPasswordBodySchema,
       requireRole: ["super_admin", "admin"],
     },
+  )
+  .get(
+    "/:id/delete-impact",
+    ({ params, set }) => usersController.deleteImpact({ params, set }),
+    { params: t.Object({ id: t.String() }), requireRole: ["super_admin", "admin"] },
   )
   .delete(
     "/:id",

@@ -1,8 +1,19 @@
-import { desc, inArray } from "drizzle-orm";
+import { desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "@db";
-import { complaints, workProgressUpdates } from "@db/schema";
+import { complaints, customers, workProgressUpdates } from "@db/schema";
 import { buildPaginationMeta, parsePagination } from "@utils";
+import type { AuthTokenPayload } from "@types";
 import type { SupervisorStat, SupervisorStatDetailRow, SupervisorStatId, SupervisorStatTone } from "./stats.types";
+
+// Roles that are meant to see system-wide customer stats. Everyone else is
+// scoped to the customers assigned to them, so a supervisor never sees global
+// counts on their device.
+const GLOBAL_STATS_ROLES = new Set(["super_admin", "admin"]);
+
+function supervisorScope(currentUser: AuthTokenPayload | null): string | undefined {
+  if (!currentUser) return undefined;
+  return GLOBAL_STATS_ROLES.has(currentUser.role) ? undefined : currentUser.id;
+}
 
 const STAT_DEFINITIONS: Record<SupervisorStatId, { label: string; suffix: string; tone: SupervisorStatTone }> = {
   "survey-done": { label: "Survey Done", suffix: "Customers", tone: "green" },
@@ -64,13 +75,30 @@ const UNTRACKED_STAT_IDS: SupervisorStatId[] = [
   "customer-resolve",
 ];
 
+// Shown on the mobile stats grid. Excludes the four ids with no real backing
+// data (pole-marker, route-marker, total-connection-done, customer-resolve) and
+// the duplicate aliases (total-conversion-done == conversion-done;
+// pre-commissioning == the old GI condition). Their definitions/detail routes
+// stay available for when real tracking exists.
+const HIDDEN_STAT_IDS = new Set<SupervisorStatId>([
+  "pole-marker",
+  "route-marker",
+  "total-connection-done",
+  "customer-resolve",
+  "total-conversion-done",
+  "pre-commissioning",
+]);
+
+const VISIBLE_STAT_ORDER: SupervisorStatId[] = STAT_ORDER.filter((id) => !HIDDEN_STAT_IDS.has(id));
+
 function isStatId(value: string): value is SupervisorStatId {
   return (STAT_ORDER as string[]).includes(value);
 }
 
-async function fetchCustomers() {
+async function fetchCustomers(supervisorId?: string) {
   const db = getDb();
   return db.query.customers.findMany({
+    where: supervisorId ? eq(customers.supervisorId, supervisorId) : undefined,
     with: { lmcPipeRecords: true, project: true, site: true },
   });
 }
@@ -113,13 +141,16 @@ function buildCustomerRow(customer: CustomerWithContext, statId: SupervisorStatI
   }
 
   if (statId === "gi-done") {
-    const done = Boolean(customer.commissioningConversion?.installationDate);
+    // GI completion is the GI Measurements section's explicit marker, not the old
+    // (mislabeled) commissioning installationDate.
+    const completedAt = customer.giMeasurements?.completion?.completedAt;
+    const done = Boolean(completedAt);
     return {
       matches: done,
       row: {
         ...base,
         status: boolStatus(done),
-        updatedOn: customer.commissioningConversion?.installationDate || base.updatedOn,
+        updatedOn: completedAt || base.updatedOn,
         helper: `GI: ${customer.giMeasurements?.totalGiPipeHalfInch || "-"} m`,
       },
     };
@@ -358,9 +389,10 @@ async function fetchComplaintDetailRows() {
 }
 
 export const statsService = {
-  async getSummary(): Promise<SupervisorStat[]> {
+  async getSummary(currentUser: AuthTokenPayload | null): Promise<SupervisorStat[]> {
+    const scopeId = supervisorScope(currentUser);
     const [customers, dprRows, planningRows, latestWorkProgress, complaintRows] = await Promise.all([
-      fetchCustomers(),
+      fetchCustomers(scopeId),
       fetchDprDetailRows(),
       fetchPlanningDetailRows(),
       fetchLatestWorkProgress(),
@@ -408,7 +440,7 @@ export const statsService = {
       "total-connection-remark",
     ];
 
-    return STAT_ORDER.map((statId) => {
+    return VISIBLE_STAT_ORDER.map((statId) => {
       const definition = STAT_DEFINITIONS[statId];
       const count = counts[statId] ?? 0;
       const value = bareCountStatIds.includes(statId) ? String(count) : `${count}/${totalCustomers}`;
@@ -417,8 +449,9 @@ export const statsService = {
     });
   },
 
-  async getDetails(type: string, query: { page?: string; limit?: string } = {}) {
+  async getDetails(type: string, query: { page?: string; limit?: string } = {}, currentUser: AuthTokenPayload | null = null) {
     if (!isStatId(type)) throw new Error("Stat not found");
+    const scopeId = supervisorScope(currentUser);
 
     // Each stat's row list is still built in full here (status per stat id is
     // derived in JS per customer, not a column any of these can filter on in
@@ -435,7 +468,7 @@ export const statsService = {
     } else if ((UNTRACKED_STAT_IDS as string[]).includes(type)) {
       allRows = [];
     } else {
-      const customers = await fetchCustomers();
+      const customers = await fetchCustomers(scopeId);
 
       if (type === "flushing-testing") {
         const latestWorkProgress = await fetchLatestWorkProgress();
@@ -443,7 +476,12 @@ export const statsService = {
         allRows = buildFlushingTestingRows(customers, latestByCustomer);
       } else {
         const detailStatId = type === "total-conversion-done" ? "conversion-done" : type;
-        allRows = customers.map((customer) => buildCustomerRow(customer, detailStatId).row);
+        // Return only the customers that actually match the stat (like Web), not
+        // every customer with a Done/Pending badge.
+        allRows = customers
+          .map((customer) => buildCustomerRow(customer, detailStatId))
+          .filter((result) => result.matches)
+          .map((result) => result.row);
       }
     }
 

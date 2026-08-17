@@ -27,4 +27,9 @@ export const pushTokensRoutes = new Elysia({ prefix: "/push-tokens" })
     "/",
     ({ body, currentUser, set }) => pushTokensController.register({ body, currentUser, set }),
     { body: registerPushTokenBodySchema, requireAuth: true },
+  )
+  .delete(
+    "/",
+    ({ body, currentUser, set }) => pushTokensController.remove({ body, currentUser, set }),
+    { body: registerPushTokenBodySchema, requireAuth: true },
   );

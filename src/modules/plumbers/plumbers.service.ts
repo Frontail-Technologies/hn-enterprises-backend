@@ -1,8 +1,9 @@
-import { and, count, eq, ilike } from "drizzle-orm";
+import { and, count, eq, ilike, inArray } from "drizzle-orm";
 import { getDb } from "@db";
 import { plumbers } from "@db/schema";
 import { normalizeKey } from "@modules/master-import/master-import.mapper";
-import { buildPaginationMeta, cleanObject, parsePagination, toSearchPattern } from "@utils";
+import { buildPaginationMeta, cleanObject, isForeignKeyViolation, parsePagination, toEntityInUseError, toSearchPattern } from "@utils";
+import { assertPlumbersDeletable, plumbersDeletionService } from "./plumbers-deletion.service";
 import type { CreatePlumberBody, PlumberListQuery, UpdatePlumberBody } from "./plumbers.types";
 
 async function getPlumberOrThrow(id: string) {
@@ -85,16 +86,34 @@ export const plumbersService = {
     return plumber;
   },
 
-  async remove(id: string) {
-    await getPlumberOrThrow(id);
+  // Delegates to the Delete Impact architecture (plumbers-deletion.service.ts):
+  // blocks on wage/payroll history, detaches customer/ledger/payment assignments.
+  async remove(id: string, userId: string) {
+    return plumbersDeletionService.execute(id, userId);
+  },
+
+  async bulkRemove(ids: string[]) {
     const db = getDb();
+    const uniqueIds = Array.from(new Set(ids));
+    const existing = await db.select({ id: plumbers.id }).from(plumbers).where(inArray(plumbers.id, uniqueIds));
+    if (!existing.length) return { count: 0 };
+
+    const resolvedIds = existing.map((row) => row.id);
     try {
-      await db.delete(plumbers).where(eq(plumbers.id, id));
-    } catch (error: any) {
-      if (error.code === "23503") {
-        throw new Error("Cannot delete this plumber because they have associated records. Please reassign or delete them first.");
+      await db.transaction(async (tx) => {
+        await assertPlumbersDeletable(tx, resolvedIds);
+        await tx.delete(plumbers).where(inArray(plumbers.id, resolvedIds));
+      });
+    } catch (error) {
+      if (isForeignKeyViolation(error)) {
+        throw toEntityInUseError(
+          error,
+          "Some selected plumbers have associated records (e.g. wage records) and cannot be deleted. Please reassign or delete them first.",
+        );
       }
       throw error;
     }
+
+    return { count: resolvedIds.length };
   },
 };

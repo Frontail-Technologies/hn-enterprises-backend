@@ -1,6 +1,6 @@
 import { and, count, eq } from "drizzle-orm";
 import { getDb } from "@db";
-import { wageRecords } from "@db/schema";
+import { plumbers, wageRecords } from "@db/schema";
 import { buildPaginationMeta, cleanObject, parsePagination } from "@utils";
 import type { UpsertWageBody, WageListQuery } from "./wages.types";
 
@@ -48,6 +48,31 @@ export const wagesService = {
     ]);
 
     return { rows: rows.map(withComputed), pagination: buildPaginationMeta(page, limit, total) };
+  },
+
+  /** Unpaginated, joined with plumber names - for the Wage Register export, not the admin list UI. */
+  async listForMonthWithPlumbers(month: string) {
+    const db = getDb();
+    const rows = await db
+      .select({
+        id: wageRecords.id,
+        plumberId: wageRecords.plumberId,
+        plumberName: plumbers.name,
+        month: wageRecords.month,
+        category: wageRecords.category,
+        wageRate: wageRecords.wageRate,
+        daysWorked: wageRecords.daysWorked,
+        pf: wageRecords.pf,
+        esic: wageRecords.esic,
+        status: wageRecords.status,
+        remarks: wageRecords.remarks,
+      })
+      .from(wageRecords)
+      .innerJoin(plumbers, eq(wageRecords.plumberId, plumbers.id))
+      .where(eq(wageRecords.month, month))
+      .orderBy(plumbers.name);
+
+    return rows.map(withComputed);
   },
 
   async upsert(input: UpsertWageBody, userId: string) {

@@ -8,6 +8,10 @@ const customerDocumentStatusSchema = t.Union(
 const lmcPipeSizeSchema = t.Union(lmcPipeSizeEnum.enumValues.map((value) => t.Literal(value)));
 const lmcPipeStatusSchema = t.Union(lmcPipeStatusEnum.enumValues.map((value) => t.Literal(value)));
 
+export const saveCustomerColumnsBodySchema = t.Object({
+  columns: t.Array(t.Object({ key: t.String(), visible: t.Boolean() })),
+});
+
 export const customerListQuerySchema = t.Object({
   page: t.Optional(t.String()),
   limit: t.Optional(t.String()),
@@ -83,6 +87,10 @@ export const upsertLmcPipeRecordBodySchema = t.Object({
   remarks: t.Optional(t.String()),
   evidence: t.Optional(t.Array(t.Record(t.String(), t.Unknown()))),
   files: t.Optional(t.Files()),
+});
+
+export const setSectionCompletionBodySchema = t.Object({
+  completed: t.Boolean(),
 });
 
 export const createCustomerNoteBodySchema = t.Object({

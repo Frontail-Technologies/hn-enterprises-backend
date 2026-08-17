@@ -1,6 +1,7 @@
 import { relations } from "drizzle-orm";
 import { date, index, jsonb, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { users } from "./auth.schema";
+import { customers } from "./customer.schema";
 import { projects, projectSites } from "./project.schema";
 
 export const planningTaskIdEnum = pgEnum("planning_task_id", [
@@ -45,6 +46,13 @@ export const sitePlans = pgTable(
   "site_plans",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    // A plan is filed against a specific customer, not a site - a site can have
+    // many customers, so the site alone can't distinguish whose work is being
+    // planned. projectId/siteId are kept (derived from the customer at write
+    // time) purely for filtering/display continuity with the rest of the app.
+    customerId: uuid("customer_id")
+      .notNull()
+      .references(() => customers.id, { onDelete: "restrict" }),
     projectId: uuid("project_id")
       .notNull()
       .references(() => projects.id, { onDelete: "restrict" }),
@@ -60,11 +68,12 @@ export const sitePlans = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
-    siteDateSupervisorIdx: uniqueIndex("site_plans_site_date_supervisor_idx").on(
-      table.siteId,
+    customerDateSupervisorIdx: uniqueIndex("site_plans_customer_date_supervisor_idx").on(
+      table.customerId,
       table.date,
       table.supervisorId,
     ),
+    customerIdx: index("site_plans_customer_idx").on(table.customerId),
     siteIdx: index("site_plans_site_idx").on(table.siteId),
     projectIdx: index("site_plans_project_idx").on(table.projectId),
     dateIdx: index("site_plans_date_idx").on(table.date),
@@ -75,6 +84,10 @@ export const dprRecords = pgTable(
   "dpr_records",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    // Same customer-first rationale as site_plans - see comment there.
+    customerId: uuid("customer_id")
+      .notNull()
+      .references(() => customers.id, { onDelete: "restrict" }),
     projectId: uuid("project_id")
       .notNull()
       .references(() => projects.id, { onDelete: "restrict" }),
@@ -94,11 +107,12 @@ export const dprRecords = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
-    siteDateSupervisorIdx: uniqueIndex("dpr_records_site_date_supervisor_idx").on(
-      table.siteId,
+    customerDateSupervisorIdx: uniqueIndex("dpr_records_customer_date_supervisor_idx").on(
+      table.customerId,
       table.date,
       table.supervisorId,
     ),
+    customerIdx: index("dpr_records_customer_idx").on(table.customerId),
     siteIdx: index("dpr_records_site_idx").on(table.siteId),
     projectIdx: index("dpr_records_project_idx").on(table.projectId),
     dateIdx: index("dpr_records_date_idx").on(table.date),
@@ -107,6 +121,10 @@ export const dprRecords = pgTable(
 );
 
 export const sitePlansRelations = relations(sitePlans, ({ one }) => ({
+  customer: one(customers, {
+    fields: [sitePlans.customerId],
+    references: [customers.id],
+  }),
   project: one(projects, {
     fields: [sitePlans.projectId],
     references: [projects.id],
@@ -123,6 +141,10 @@ export const sitePlansRelations = relations(sitePlans, ({ one }) => ({
 }));
 
 export const dprRecordsRelations = relations(dprRecords, ({ one }) => ({
+  customer: one(customers, {
+    fields: [dprRecords.customerId],
+    references: [customers.id],
+  }),
   project: one(projects, {
     fields: [dprRecords.projectId],
     references: [projects.id],

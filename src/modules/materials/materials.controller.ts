@@ -1,15 +1,18 @@
 import type { AuthTokenPayload } from "@types";
 import type { SetContext } from "@modules/auth/auth.helpers";
 import { uploadService } from "@services";
-import { errorMessage, ok, paginated, statusFromError } from "@utils";
+import { errorCode, errorMessage, ok, paginated, statusFromError } from "@utils";
 import { materialsService } from "./materials.service";
+import { materialsDeletionService } from "./materials-deletion.service";
 import { materialsImportService } from "./materials.import.service";
 import type {
+  CorrectMaterialTransactionBody,
   CreateMaterialBody,
   CreateMaterialTransactionBody,
   MaterialListQuery,
   MaterialTransactionListQuery,
   PlumberBalanceQuery,
+  StockBalanceQuery,
   UpdateMaterialBody,
 } from "./materials.types";
 
@@ -103,7 +106,18 @@ export const materialsController = {
       return ok(null, "Material deleted");
     } catch (error) {
       set.status = statusFromError(error);
-      return { success: false, message: errorMessage(error, "Unable to delete material") };
+      const code = errorCode(error);
+      return { success: false, message: errorMessage(error, "Unable to delete material"), ...(code ? { code } : {}) };
+    }
+  },
+
+  async deleteImpact({ params, set }: { params: { id: string }; set: SetContext }) {
+    try {
+      const impact = await materialsDeletionService.getDeleteImpact(params.id);
+      return ok(impact);
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to compute delete impact") };
     }
   },
 
@@ -146,6 +160,60 @@ export const materialsController = {
     } catch (error) {
       set.status = statusFromError(error);
       return { success: false, message: errorMessage(error, "Unable to compute plumber balances") };
+    }
+  },
+
+  async stockBalances({ query, set }: { query: StockBalanceQuery; set: SetContext }) {
+    try {
+      const rows = await materialsService.stockBalances(query);
+      return ok(rows);
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to compute stock balances") };
+    }
+  },
+
+  async reverseTransaction({
+    params,
+    body,
+    currentUser,
+    set,
+  }: {
+    params: { id: string };
+    body: { reason: string };
+    currentUser: AuthTokenPayload | null;
+    set: SetContext;
+  }) {
+    try {
+      if (!currentUser) throw new Error("Authentication required");
+      const reversal = await materialsService.reverseTransaction(params.id, body.reason, currentUser.id);
+      set.status = 201;
+      return ok(reversal, "Transaction reversed");
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to reverse transaction") };
+    }
+  },
+
+  async correctTransaction({
+    params,
+    body,
+    currentUser,
+    set,
+  }: {
+    params: { id: string };
+    body: CorrectMaterialTransactionBody;
+    currentUser: AuthTokenPayload | null;
+    set: SetContext;
+  }) {
+    try {
+      if (!currentUser) throw new Error("Authentication required");
+      const result = await materialsService.correctTransaction(params.id, body, currentUser.id);
+      set.status = 201;
+      return ok(result, "Transaction corrected");
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to correct transaction") };
     }
   },
 };

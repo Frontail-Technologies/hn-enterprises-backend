@@ -71,4 +71,22 @@ export const pushTokensController = {
       return { success: false, message: errorMessage(error, "Unable to register push token") };
     }
   },
+
+  async remove({
+    body,
+    currentUser,
+    set,
+  }: {
+    body: RegisterPushTokenBody;
+    currentUser: AuthTokenPayload | null;
+    set: SetContext;
+  }) {
+    try {
+      if (!currentUser) throw new Error("Authentication required");
+      return ok(await pushTokensService.remove(currentUser.id, body), "Push token removed");
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to remove push token") };
+    }
+  },
 };

@@ -1,5 +1,6 @@
 import { Elysia, t } from "elysia";
 import { auth } from "@plugins";
+import { bulkDeleteByIdsBodySchema } from "@utils";
 import { staffController } from "./staff.controller";
 import { createStaffBodySchema, staffListQuerySchema, updateStaffBodySchema } from "./staff.schema";
 
@@ -9,6 +10,11 @@ export const staffRoutes = new Elysia({ prefix: "/staff" })
     query: staffListQuerySchema,
     requireRole: ["super_admin", "admin"],
   })
+  .post(
+    "/bulk/delete",
+    ({ body, set }) => staffController.bulkDelete({ body, set }),
+    { body: bulkDeleteByIdsBodySchema, requireRole: ["super_admin", "admin"] },
+  )
   .post(
     "/",
     ({ body, currentUser, set }) => staffController.create({ body, currentUser, set }),
@@ -27,6 +33,11 @@ export const staffRoutes = new Elysia({ prefix: "/staff" })
       body: updateStaffBodySchema,
       requireRole: ["super_admin", "admin"],
     },
+  )
+  .get(
+    "/:id/delete-impact",
+    ({ params, set }) => staffController.deleteImpact({ params, set }),
+    { params: t.Object({ id: t.String() }), requireRole: ["super_admin", "admin"] },
   )
   .delete(
     "/:id",

@@ -1,10 +1,11 @@
 import { and, eq, ilike, inArray, notInArray, or, sql } from "drizzle-orm";
 import { getDb } from "@db";
 import { customerNotes, customers, plumbers, projectSites, projects, users } from "@db/schema";
-import { toSearchPattern } from "@utils";
+import { isForeignKeyViolation, toEntityInUseError, toSearchPattern } from "@utils";
 import { auditService } from "@services";
 import type { AuthTokenPayload } from "@types";
 import { getStatKeyCondition } from "./customers.service";
+import { assertCustomersDeletable } from "./customers-deletion.service";
 
 // Hard ceiling so a runaway selection can't lock the whole table (§16).
 const MAX_BULK_TARGETS = 20000;
@@ -362,7 +363,11 @@ export const customersBulkService = {
     return { count: ids.length };
   },
 
-  /** Hard delete (matches the existing single-delete policy - no soft-delete concept exists). */
+  /**
+   * Hard delete, same policy as the single-customer Delete Impact flow (bills/
+   * payments block the whole batch - never silently skipped or force-detached).
+   * Re-checked inside the transaction, same as the single-delete recheck (§6/§11).
+   */
   async bulkDelete(selection: CustomerBulkSelection, currentUser: AuthTokenPayload) {
     const db = getDb();
     const ids = await resolveSelectionIds(selection);
@@ -374,12 +379,14 @@ export const customersBulkService = {
 
     try {
       await db.transaction(async (tx) => {
+        await assertCustomersDeletable(tx, ids);
         await tx.delete(customers).where(inArray(customers.id, ids));
       });
-    } catch (error: any) {
-      if (error?.code === "23503") {
-        throw new Error(
-          "Some selected customers have associated records (e.g. bills or payments) and cannot be deleted. Remove those records first.",
+    } catch (error) {
+      if (isForeignKeyViolation(error)) {
+        throw toEntityInUseError(
+          error,
+          "Some selected customers have associated records and cannot be deleted. Remove those records first.",
         );
       }
       throw error;

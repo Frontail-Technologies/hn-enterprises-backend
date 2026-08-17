@@ -1,5 +1,6 @@
 import { Elysia, t } from "elysia";
 import { auth } from "@plugins";
+import { bulkDeleteByIdsBodySchema } from "@utils";
 import { announcementsController } from "./announcements.controller";
 import {
   announcementListQuerySchema,
@@ -13,6 +14,11 @@ export const announcementsRoutes = new Elysia({ prefix: "/announcements" })
     query: announcementListQuerySchema,
     requireAuth: true,
   })
+  .post(
+    "/bulk/delete",
+    ({ body, set }) => announcementsController.bulkDelete({ body, set }),
+    { body: bulkDeleteByIdsBodySchema, requireRole: ["super_admin", "admin"] },
+  )
   .post(
     "/",
     ({ body, currentUser, set }) => announcementsController.create({ body, currentUser, set }),

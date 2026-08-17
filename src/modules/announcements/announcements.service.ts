@@ -1,4 +1,4 @@
-import { and, count, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "@db";
 import { announcements, users } from "@db/schema";
 import { notificationService } from "@services";
@@ -90,7 +90,7 @@ export const announcementsService = {
 
     if (!row) throw new Error("Unable to publish announcement");
 
-    await notificationService.queue({
+    const notifyResult = await notificationService.queue({
       userIds: recipients.map((recipient) => recipient.id),
       title: row.title,
       message: row.message,
@@ -100,12 +100,37 @@ export const announcementsService = {
       route: { pathname: "/notifications" },
     });
 
-    return row;
+    // The announcement is already committed as "sent" above (it did reach the
+    // in-app notification list for however many recipients that succeeded
+    // for) - notify/push failures are reported on the result rather than
+    // thrown, so the caller can show an accurate "sent, but delivery had
+    // issues" state instead of either a false success or a misleading error
+    // for an announcement that's actually already sent.
+    return {
+      ...row,
+      recipientCount: recipients.length,
+      notifiedCount: notifyResult.notifiedCount,
+      notifyError: notifyResult.notifyError,
+      pushTokenCount: notifyResult.pushTokenCount,
+      pushSuccess: notifyResult.pushSuccess,
+      pushError: notifyResult.pushError,
+    };
   },
 
   async delete(id: string) {
     const db = getDb();
     await getAnnouncementOrThrow(id); // Ensure it exists
     await db.delete(announcements).where(eq(announcements.id, id));
+  },
+
+  async bulkDelete(ids: string[]) {
+    const db = getDb();
+    const uniqueIds = Array.from(new Set(ids));
+    const existing = await db.select({ id: announcements.id }).from(announcements).where(inArray(announcements.id, uniqueIds));
+    if (!existing.length) return { count: 0 };
+
+    const resolvedIds = existing.map((row) => row.id);
+    await db.delete(announcements).where(inArray(announcements.id, resolvedIds));
+    return { count: resolvedIds.length };
   },
 };

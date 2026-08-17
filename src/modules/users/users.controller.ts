@@ -1,7 +1,8 @@
 import type { AuthTokenPayload } from "@types";
 import type { SetContext } from "@modules/auth/auth.helpers";
-import { assertUser, errorMessage, ok, paginated, statusFromError } from "@utils";
+import { assertUser, errorCode, errorMessage, ok, paginated, statusFromError } from "@utils";
 import { usersService } from "./users.service";
+import { usersDeletionService } from "./users-deletion.service";
 import { usersImportService } from "./users.import.service";
 import type { CreateUserBody, ResetPasswordBody, UpdateUserBody, UserListQuery } from "./users.types";
 
@@ -101,7 +102,39 @@ export const usersController = {
       return ok(null, "User deleted");
     } catch (error) {
       set.status = statusFromError(error);
-      return { success: false, message: errorMessage(error, "Unable to delete user") };
+      const code = errorCode(error);
+      return { success: false, message: errorMessage(error, "Unable to delete user"), ...(code ? { code } : {}) };
+    }
+  },
+
+  async deleteImpact({ params, set }: { params: { id: string }; set: SetContext }) {
+    try {
+      const impact = await usersDeletionService.getDeleteImpact(params.id);
+      return ok(impact);
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to compute delete impact") };
+    }
+  },
+
+  async bulkDelete({
+    body,
+    currentUser,
+    set,
+  }: {
+    body: { ids: string[] };
+    currentUser: AuthTokenPayload | null;
+    set: SetContext;
+  }) {
+    try {
+      const actor = assertUser(currentUser);
+      const result = await usersService.bulkDelete(body.ids, actor.id);
+      const suffix = result.skippedSelf ? " (your own account was skipped)" : "";
+      return ok(result, `${result.count} user${result.count === 1 ? "" : "s"} deleted${suffix}`);
+    } catch (error) {
+      set.status = statusFromError(error);
+      const code = errorCode(error);
+      return { success: false, message: errorMessage(error, "Unable to delete users"), ...(code ? { code } : {}) };
     }
   },
 };

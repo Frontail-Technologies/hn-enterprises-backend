@@ -1,5 +1,6 @@
 import { Elysia, t } from "elysia";
 import { auth } from "@plugins";
+import { bulkDeleteByIdsBodySchema } from "@utils";
 import { customFieldsImportController } from "./custom-fields-import.controller";
 import { customFieldDefinitionsController, holidaysController, masterValuesController, masterValuesImportController } from "./masters.controller";
 import {
@@ -36,10 +37,20 @@ export const mastersRoutes = new Elysia({ prefix: "/masters" })
       requireRole: ["super_admin", "admin"],
     },
   )
+  .get(
+    "/values/:id/delete-impact",
+    ({ params, set }) => masterValuesController.deleteImpact({ params, set }),
+    { params: t.Object({ id: t.String() }), requireRole: ["super_admin", "admin"] },
+  )
   .delete(
     "/values/:id",
     ({ params, set }) => masterValuesController.delete({ params, set }),
     { params: t.Object({ id: t.String() }), requireRole: ["super_admin", "admin"] },
+  )
+  .post(
+    "/values/bulk/delete",
+    ({ body, set }) => masterValuesController.bulkDelete({ body, set }),
+    { body: bulkDeleteByIdsBodySchema, requireRole: ["super_admin", "admin"] },
   )
   .post(
     "/values/import/preview",
@@ -98,6 +109,11 @@ export const mastersRoutes = new Elysia({ prefix: "/masters" })
     ({ params, set }) => customFieldDefinitionsController.delete({ params, set }),
     { params: t.Object({ id: t.String() }), requireRole: ["super_admin", "admin"] },
   )
+  .post(
+    "/custom-fields/bulk/delete",
+    ({ body, set }) => customFieldDefinitionsController.bulkDelete({ body, set }),
+    { body: bulkDeleteByIdsBodySchema, requireRole: ["super_admin", "admin"] },
+  )
   .patch(
     "/custom-fields/reorder",
     ({ body, currentUser, set }) => customFieldDefinitionsController.reorder({ body, currentUser, set }),
@@ -135,4 +151,9 @@ export const mastersRoutes = new Elysia({ prefix: "/masters" })
     "/holidays/:id",
     ({ params, set }) => holidaysController.delete({ params, set }),
     { params: t.Object({ id: t.String() }), requireRole: ["super_admin", "admin"] },
+  )
+  .post(
+    "/holidays/bulk/delete",
+    ({ body, set }) => holidaysController.bulkDelete({ body, set }),
+    { body: bulkDeleteByIdsBodySchema, requireRole: ["super_admin", "admin"] },
   );

@@ -1,9 +1,11 @@
-import { and, count, desc, eq, ilike, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, ilike, or } from "drizzle-orm";
 import { getDb } from "@db";
 import { customerDocuments, customerLmcPipeRecords, customerNotes, customers, plumbers, users, workProgressUpdates } from "@db/schema";
 import { normalizeKey } from "@modules/master-import/master-import.mapper";
 import { buildPaginationMeta, cleanObject, parsePagination, toSearchPattern } from "@utils";
 import { auditService, permissionService } from "@services";
+import { buildCustomerCompletionAudit, customerStatCondition, evaluateCustomerCompletion } from "./customer-completion";
+import { customersDeletionService } from "./customers-deletion.service";
 import type { AuthTokenPayload } from "@types";
 import type {
   CreateCustomerBody,
@@ -26,6 +28,16 @@ const JSON_SECTION_KEYS = [
   "billingCompletion",
   "customFields",
 ] as const satisfies readonly (keyof CustomerJsonSections)[];
+
+// Only these jsonb sections carry an explicit completion marker; the completion
+// endpoint refuses any other key so arbitrary customer JSON can't be targeted.
+const EXPLICIT_COMPLETION_SECTIONS: Record<string, true> = {
+  giMeasurements: true,
+  valvesRegulators: true,
+  fittingsAccessories: true,
+  mdpeFittings: true,
+  lmcPipelineWork: true,
+};
 
 async function getPlumberNameOrThrow(plumberId: string) {
   const db = getDb();
@@ -57,20 +69,10 @@ async function getCustomerOrThrow(id: string) {
   return customer;
 }
 
+// Single source of truth lives in customer-completion.ts; this stays as the
+// list-query entry point but no longer defines its own copy of the conditions.
 export function getStatKeyCondition(statKey: string) {
-  switch (statKey) {
-    case "survey-done": return sql`survey->>'surveyDate' IS NOT NULL`;
-    case "gi-done": return sql`commissioning_conversion->>'installationDate' IS NOT NULL`;
-    case "gc-done": return sql`commissioning_conversion->>'commissioningDate' IS NOT NULL OR commissioning_conversion->>'meterNo' IS NOT NULL`;
-    case "conversion-done": return sql`commissioning_conversion->>'conversionDate' IS NOT NULL`;
-    case "jmr-done": return sql`billing_completion->>'jmrDone' = 'true'`;
-    case "gi-bill-done": return sql`billing_completion->>'giBillDone' = 'true'`;
-    case "gc-bill-done": return sql`billing_completion->>'gcBillDone' = 'true'`;
-    case "conversion-bill-done": return sql`billing_completion->>'conversionBillDone' = 'true'`;
-    case "total-pbg-assignment": return sql`billing_completion->>'jmrSubmittedInPbg' = 'true'`;
-    case "connection-remark": return sql`(status = 'on_hold' OR survey->>'approvalStatus' IN ('Sent Back', 'Rejected') OR EXISTS (SELECT 1 FROM customer_lmc_pipe_records WHERE customer_id = customers.id AND laying_status = 'on_hold'))`;
-    default: return undefined;
-  }
+  return customerStatCondition(statKey);
 }
 
 export const customersService = {
@@ -96,7 +98,7 @@ export const customersService = {
 
     const where = conditions.length ? and(...conditions) : undefined;
 
-    const [rows, [{ value: total }]] = await Promise.all([
+    const [rows, [{ value: total }], userRows] = await Promise.all([
       db.query.customers.findMany({
         where,
         limit,
@@ -110,16 +112,78 @@ export const customersService = {
         with: {
           project: true,
           site: true,
+          // Needed for the master-sheet/Excel-export columns that read per-size
+          // LMC pipe dates and the KYC-verified flag (§ shared column config) -
+          // both previously only available via the single-customer `get()`.
+          lmcPipeRecords: true,
+          documents: true,
         },
       }),
       db.select({ value: count() }).from(customers).where(where),
+      db.select({ id: users.id, name: users.name }).from(users),
     ]);
 
-    return { rows, pagination: buildPaginationMeta(page, limit, total) };
+    // Resolves each section's completedBy user id to a display name using the
+    // SAME helper the Excel export uses (§ shared column config) - so the
+    // Completion Audit columns can never disagree between Web and Excel.
+    const userNames = new Map(userRows.map((u) => [u.id, u.name]));
+    const resolveUserName = (id: string | null | undefined) => (id ? (userNames.get(id) ?? id) : null);
+    const rowsWithCompletionAudit = rows.map((row) => ({
+      ...row,
+      completionAudit: buildCustomerCompletionAudit(row, resolveUserName),
+    }));
+
+    return { rows: rowsWithCompletionAudit, pagination: buildPaginationMeta(page, limit, total) };
   },
 
   async get(id: string) {
-    return getCustomerOrThrow(id);
+    const customer = await getCustomerOrThrow(id);
+    return {
+      ...customer,
+      sectionCompletion: evaluateCustomerCompletion(customer, customer.lmcPipeRecords),
+    };
+  },
+
+  async setSectionCompletion(
+    id: string,
+    sectionKey: string,
+    completed: boolean,
+    currentUser: AuthTokenPayload,
+  ) {
+    if (!(sectionKey in EXPLICIT_COMPLETION_SECTIONS)) {
+      throw new Error("This section does not support explicit completion");
+    }
+
+    const db = getDb();
+    const existing = await getCustomerOrThrow(id);
+    const oldSection = (existing[sectionKey as keyof typeof existing] as Record<string, unknown> | null) ?? {};
+    const completion = completed
+      ? { completedAt: new Date().toISOString(), completedBy: currentUser.id }
+      : null;
+
+    const [customer] = await db
+      .update(customers)
+      .set({
+        [sectionKey]: { ...oldSection, completion },
+        updatedBy: currentUser.id,
+        updatedAt: new Date(),
+      })
+      .where(eq(customers.id, id))
+      .returning();
+
+    if (!customer) throw new Error("Unable to update section completion");
+
+    await auditService.log({
+      userId: currentUser.id,
+      module: "Customers",
+      action: completed ? "Marked Section Complete" : "Reopened Section",
+      recordId: id,
+      projectId: customer.projectId,
+      description: `${completed ? "Completed" : "Reopened"} ${sectionKey} for ${customer.customerName}`,
+    });
+
+    const refreshed = await getCustomerOrThrow(id);
+    return { ...refreshed, sectionCompletion: evaluateCustomerCompletion(refreshed, refreshed.lmcPipeRecords) };
   },
 
   async create(input: CreateCustomerBody, userId: string) {
@@ -225,6 +289,23 @@ export const customersService = {
 
         jsonPatch[key] = { ...oldSection, ...section };
 
+        // Section-completion marker is server-authoritative: a normal save omits
+        // `completion` (shallow-merge above keeps the existing marker), Mark
+        // Complete sends a completion object (we stamp completedBy from the auth
+        // user), and Reopen sends `completion: null` to clear it.
+        if (Object.prototype.hasOwnProperty.call(section, "completion")) {
+          const incoming = (section as { completion?: unknown }).completion;
+          if (incoming && typeof incoming === "object") {
+            const completedAt = (incoming as { completedAt?: unknown }).completedAt;
+            jsonPatch[key].completion = {
+              completedAt: typeof completedAt === "string" && completedAt ? completedAt : new Date().toISOString(),
+              completedBy: currentUser.id,
+            };
+          } else {
+            jsonPatch[key].completion = null;
+          }
+        }
+
         // Generate work progress update if status changed
         if (newStatus && newStatus !== oldStatus) {
           let stage = null;
@@ -284,26 +365,12 @@ export const customersService = {
     return customer;
   },
 
+  // Delegates to the Delete Impact architecture (customers-deletion.service.ts):
+  // re-checks dependencies inside the same transaction as the delete, blocks on
+  // financial records (bills, payments), and cascades the customer's own
+  // documents/notes/LMC records/complaints/work-progress along with it.
   async delete(id: string, userId: string) {
-    const db = getDb();
-    const existing = await getCustomerOrThrow(id);
-
-    try {
-      await db.delete(customers).where(eq(customers.id, id));
-      await auditService.log({
-        userId,
-        module: "Customers",
-        action: "Deleted Customer",
-        recordId: id,
-        projectId: existing.projectId,
-        description: `Deleted customer ${existing.customerName} (${existing.trBpNumber})`,
-      });
-    } catch (error: any) {
-      if (error.code === "23503") {
-        throw new Error("Cannot delete this customer because they have associated records (e.g. bills or payments). Please delete them first.");
-      }
-      throw error;
-    }
+    return customersDeletionService.execute(id, userId);
   },
 
   async listLmcPipeRecords(customerId: string) {

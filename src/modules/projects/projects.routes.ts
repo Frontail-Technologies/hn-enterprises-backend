@@ -1,5 +1,6 @@
 import { Elysia, t } from "elysia";
 import { auth } from "@plugins";
+import { bulkDeleteByIdsBodySchema } from "@utils";
 import { projectsController } from "./projects.controller";
 import {
   createProjectBodySchema,
@@ -20,6 +21,16 @@ export const projectsRoutes = new Elysia({ prefix: "/projects" })
     body: createProjectBodySchema,
     requireRole: ["super_admin", "admin"],
   })
+  // Bulk delete - a static path, registered ahead of any future dynamic
+  // collision risk even though Elysia already prioritizes static routes.
+  .post(
+    "/bulk/delete",
+    ({ body, currentUser, set }) => projectsController.bulkDelete({ body, currentUser, set }),
+    {
+      body: bulkDeleteByIdsBodySchema,
+      requireRole: ["super_admin", "admin"],
+    },
+  )
   .get(
     "/:id",
     ({ params, set }) => projectsController.get({ params, set }),
@@ -42,6 +53,14 @@ export const projectsRoutes = new Elysia({ prefix: "/projects" })
     {
       params: t.Object({ id: t.String() }),
       body: updateProjectBodySchema,
+      requireRole: ["super_admin", "admin"],
+    },
+  )
+  .get(
+    "/:id/delete-impact",
+    ({ params, set }) => projectsController.deleteImpact({ params, set }),
+    {
+      params: t.Object({ id: t.String() }),
       requireRole: ["super_admin", "admin"],
     },
   )

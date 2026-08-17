@@ -2,11 +2,14 @@ import { Elysia, t } from "elysia";
 import { auth } from "@plugins";
 import { materialsController, materialsImportController } from "./materials.controller";
 import {
+  correctMaterialTransactionBodySchema,
   createMaterialBodySchema,
   createMaterialTransactionBodySchema,
   materialListQuerySchema,
   materialTransactionListQuerySchema,
   plumberBalanceQuerySchema,
+  reverseMaterialTransactionBodySchema,
+  stockBalanceQuerySchema,
   updateMaterialBodySchema,
 } from "./materials.schema";
 
@@ -59,6 +62,29 @@ export const materialsRoutes = new Elysia({ prefix: "/materials" })
     { query: plumberBalanceQuerySchema, requireAuth: true },
   )
   .get(
+    "/stock-balances",
+    ({ query, set }) => materialsController.stockBalances({ query, set }),
+    { query: stockBalanceQuerySchema, requireAuth: true },
+  )
+  .post(
+    "/transactions/:id/reverse",
+    ({ params, body, currentUser, set }) => materialsController.reverseTransaction({ params, body, currentUser, set }),
+    {
+      params: t.Object({ id: t.String() }),
+      body: reverseMaterialTransactionBodySchema,
+      requireRole: ["super_admin", "admin"],
+    },
+  )
+  .post(
+    "/transactions/:id/correct",
+    ({ params, body, currentUser, set }) => materialsController.correctTransaction({ params, body, currentUser, set }),
+    {
+      params: t.Object({ id: t.String() }),
+      body: correctMaterialTransactionBodySchema,
+      requireRole: ["super_admin", "admin"],
+    },
+  )
+  .get(
     "/:id",
     ({ params, set }) => materialsController.get({ params, set }),
     { params: t.Object({ id: t.String() }), requireAuth: true },
@@ -71,6 +97,11 @@ export const materialsRoutes = new Elysia({ prefix: "/materials" })
       body: updateMaterialBodySchema,
       requireRole: ["super_admin", "admin"],
     },
+  )
+  .get(
+    "/:id/delete-impact",
+    ({ params, set }) => materialsController.deleteImpact({ params, set }),
+    { params: t.Object({ id: t.String() }), requireRole: ["super_admin", "admin"] },
   )
   .delete(
     "/:id",

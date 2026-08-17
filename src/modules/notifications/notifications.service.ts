@@ -58,4 +58,12 @@ export const pushTokensService = {
     if (!row) throw new Error("Unable to register push token");
     return row;
   },
+
+  async remove(userId: string, input: RegisterPushTokenBody) {
+    const db = getDb();
+    await db
+      .delete(pushTokens)
+      .where(and(eq(pushTokens.userId, userId), eq(pushTokens.token, input.token)));
+    return { removed: true };
+  },
 };

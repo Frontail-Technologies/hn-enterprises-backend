@@ -1,7 +1,8 @@
 import type { AuthTokenPayload } from "@types";
 import type { SetContext } from "@modules/auth/auth.helpers";
-import { errorMessage, ok, statusFromError } from "@utils";
+import { errorCode, errorMessage, ok, statusFromError } from "@utils";
 import { customFieldDefinitionsService, holidaysService, masterValuesService } from "./masters.service";
+import { masterValuesDeletionService } from "./master-values-deletion.service";
 import { masterValuesImportService } from "./masters.import.service";
 import type {
   CreateCustomFieldBody,
@@ -68,7 +69,27 @@ export const masterValuesController = {
       return ok(null, "Master value deleted");
     } catch (error) {
       set.status = statusFromError(error);
-      return { success: false, message: errorMessage(error, "Unable to delete master value") };
+      const code = errorCode(error);
+      return { success: false, message: errorMessage(error, "Unable to delete master value"), ...(code ? { code } : {}) };
+    }
+  },
+  async deleteImpact({ params, set }: { params: { id: string }; set: SetContext }) {
+    try {
+      const impact = await masterValuesDeletionService.getDeleteImpact(params.id);
+      return ok(impact);
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to compute delete impact") };
+    }
+  },
+  async bulkDelete({ body, set }: { body: { ids: string[] }; set: SetContext }) {
+    try {
+      const result = await masterValuesService.bulkDelete(body.ids);
+      return ok(result, `${result.count} value${result.count === 1 ? "" : "s"} deleted`);
+    } catch (error) {
+      set.status = statusFromError(error);
+      const code = errorCode(error);
+      return { success: false, message: errorMessage(error, "Unable to delete master values"), ...(code ? { code } : {}) };
     }
   },
 };
@@ -134,6 +155,18 @@ export const customFieldDefinitionsController = {
     } catch (error) {
       set.status = statusFromError(error);
       return { success: false, message: errorMessage(error, "Unable to delete custom field") };
+    }
+  },
+  async bulkDelete({ body, set }: { body: { ids: string[] }; set: SetContext }) {
+    try {
+      const result = await customFieldDefinitionsService.bulkDelete(body.ids);
+      const suffix = result.skippedActive
+        ? ` (${result.skippedActive} still-active field${result.skippedActive === 1 ? "" : "s"} skipped - deactivate first)`
+        : "";
+      return ok(result, `${result.count} field${result.count === 1 ? "" : "s"} deleted${suffix}`);
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to delete custom fields") };
     }
   },
   async reorder({
@@ -209,6 +242,15 @@ export const holidaysController = {
     } catch (error) {
       set.status = statusFromError(error);
       return { success: false, message: errorMessage(error, "Unable to delete holiday") };
+    }
+  },
+  async bulkDelete({ body, set }: { body: { ids: string[] }; set: SetContext }) {
+    try {
+      const result = await holidaysService.bulkDelete(body.ids);
+      return ok(result, `${result.count} holiday${result.count === 1 ? "" : "s"} deleted`);
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to delete holidays") };
     }
   },
 };

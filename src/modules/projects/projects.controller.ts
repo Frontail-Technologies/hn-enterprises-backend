@@ -1,7 +1,8 @@
 import type { AuthTokenPayload } from "@types";
 import type { SetContext } from "@modules/auth/auth.helpers";
-import { errorMessage, ok, paginated, statusFromError } from "@utils";
+import { errorCode, errorMessage, ok, paginated, statusFromError } from "@utils";
 import { projectsService } from "./projects.service";
+import { projectsDeletionService } from "./projects-deletion.service";
 import { projectsSummaryService } from "./projects-summary.service";
 import { projectsTeamService } from "./projects-team.service";
 import type {
@@ -82,7 +83,41 @@ export const projectsController = {
       return ok(null, "Project deleted");
     } catch (error) {
       set.status = statusFromError(error);
-      return { success: false, message: errorMessage(error, "Unable to delete project") };
+      const code = errorCode(error);
+      return { success: false, message: errorMessage(error, "Unable to delete project"), ...(code ? { code } : {}) };
+    }
+  },
+
+  // Delete Impact Preview (§2) - what deleting this project would affect, before
+  // the user commits to it. Read-only; the actual delete still re-checks this same
+  // data inside its own transaction rather than trusting this snapshot.
+  async deleteImpact({ params, set }: { params: { id: string }; set: SetContext }) {
+    try {
+      const impact = await projectsDeletionService.getDeleteImpact(params.id);
+      return ok(impact);
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to compute delete impact") };
+    }
+  },
+
+  async bulkDelete({
+    body,
+    currentUser,
+    set,
+  }: {
+    body: { ids: string[] };
+    currentUser: AuthTokenPayload | null;
+    set: SetContext;
+  }) {
+    try {
+      if (!currentUser) throw new Error("Authentication required");
+      const result = await projectsService.bulkDelete(body.ids, currentUser.id);
+      return ok(result, `${result.count} project${result.count === 1 ? "" : "s"} deleted`);
+    } catch (error) {
+      set.status = statusFromError(error);
+      const code = errorCode(error);
+      return { success: false, message: errorMessage(error, "Unable to delete projects"), ...(code ? { code } : {}) };
     }
   },
 

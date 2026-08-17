@@ -6,6 +6,8 @@ import {
   createCustomerDocumentBodySchema,
   createCustomerNoteBodySchema,
   customerListQuerySchema,
+  saveCustomerColumnsBodySchema,
+  setSectionCompletionBodySchema,
   updateCustomerBodySchema,
   upsertLmcPipeRecordBodySchema,
 } from "./customers.schema";
@@ -17,6 +19,23 @@ export const customersRoutes = new Elysia({ prefix: "/customers" })
     query: customerListQuerySchema,
     requireAuth: true,
   })
+  // Static path, registered ahead of `/:id` for clarity (matches the bulk
+  // routes' convention below - Elysia already prioritizes static routes).
+  .get(
+    "/columns",
+    ({ currentUser, set }) => customersController.getColumns({ currentUser, set }),
+    { requireAuth: true },
+  )
+  .put(
+    "/columns",
+    ({ body, currentUser, set }) => customersController.saveColumns({ body, currentUser, set }),
+    { body: saveCustomerColumnsBodySchema, requireAuth: true },
+  )
+  .delete(
+    "/columns",
+    ({ currentUser, set }) => customersController.resetColumns({ currentUser, set }),
+    { requireAuth: true },
+  )
   .post(
     "/",
     ({ body, currentUser, set }) => customersController.create({ body, currentUser, set }),
@@ -37,8 +56,13 @@ export const customersRoutes = new Elysia({ prefix: "/customers" })
     {
       params: t.Object({ id: t.String() }),
       body: updateCustomerBodySchema,
-      requireRole: ["super_admin", "admin", "supervisor", "field_executive"],
+      requireRole: ["super_admin", "admin", "supervisor"],
     },
+  )
+  .get(
+    "/:id/delete-impact",
+    ({ params, set }) => customersController.deleteImpact({ params, set }),
+    { params: t.Object({ id: t.String() }), requireRole: ["super_admin", "admin"] },
   )
   .delete(
     "/:id",
@@ -46,6 +70,16 @@ export const customersRoutes = new Elysia({ prefix: "/customers" })
     {
       params: t.Object({ id: t.String() }),
       requireRole: ["super_admin", "admin"],
+    },
+  )
+  .patch(
+    "/:id/sections/:sectionKey/completion",
+    ({ params, body, currentUser, set }) =>
+      customersController.setSectionCompletion({ params, body, currentUser, set }),
+    {
+      params: t.Object({ id: t.String(), sectionKey: t.String() }),
+      body: setSectionCompletionBodySchema,
+      requireRole: ["super_admin", "admin", "supervisor"],
     },
   )
   // Bulk operations (§15) - static paths, registered ahead of any future

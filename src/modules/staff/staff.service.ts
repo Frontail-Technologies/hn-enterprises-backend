@@ -1,4 +1,4 @@
-import { and, count, eq, ilike, or } from "drizzle-orm";
+import { and, count, eq, ilike, inArray, or } from "drizzle-orm";
 import { getDb } from "@db";
 import { staff, users } from "@db/schema";
 import {
@@ -215,5 +215,18 @@ export const staffService = {
     const db = getDb();
     // Soft delete: set user status to inactive
     await db.update(users).set({ status: "inactive", updatedAt: new Date() }).where(eq(users.id, existing.userId));
+  },
+
+  /** Same soft-delete policy as the single-record delete: deactivate the linked user, not a real row delete. */
+  async bulkDelete(ids: string[]) {
+    const db = getDb();
+    const uniqueIds = Array.from(new Set(ids));
+    const rows = await db.select({ userId: staff.userId }).from(staff).where(inArray(staff.id, uniqueIds));
+    if (!rows.length) return { count: 0 };
+
+    const userIds = Array.from(new Set(rows.map((row) => row.userId)));
+    await db.update(users).set({ status: "inactive", updatedAt: new Date() }).where(inArray(users.id, userIds));
+
+    return { count: rows.length };
   },
 };

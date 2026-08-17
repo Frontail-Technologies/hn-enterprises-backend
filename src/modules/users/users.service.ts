@@ -6,17 +6,19 @@ import {
   assertStrongPassword,
   buildPaginationMeta,
   cleanObject,
+  EntityInUseError,
   hashPassword,
   parsePagination,
   toSearchPattern,
 } from "@utils";
+import { usersDeletionService } from "./users-deletion.service";
 import type { CreateUserBody, ResetPasswordBody, UpdateUserBody, UserListQuery } from "./users.types";
 
 type UserRole = (typeof userRoleEnum.enumValues)[number];
 
 function parseRoles(role?: string): UserRole[] | undefined {
   if (!role) return undefined;
-  const allowed = new Set<string>(["super_admin", "admin", "supervisor", "field_executive", "viewer"]);
+  const allowed = new Set<string>(["super_admin", "admin", "supervisor", "viewer"]);
   const roles = role
     .split(",")
     .map((value) => value.trim())
@@ -172,18 +174,45 @@ export const usersService = {
     return sanitizeUser(user);
   },
 
+  // Delegates to the Delete Impact architecture (users-deletion.service.ts): blocks
+  // whenever the user has attendance, a staff/payroll profile, or is the recorded
+  // creator/supervisor of complaints, site plans, DPR records, or work progress
+  // updates - all of which are `ON DELETE CASCADE` at the DB level and would
+  // otherwise be silently destroyed by a raw delete (see that file for the audit).
   async delete(id: string, currentUserId: string) {
-    if (id === currentUserId) throw new Error("Cannot delete your own account");
-    const db = getDb();
-    await getUserOrThrow(id);
+    return usersDeletionService.execute(id, currentUserId);
+  },
 
-    try {
-      await db.delete(users).where(eq(users.id, id));
-    } catch (error: any) {
-      if (error.code === "23503") {
-        throw new Error("Cannot delete this user because they have associated records. Please reassign or delete them first.");
+  /**
+   * Same self-delete guard as the single-user delete - the actor's own id is
+   * silently excluded rather than failing the whole batch. Every other target is
+   * checked against the same policy as the single-delete flow (§11: no bulk path
+   * bypasses the audited dependency rules) - one blocked user fails the whole
+   * batch rather than silently skipping it or risking a partial cascade.
+   */
+  async bulkDelete(ids: string[], currentUserId: string) {
+    const db = getDb();
+    const uniqueIds = Array.from(new Set(ids));
+    const skippedSelf = uniqueIds.includes(currentUserId);
+    const targetIds = uniqueIds.filter((id) => id !== currentUserId);
+    if (!targetIds.length) return { count: 0, skippedSelf };
+
+    const existing = await db.select({ id: users.id }).from(users).where(inArray(users.id, targetIds));
+    if (!existing.length) return { count: 0, skippedSelf };
+
+    const resolvedIds = existing.map((row) => row.id);
+    await db.transaction(async (tx) => {
+      for (const id of resolvedIds) {
+        const impact = await usersDeletionService.getDeleteImpactWithHandle(tx, id);
+        if (!impact.canDelete) {
+          throw new EntityInUseError(
+            `Some selected users cannot be deleted: "${impact.entity.label}" ${impact.blockers.map((b) => b.reason).join(" ")} Please deactivate them instead.`,
+          );
+        }
       }
-      throw error;
-    }
+      await tx.delete(users).where(inArray(users.id, resolvedIds));
+    });
+
+    return { count: resolvedIds.length, skippedSelf };
   },
 };

@@ -72,7 +72,11 @@ export const announcementsController = {
 
   async publish({ params, set }: { params: { id: string }; set: SetContext }) {
     try {
-      return ok(await announcementsService.publish(params.id), "Announcement published");
+      const result = await announcementsService.publish(params.id);
+      const message = result.pushSuccess
+        ? `Announcement published and pushed to ${result.pushTokenCount} device${result.pushTokenCount === 1 ? "" : "s"}`
+        : `Announcement published, but push delivery failed${result.pushError ? `: ${result.pushError}` : ""}. It's still visible in the mobile app's notification list.`;
+      return ok(result, message);
     } catch (error) {
       set.status = statusFromError(error);
       return { success: false, message: errorMessage(error, "Unable to publish announcement") };
@@ -86,6 +90,16 @@ export const announcementsController = {
     } catch (error) {
       set.status = statusFromError(error);
       return { success: false, message: errorMessage(error, "Unable to delete announcement") };
+    }
+  },
+
+  async bulkDelete({ body, set }: { body: { ids: string[] }; set: SetContext }) {
+    try {
+      const result = await announcementsService.bulkDelete(body.ids);
+      return ok(result, `${result.count} announcement${result.count === 1 ? "" : "s"} deleted`);
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to delete announcements") };
     }
   },
 };

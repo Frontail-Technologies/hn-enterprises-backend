@@ -1,5 +1,6 @@
 import { Elysia, t } from "elysia";
 import { auth } from "@plugins";
+import { bulkDeleteByIdsBodySchema } from "@utils";
 import { plumbersController, plumbersImportController } from "./plumbers.controller";
 import { createPlumberBodySchema, plumberListQuerySchema, updatePlumberBodySchema } from "./plumbers.schema";
 
@@ -9,6 +10,11 @@ export const plumbersRoutes = new Elysia({ prefix: "/plumbers" })
     query: plumberListQuerySchema,
     requireAuth: true,
   })
+  .post(
+    "/bulk/delete",
+    ({ body, set }) => plumbersController.bulkRemove({ body, set }),
+    { body: bulkDeleteByIdsBodySchema, requireRole: ["super_admin", "admin"] },
+  )
   .post(
     "/import/preview",
     ({ body, currentUser, set }) => plumbersImportController.preview({ body, currentUser, set }),
@@ -50,8 +56,13 @@ export const plumbersRoutes = new Elysia({ prefix: "/plumbers" })
       requireRole: ["super_admin", "admin"],
     },
   )
+  .get(
+    "/:id/delete-impact",
+    ({ params, set }) => plumbersController.deleteImpact({ params, set }),
+    { params: t.Object({ id: t.String() }), requireRole: ["super_admin", "admin"] },
+  )
   .delete(
     "/:id",
-    ({ params, set }) => plumbersController.remove({ params, set }),
+    ({ params, currentUser, set }) => plumbersController.remove({ params, currentUser, set }),
     { params: t.Object({ id: t.String() }), requireRole: ["super_admin", "admin"] },
   );

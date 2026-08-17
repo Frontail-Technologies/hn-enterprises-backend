@@ -14,6 +14,13 @@ import { users } from "./auth.schema";
 import { plumbers } from "./plumber.schema";
 import { projects, projectSites } from "./project.schema";
 
+// Explicit section-completion marker, stored inside the section's own jsonb so no
+// migration is needed and no customer section data is duplicated.
+type SectionCompletionMeta = {
+  completedAt?: string | null;
+  completedBy?: string | null;
+};
+
 type CustomerSurveyPayload = {
   surveyId?: string;
   surveyDate?: string;
@@ -51,6 +58,7 @@ type CustomerGiMeasurementsPayload = {
   giPipeOneAndHalfInch?: string;
   giPipeTwoInch?: string;
   evidence?: Record<string, unknown>[];
+  completion?: SectionCompletionMeta;
   approvalStatus?: string;
   approvalComments?: string;
 };
@@ -67,6 +75,7 @@ type CustomerValvesRegulatorsPayload = {
   regulator100MbarTo21Mbar?: string;
   warningPlate?: string;
   evidence?: Record<string, unknown>[];
+  completion?: SectionCompletionMeta;
 };
 
 type CustomerFittingsAccessoriesPayload = {
@@ -87,6 +96,7 @@ type CustomerFittingsAccessoriesPayload = {
   fittingsTwoInchQuantity?: string;
   extraGiAbove10Metres?: string;
   evidence?: Record<string, unknown>[];
+  completion?: SectionCompletionMeta;
 };
 
 type CustomerLmcCivilPayload = {
@@ -101,6 +111,7 @@ type CustomerLmcCivilPayload = {
   hardRock?: string;
   civilRemarks?: string;
   civilEvidence?: Record<string, unknown>[];
+  completion?: SectionCompletionMeta;
   approvalStatus?: string;
   approvalComments?: string;
 };
@@ -120,6 +131,7 @@ type CustomerMdpeFittingsPayload = {
   coupler32Mm?: string;
   coupler20Mm?: string;
   endCap90Mm?: string;
+  completion?: SectionCompletionMeta;
 };
 
 type CustomerCommissioningConversionPayload = {
@@ -146,6 +158,9 @@ type CustomerBillingCompletionPayload = {
   giBillDone?: boolean;
   gcBillDone?: boolean;
   conversionBillDone?: boolean;
+  // Written by master-import and the customer-connection form (customerConnection.jobCardDone
+  // on the frontend) - free text, not a boolean, despite the name.
+  jobCardDone?: string;
   remark?: string;
   evidence?: Record<string, unknown>[];
 };

@@ -1,9 +1,10 @@
-import { and, count, eq, ilike, or } from "drizzle-orm";
+import { and, count, eq, ilike, inArray, or } from "drizzle-orm";
 import { getDb } from "@db";
 import { projectDocuments, projectSites, projects, users } from "@db/schema";
 import { normalizeKey } from "@modules/master-import/master-import.mapper";
 import { auditService } from "@services";
-import { buildPaginationMeta, cleanObject, parsePagination, toSearchPattern } from "@utils";
+import { buildPaginationMeta, cleanObject, isForeignKeyViolation, parsePagination, toEntityInUseError, toSearchPattern } from "@utils";
+import { projectsDeletionService } from "./projects-deletion.service";
 import type {
   CreateProjectBody,
   CreateProjectDocumentBody,
@@ -168,30 +169,57 @@ export const projectsService = {
     return getProjectOrThrow(project.id);
   },
 
+  // Delegates to the Delete Impact architecture (projects-deletion.service.ts):
+  // re-checks dependencies inside the same transaction as the delete, blocks on
+  // financial/audit records (bills, site plans, DPR), and cascades customers +
+  // their own children explicitly before removing the project row. See that
+  // module for the full audited FK policy.
   async delete(id: string, userId: string) {
+    await projectsDeletionService.execute(id, userId);
+  },
+
+  /**
+   * Hard delete, same FK handling as the single-project delete - but bulk
+   * deletion does not (yet) get its own Delete Impact Preview per-project, so
+   * this keeps the simpler "delete or fail atomically as one batch" behavior:
+   * one blocked project fails the whole batch rather than silently skipping it.
+   */
+  async bulkDelete(ids: string[], userId: string) {
     const db = getDb();
-    
-    // Check if project exists
-    const existing = await getProjectOrThrow(id);
+    const uniqueIds = Array.from(new Set(ids));
+
+    const existing = await db
+      .select({ id: projects.id, name: projects.name, code: projects.code })
+      .from(projects)
+      .where(inArray(projects.id, uniqueIds));
+    if (!existing.length) return { count: 0 };
+
+    const resolvedIds = existing.map((row) => row.id);
 
     try {
-      await db.delete(projects).where(eq(projects.id, id));
-      await auditService.log({
-        userId,
-        module: "Projects",
-        action: "Deleted Project",
-        recordId: id,
-        // No projectId here - the row is already gone by this point, and
-        // auditLogs.projectId is a real FK, so pointing it at a
-        // just-deleted project would fail the constraint.
-        description: `Deleted project ${existing.name} (${existing.code})`,
+      await db.transaction(async (tx) => {
+        await tx.delete(projects).where(inArray(projects.id, resolvedIds));
       });
-    } catch (error: any) {
-      if (error.code === "23503") {
-        throw new Error("Cannot delete this project because it has associated records (e.g. customers or sites). Please reassign or delete them first.");
+    } catch (error) {
+      if (isForeignKeyViolation(error)) {
+        throw toEntityInUseError(
+          error,
+          "Some selected projects have associated records (e.g. customers, bills, or sites) and cannot be deleted. Please resolve them first.",
+        );
       }
       throw error;
     }
+
+    await auditService.log({
+      userId,
+      module: "Projects",
+      action: "Bulk Deleted Projects",
+      recordId: `${resolvedIds.length} projects`,
+      description: `Bulk deleted ${resolvedIds.length} project${resolvedIds.length === 1 ? "" : "s"}: ${existing.map((row) => row.name).join(", ")}`,
+      metadata: { count: resolvedIds.length, projectIds: resolvedIds },
+    });
+
+    return { count: resolvedIds.length };
   },
 
   async listSites(projectId: string) {

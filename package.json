@@ -13,7 +13,6 @@
     "seed:supervisor": "bun run src/scripts/seed-supervisor.ts",
     "seed:payment-modes": "bun run src/scripts/seed-payment-modes.ts",
     "backfill:plumbers": "bun run src/scripts/backfill-plumbers.ts",
-    "backfill:bill-projects": "bun run src/scripts/backfill-bill-projects.ts",
     "studio": "drizzle-kit studio"
   },
   "dependencies": {

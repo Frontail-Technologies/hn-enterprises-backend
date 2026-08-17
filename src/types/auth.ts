@@ -2,7 +2,6 @@ export type UserRole =
   | "super_admin"
   | "admin"
   | "supervisor"
-  | "field_executive"
   | "viewer";
 
 export type AuthTokenPayload = {

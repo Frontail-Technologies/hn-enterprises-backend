@@ -29,12 +29,14 @@ export type SitePlanListQuery = {
   projectId?: string;
   siteId?: string;
   supervisorId?: string;
+  customerId?: string;
   date?: string;
   from?: string;
   to?: string;
 };
 
 export type UpsertSitePlanBody = {
+  customerId: string;
   projectId: string;
   siteId: string;
   date: string;
@@ -46,6 +48,7 @@ export type DprRecordListQuery = SitePlanListQuery & {
 };
 
 export type UpsertDprRecordBody = {
+  customerId: string;
   projectId: string;
   siteId: string;
   date: string;

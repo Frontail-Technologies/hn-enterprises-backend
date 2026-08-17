@@ -16,6 +16,6 @@ export const permissionService = {
   },
 
   canFieldUpdate(user: CurrentUser | null) {
-    return hasRole(user, ["super_admin", "admin", "supervisor", "field_executive"]);
+    return hasRole(user, ["super_admin", "admin", "supervisor"]);
   },
 };

@@ -1,7 +1,8 @@
 import type { AuthTokenPayload } from "@types";
 import type { SetContext } from "@modules/auth/auth.helpers";
-import { errorMessage, ok, paginated, statusFromError } from "@utils";
+import { errorCode, errorMessage, ok, paginated, statusFromError } from "@utils";
 import { plumbersService } from "./plumbers.service";
+import { plumbersDeletionService } from "./plumbers-deletion.service";
 import { plumbersImportService } from "./plumbers.import.service";
 import type { CreatePlumberBody, PlumberListQuery, UpdatePlumberBody } from "./plumbers.types";
 
@@ -67,13 +68,36 @@ export const plumbersController = {
     }
   },
 
-  async remove({ params, set }: { params: { id: string }; set: SetContext }) {
+  async remove({ params, currentUser, set }: { params: { id: string }; currentUser: AuthTokenPayload | null; set: SetContext }) {
     try {
-      await plumbersService.remove(params.id);
+      if (!currentUser) throw new Error("Authentication required");
+      await plumbersService.remove(params.id, currentUser.id);
       return ok(null, "Plumber deleted");
     } catch (error) {
       set.status = statusFromError(error);
-      return { success: false, message: errorMessage(error, "Unable to delete plumber") };
+      const code = errorCode(error);
+      return { success: false, message: errorMessage(error, "Unable to delete plumber"), ...(code ? { code } : {}) };
+    }
+  },
+
+  async deleteImpact({ params, set }: { params: { id: string }; set: SetContext }) {
+    try {
+      const impact = await plumbersDeletionService.getDeleteImpact(params.id);
+      return ok(impact);
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to compute delete impact") };
+    }
+  },
+
+  async bulkRemove({ body, set }: { body: { ids: string[] }; set: SetContext }) {
+    try {
+      const result = await plumbersService.bulkRemove(body.ids);
+      return ok(result, `${result.count} plumber${result.count === 1 ? "" : "s"} deleted`);
+    } catch (error) {
+      set.status = statusFromError(error);
+      const code = errorCode(error);
+      return { success: false, message: errorMessage(error, "Unable to delete plumbers"), ...(code ? { code } : {}) };
     }
   },
 };

@@ -36,8 +36,6 @@ export const billsService = {
 
     const conditions = [
       query.projectId ? eq(bills.projectId, query.projectId) : undefined,
-      query.customerId ? eq(bills.customerId, query.customerId) : undefined,
-      query.stage ? eq(bills.stage, query.stage) : undefined,
       query.status ? eq(bills.status, query.status) : undefined,
       searchPattern ? ilike(bills.billNumber, searchPattern) : undefined,
     ].filter((condition): condition is NonNullable<typeof condition> => Boolean(condition));
@@ -63,10 +61,8 @@ export const billsService = {
       .insert(bills)
       .values({
         projectId: input.projectId,
-        customerId: input.customerId || null,
         billNumber: input.billNumber,
         normalizedBillNumber: normalizeKey(input.billNumber),
-        stage: input.stage ?? "other",
         billDate: input.billDate ? new Date(input.billDate) : null,
         dueDate: input.dueDate ? new Date(input.dueDate) : null,
         totalAmount: String(input.totalAmount),
@@ -88,9 +84,7 @@ export const billsService = {
 
     const patch = cleanObject({
       projectId: input.projectId,
-      customerId: input.customerId,
       billNumber: input.billNumber,
-      stage: input.stage,
       billDate: input.billDate ? new Date(input.billDate) : undefined,
       dueDate: input.dueDate ? new Date(input.dueDate) : undefined,
       totalAmount: input.totalAmount != null ? String(input.totalAmount) : undefined,
