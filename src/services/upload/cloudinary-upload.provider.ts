@@ -10,11 +10,24 @@ import { buildStorageKey, fileToBuffer, storageKeyWithoutExtension } from "./upl
 import type { StoredFile, UploadContext, UploadProvider } from "./upload.types";
 
 function parseCloudinaryUrl(url: string) {
-  const match = url.match(/^cloudinary:\/\/([^:]+):([^@]+)@(.+)$/);
+  const match = url.trim().match(/^cloudinary:\/\/([^:]+):([^@]+)@(.+)$/);
   if (!match) return null;
 
   const [, apiKey, apiSecret, cloudName] = match;
-  return { cloudName, apiKey, apiSecret };
+  return { cloudName: cloudName.trim(), apiKey: apiKey.trim(), apiSecret: apiSecret.trim() };
+}
+
+// A credential env var that's set but blank/whitespace-only (a trailing
+// newline from a copy-paste into a hosting platform's env var UI is the
+// classic case) passes a plain truthiness check while still being wrong -
+// Cloudinary then rejects the auth and reports it as a missing upload
+// preset ("Upload preset must be specified when using unsigned upload"),
+// which reads nothing like a credentials problem. Trimming first, then
+// checking for actual content, catches that case instead of silently
+// forwarding the bad value.
+function nonBlank(value: string | undefined) {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
 }
 
 // The Cloudinary SDK resolves cloud_name/api_key/api_secret from the
@@ -29,17 +42,23 @@ function parseCloudinaryUrl(url: string) {
 // hot reload timing was the leading suspect, but the failure recurred even
 // after full process restarts).
 function resolveCloudinaryCredentials() {
-  if (CLOUDINARY_CLOUD_NAME && CLOUDINARY_API_KEY && CLOUDINARY_API_SECRET) {
-    return { cloud_name: CLOUDINARY_CLOUD_NAME, api_key: CLOUDINARY_API_KEY, api_secret: CLOUDINARY_API_SECRET };
+  const cloudName = nonBlank(CLOUDINARY_CLOUD_NAME);
+  const apiKey = nonBlank(CLOUDINARY_API_KEY);
+  const apiSecret = nonBlank(CLOUDINARY_API_SECRET);
+
+  if (cloudName && apiKey && apiSecret) {
+    return { cloud_name: cloudName, api_key: apiKey, api_secret: apiSecret };
   }
 
-  const parsed = CLOUDINARY_URL ? parseCloudinaryUrl(CLOUDINARY_URL) : null;
-  if (parsed) {
+  const cloudinaryUrl = nonBlank(CLOUDINARY_URL);
+  const parsed = cloudinaryUrl ? parseCloudinaryUrl(cloudinaryUrl) : null;
+  if (parsed?.cloudName && parsed?.apiKey && parsed?.apiSecret) {
     return { cloud_name: parsed.cloudName, api_key: parsed.apiKey, api_secret: parsed.apiSecret };
   }
 
   throw new Error(
-    "Cloudinary upload driver requires CLOUDINARY_URL or CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET",
+    "Cloudinary upload driver requires CLOUDINARY_URL or CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET " +
+      "to be set to non-blank values (check for a stray trailing space/newline if they look set but this still throws)",
   );
 }
 
