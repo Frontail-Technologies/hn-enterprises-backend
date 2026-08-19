@@ -50,6 +50,24 @@ export const notificationsController = {
       return { success: false, message: errorMessage(error, "Unable to mark notifications as read") };
     }
   },
+
+  async remove({
+    params,
+    currentUser,
+    set,
+  }: {
+    params: { id: string };
+    currentUser: AuthTokenPayload | null;
+    set: SetContext;
+  }) {
+    try {
+      if (!currentUser) throw new Error("Authentication required");
+      return ok(await notificationsService.remove(params.id, currentUser.id), "Notification deleted");
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to delete notification") };
+    }
+  },
 };
 
 export const pushTokensController = {

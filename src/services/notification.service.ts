@@ -2,6 +2,7 @@ import { inArray } from "drizzle-orm";
 import { getDb } from "@db";
 import { notificationCategoryEnum, notifications, pushTokens } from "@db/schema";
 import type { NotificationRoutePayload } from "@db/schema";
+import { EXPO_ACCESS_TOKEN } from "@constants";
 
 type NotificationCategory = (typeof notificationCategoryEnum.enumValues)[number];
 
@@ -49,7 +50,11 @@ async function sendExpoPush(messages: ExpoPushMessage[]): Promise<ExpoPushResult
   try {
     const response = await fetch(EXPO_PUSH_URL, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        ...(EXPO_ACCESS_TOKEN ? { Authorization: `Bearer ${EXPO_ACCESS_TOKEN}` } : {}),
+      },
       body: JSON.stringify(messages),
     });
 

@@ -63,6 +63,13 @@ export const SMTP_PASSWORD = process.env.SMTP_PASSWORD;
 export const PASSWORD_RESET_OTP_EXPIRY_MINUTES = Number(process.env.PASSWORD_RESET_OTP_EXPIRY_MINUTES || 10);
 export const PASSWORD_RESET_OTP_MAX_ATTEMPTS = Number(process.env.PASSWORD_RESET_OTP_MAX_ATTEMPTS || 5);
 
+// Optional - when set, sent as a Bearer token on Expo push requests so only
+// this backend can send pushes using our app's tokens (see
+// notification.service.ts#sendExpoPush). Without it, Expo's push endpoint
+// still works, just without that guard. Generate one at
+// https://expo.dev/accounts/[account]/settings/access-tokens.
+export const EXPO_ACCESS_TOKEN = process.env.EXPO_ACCESS_TOKEN;
+
 // Called once at server startup (see src/index.ts) - fails fast on missing
 // config instead of letting the app boot into a broken or insecurely
 // configured state that only surfaces once the first request hits it.

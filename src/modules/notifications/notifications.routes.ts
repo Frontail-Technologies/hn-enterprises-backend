@@ -19,6 +19,11 @@ export const notificationsRoutes = new Elysia({ prefix: "/notifications" })
     "/mark-all-read",
     ({ currentUser, set }) => notificationsController.markAllRead({ currentUser, set }),
     { requireAuth: true },
+  )
+  .delete(
+    "/:id",
+    ({ params, currentUser, set }) => notificationsController.remove({ params, currentUser, set }),
+    { params: t.Object({ id: t.String() }), requireAuth: true },
   );
 
 export const pushTokensRoutes = new Elysia({ prefix: "/push-tokens" })
