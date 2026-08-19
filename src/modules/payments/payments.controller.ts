@@ -4,14 +4,13 @@ import { uploadService } from "@services";
 import { errorMessage, ok, paginated, statusFromError } from "@utils";
 import { paymentsService } from "./payments.service";
 import { paymentsImportService } from "./payments.import.service";
-import type { CreatePaymentBody, PaymentListQuery, UpdatePaymentBody } from "./payments.types";
+import type {
+  CreatePaymentBody,
+  PaymentFilterColumn,
+  PaymentListQuery,
+  UpdatePaymentBody,
+} from "./payments.types";
 
-// Attachments arrive embedded in the same multipart request as the payment
-// fields (mobile) instead of via a separate /uploads call beforehand - this
-// avoids leaving an orphaned uploaded file when the user picks a photo but
-// never actually saves the record. `evidence` may already contain
-// previously-uploaded entries (kept as-is on update); newly picked files get
-// uploaded here and appended.
 async function mergeUploadedEvidence(
   existing: Record<string, unknown>[] | undefined,
   files: File[] | undefined,
@@ -21,8 +20,15 @@ async function mergeUploadedEvidence(
 
   const uploaded = await Promise.all(
     files.map(async (file) => {
-      const stored = await uploadService.store(file, { module: "payments", ...context });
-      return { id: crypto.randomUUID(), fileName: stored.fileName, fileUrl: stored.url };
+      const stored = await uploadService.store(file, {
+        module: "payments",
+        ...context,
+      });
+      return {
+        id: crypto.randomUUID(),
+        fileName: stored.fileName,
+        fileUrl: stored.url,
+      };
     }),
   );
 
@@ -36,7 +42,40 @@ export const paymentsController = {
       return paginated(rows, pagination);
     } catch (error) {
       set.status = statusFromError(error);
-      return { success: false, message: errorMessage(error, "Unable to list payments") };
+      return {
+        success: false,
+        message: errorMessage(error, "Unable to list payments"),
+      };
+    }
+  },
+
+  async summary({ query, set }: { query: PaymentListQuery; set: SetContext }) {
+    try {
+      return ok(await paymentsService.summary(query));
+    } catch (error) {
+      set.status = statusFromError(error);
+      return {
+        success: false,
+        message: errorMessage(error, "Unable to summarize payments"),
+      };
+    }
+  },
+
+  async filterValues({
+    query,
+    set,
+  }: {
+    query: { column: PaymentFilterColumn };
+    set: SetContext;
+  }) {
+    try {
+      return ok(await paymentsService.filterValues(query.column));
+    } catch (error) {
+      set.status = statusFromError(error);
+      return {
+        success: false,
+        message: errorMessage(error, "Unable to list filter values"),
+      };
     }
   },
 
@@ -46,7 +85,10 @@ export const paymentsController = {
       return ok(payment);
     } catch (error) {
       set.status = statusFromError(error);
-      return { success: false, message: errorMessage(error, "Unable to fetch payment") };
+      return {
+        success: false,
+        message: errorMessage(error, "Unable to fetch payment"),
+      };
     }
   },
 
@@ -62,13 +104,21 @@ export const paymentsController = {
     try {
       if (!currentUser) throw new Error("Authentication required");
       const { files, ...rest } = body;
-      const evidence = await mergeUploadedEvidence(rest.evidence, files, { uploadedBy: currentUser.id });
-      const payment = await paymentsService.create({ ...rest, evidence }, currentUser);
+      const evidence = await mergeUploadedEvidence(rest.evidence, files, {
+        uploadedBy: currentUser.id,
+      });
+      const payment = await paymentsService.create(
+        { ...rest, evidence },
+        currentUser,
+      );
       set.status = 201;
       return ok(payment, "Payment recorded");
     } catch (error) {
       set.status = statusFromError(error);
-      return { success: false, message: errorMessage(error, "Unable to record payment") };
+      return {
+        success: false,
+        message: errorMessage(error, "Unable to record payment"),
+      };
     }
   },
 
@@ -90,11 +140,18 @@ export const paymentsController = {
         recordId: params.id,
         uploadedBy: currentUser.id,
       });
-      const payment = await paymentsService.update(params.id, { ...rest, evidence }, currentUser);
+      const payment = await paymentsService.update(
+        params.id,
+        { ...rest, evidence },
+        currentUser,
+      );
       return ok(payment, "Payment updated");
     } catch (error) {
       set.status = statusFromError(error);
-      return { success: false, message: errorMessage(error, "Unable to update payment") };
+      return {
+        success: false,
+        message: errorMessage(error, "Unable to update payment"),
+      };
     }
   },
 
@@ -104,7 +161,10 @@ export const paymentsController = {
       return ok(null, "Payment deleted");
     } catch (error) {
       set.status = statusFromError(error);
-      return { success: false, message: errorMessage(error, "Unable to delete payment") };
+      return {
+        success: false,
+        message: errorMessage(error, "Unable to delete payment"),
+      };
     }
   },
 };
@@ -125,7 +185,10 @@ export const paymentsImportController = {
       return ok(await paymentsImportService.preview(file, currentUser));
     } catch (error) {
       set.status = statusFromError(error);
-      return { success: false, message: errorMessage(error, "Unable to preview import") };
+      return {
+        success: false,
+        message: errorMessage(error, "Unable to preview import"),
+      };
     }
   },
 
@@ -152,16 +215,25 @@ export const paymentsImportController = {
   }) {
     try {
       if (!currentUser) throw new Error("Authentication required");
-      return ok(await paymentsImportService.confirm(body.validRows, currentUser), "Import successful");
+      return ok(
+        await paymentsImportService.confirm(body.validRows, currentUser),
+        "Import successful",
+      );
     } catch (error) {
       set.status = statusFromError(error);
-      return { success: false, message: errorMessage(error, "Unable to confirm import") };
+      return {
+        success: false,
+        message: errorMessage(error, "Unable to confirm import"),
+      };
     }
   },
 };
 
 function getUploadFile(body: unknown): File {
-  const file = body && typeof body === "object" ? (body as Record<string, unknown>).file : null;
+  const file =
+    body && typeof body === "object"
+      ? (body as Record<string, unknown>).file
+      : null;
 
   if (!(file instanceof File)) {
     throw new Error("Import file is required");

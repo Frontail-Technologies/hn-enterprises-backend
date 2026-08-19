@@ -204,6 +204,8 @@ export const masterImportService = {
           siteIdByKey.set(siteKey, siteId);
         }
 
+        const { giMeasurements, progressMilestones } = applyBillingCompletionSync(row, user.id);
+
         const [insertedCustomer] = await tx
           .insert(customers)
           .values({
@@ -226,13 +228,14 @@ export const masterImportService = {
             conversionReportNumber: row.conversionReportNumber || null,
             status: mapCustomerStatus(row.customerStatus),
             survey: emptyToNull(row.survey),
-            giMeasurements: emptyToNull(row.giMeasurements),
+            giMeasurements,
             valvesRegulators: emptyToNull(row.valvesRegulators),
             fittingsAccessories: emptyToNull(row.fittingsAccessories),
             lmcPipelineWork: emptyToNull(row.lmcPipelineWork),
             mdpeFittings: emptyToNull(row.mdpeFittings),
             commissioningConversion: emptyToNull(row.commissioningConversion),
             billingCompletion: emptyToNull(row.billingCompletion),
+            progressMilestones,
             customFields: emptyToNull(row.customFields),
             importedFields: row.rawData,
             createdBy: user.id,
@@ -475,6 +478,40 @@ function mapCustomerStatus(
 
 function emptyToNull<T extends Record<string, unknown>>(value: T) {
   return Object.keys(value).length ? value : null;
+}
+
+// Billing -> completion synchronization for imported rows, mirroring the same
+// rule applied on normal customer saves (customers.service.ts's update()): a
+// bill marked Done always implies the corresponding work is complete. Since
+// import rows never update an existing customer (matches are rejected, see
+// matchRows above), this always fires against a brand-new record, so there is
+// no earlier completedAt to protect - the sync is a one-time stamp at import
+// time. completedAt uses the import moment (the actual known event: "done as
+// of this import"), never a fabricated historical date; completedBy is the
+// importing admin, never client-supplied. Conversion is deliberately left
+// alone here too - it stays field-driven off an actual conversionDate, exactly
+// like the normal-save path, never a fabricated one.
+function applyBillingCompletionSync(row: NormalizedImportRow, userId: string) {
+  const giMeasurements = emptyToNull(row.giMeasurements) as Record<string, unknown> | null;
+  const billingCompletion = row.billingCompletion as Record<string, unknown>;
+
+  let giMeasurementsResult = giMeasurements;
+  let progressMilestones: Record<string, unknown> | null = null;
+
+  if (billingCompletion.giBillDone === true) {
+    giMeasurementsResult = {
+      ...(giMeasurements ?? {}),
+      completion: { completedAt: new Date().toISOString(), completedBy: userId },
+    };
+  }
+
+  if (billingCompletion.gcBillDone === true) {
+    progressMilestones = {
+      gc: { completedAt: new Date().toISOString(), completedBy: userId },
+    };
+  }
+
+  return { giMeasurements: giMeasurementsResult, progressMilestones };
 }
 
 async function insertPipeRecords(

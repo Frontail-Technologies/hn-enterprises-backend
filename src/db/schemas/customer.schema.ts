@@ -149,6 +149,22 @@ type CustomerCommissioningConversionPayload = {
   approvalComments?: string;
 };
 
+// Grouped completion markers for progress milestones that have no other
+// natural home in an existing section payload (§ Customer Progress Stats).
+// Each follows the same {completedAt, completedBy} shape as the completion
+// marker already embedded in giMeasurements/valvesRegulators/etc. - kept as
+// one new jsonb column instead of six, and instead of bolting onto sections
+// (survey, commissioningConversion) that mobile already owns wholesale.
+export type CustomerProgressMilestonesPayload = {
+  gc?: SectionCompletionMeta;
+  valveChamber?: SectionCompletionMeta;
+  preCommissioning?: SectionCompletionMeta;
+  poleMarker?: SectionCompletionMeta;
+  routeMarker?: SectionCompletionMeta;
+  connection?: SectionCompletionMeta;
+  siteExpenses?: SectionCompletionMeta;
+};
+
 type CustomerBillingCompletionPayload = {
   paymentStatus?: string;
   paymentMode?: string;
@@ -240,6 +256,7 @@ export const customers = pgTable(
     commissioningConversion:
       jsonb("commissioning_conversion").$type<CustomerCommissioningConversionPayload>(),
     billingCompletion: jsonb("billing_completion").$type<CustomerBillingCompletionPayload>(),
+    progressMilestones: jsonb("progress_milestones").$type<CustomerProgressMilestonesPayload>(),
     customFields: jsonb("custom_fields").$type<Record<string, unknown>>(),
     importedFields: jsonb("imported_fields").$type<Record<string, unknown>>(),
     createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
@@ -257,6 +274,10 @@ export const customers = pgTable(
     nameIdx: index("customers_name_idx").on(table.normalizedCustomerName),
     plumberIdx: index("customers_plumber_idx").on(table.plumberId),
     supervisorIdx: index("customers_supervisor_idx").on(table.supervisorId),
+    // Supports the Work Queue's `ORDER BY customers.created_at DESC LIMIT/OFFSET`
+    // (work-progress.service.ts#listQueue) now that Mobile actually paginates
+    // through it instead of fetching a flat 200-row cap.
+    createdAtIdx: index("customers_created_at_idx").on(table.createdAt),
   }),
 );
 

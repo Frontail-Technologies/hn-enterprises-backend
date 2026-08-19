@@ -18,6 +18,7 @@ export type SupervisorStatId =
   | "total-pbg-assignment"
   | "total-connection-done"
   | "total-connection-remark"
+  | "needs-attention"
   | "total-conversion-done"
   | "customer-resolve";
 
@@ -48,6 +49,7 @@ export type SupervisorStatDetailRow = {
   title: string;
   reference: string;
   site: string;
+  address: string;
   status: SupervisorStatDetailStatus;
   updatedOn: string;
   helper: string;

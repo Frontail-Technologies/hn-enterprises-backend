@@ -232,6 +232,22 @@ export const projectsService = {
       .orderBy(projectSites.name);
   },
 
+  // Flat, cross-project site listing with each site's stable id + name -
+  // backs the Work Queue's Site filter, which (unlike the project detail
+  // screen's site list) needs every site up front, not one project at a
+  // time, so it can filter server-side by id instead of matching on the
+  // display name it currently shows.
+  async listAllSites(): Promise<{ id: string; name: string; projectId: string; projectName: string }[]> {
+    const db = getDb();
+    const rows = await db
+      .select({ id: projectSites.id, name: projectSites.name, projectId: projects.id, projectName: projects.name })
+      .from(projectSites)
+      .innerJoin(projects, eq(projectSites.projectId, projects.id))
+      .orderBy(projectSites.name);
+
+    return rows;
+  },
+
   async createSite(projectId: string, input: CreateProjectSiteBody, userId: string) {
     await getProjectOrThrow(projectId);
     const db = getDb();

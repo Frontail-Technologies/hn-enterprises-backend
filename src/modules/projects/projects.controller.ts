@@ -131,6 +131,15 @@ export const projectsController = {
     }
   },
 
+  async listAllSites({ set }: { set: SetContext }) {
+    try {
+      return ok(await projectsService.listAllSites());
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to list sites") };
+    }
+  },
+
   async createSite({
     params,
     body,

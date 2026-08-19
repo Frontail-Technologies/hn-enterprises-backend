@@ -46,4 +46,13 @@ export const workProgressController = {
       return { success: false, message: errorMessage(error, "Unable to list work progress queue") };
     }
   },
+
+  async queueSummary({ query, set }: { query: WorkProgressQueueQuery; set: SetContext }) {
+    try {
+      return ok(await workProgressService.queueSummary(query));
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to summarize work progress queue") };
+    }
+  },
 };

@@ -10,13 +10,23 @@ export type PaymentListQuery = {
   limit?: number | string;
   search?: string;
   category?: PaymentCategory;
-  status?: PaymentStatus;
+  status?: string;
   siteId?: string;
   plumberId?: string;
   projectId?: string;
   from?: string;
   to?: string;
+  paidTo?: string;
+  purpose?: string;
+  address?: string;
+  amount?: string;
+  date?: string;
+  // summary() only - "true" skips the categoryBreakdown/recent sub-queries
+  // for callers that only read count/total. Ignored by list().
+  totalsOnly?: string;
 };
+
+export type PaymentFilterColumn = "paidTo" | "purpose" | "address" | "amount" | "date" | "status" | "category";
 
 export type CreatePaymentBody = {
   category: PaymentCategory;

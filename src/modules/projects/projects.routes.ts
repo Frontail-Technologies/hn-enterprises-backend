@@ -31,6 +31,13 @@ export const projectsRoutes = new Elysia({ prefix: "/projects" })
       requireRole: ["super_admin", "admin"],
     },
   )
+  // Static path, registered ahead of `/:id` for clarity (matches the bulk
+  // route's convention above - Elysia already prioritizes static routes).
+  .get(
+    "/sites",
+    ({ set }) => projectsController.listAllSites({ set }),
+    { requireAuth: true },
+  )
   .get(
     "/:id",
     ({ params, set }) => projectsController.get({ params, set }),

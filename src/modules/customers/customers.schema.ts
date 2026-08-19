@@ -21,6 +21,8 @@ export const customerListQuerySchema = t.Object({
   siteId: t.Optional(t.String()),
   statKey: t.Optional(t.String()),
   city: t.Optional(t.String()),
+  month: t.Optional(t.String()),
+  year: t.Optional(t.String()),
 });
 
 const jsonSection = t.Optional(t.Record(t.String(), t.Unknown()));

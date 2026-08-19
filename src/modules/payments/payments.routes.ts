@@ -1,12 +1,28 @@
 import { Elysia, t } from "elysia";
 import { auth } from "@plugins";
 import { paymentsController, paymentsImportController } from "./payments.controller";
-import { createPaymentBodySchema, paymentListQuerySchema, updatePaymentBodySchema } from "./payments.schema";
+import {
+  createPaymentBodySchema,
+  paymentFilterValuesQuerySchema,
+  paymentListQuerySchema,
+  paymentSummaryQuerySchema,
+  updatePaymentBodySchema,
+} from "./payments.schema";
 
 export const paymentsRoutes = new Elysia({ prefix: "/payments" })
   .use(auth)
   .get("/", ({ query, set }) => paymentsController.list({ query, set }), {
     query: paymentListQuerySchema,
+    requireAuth: true,
+  })
+  // Static paths, registered ahead of `/:id` for clarity (matches the
+  // customers routes' convention - Elysia already prioritizes static routes).
+  .get("/summary", ({ query, set }) => paymentsController.summary({ query, set }), {
+    query: paymentSummaryQuerySchema,
+    requireAuth: true,
+  })
+  .get("/filter-values", ({ query, set }) => paymentsController.filterValues({ query, set }), {
+    query: paymentFilterValuesQuerySchema,
     requireAuth: true,
   })
   .post(

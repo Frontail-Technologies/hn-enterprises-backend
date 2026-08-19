@@ -14,9 +14,21 @@ export const statsController = {
     }
   },
 
-  async getAdminSummary({ query, set }: { query: { projectId?: string; city?: string }; set: SetContext }) {
+  async getAdminSummary({
+    query,
+    set,
+  }: {
+    query: { projectId?: string; city?: string; siteId?: string; month?: string; year?: string };
+    set: SetContext;
+  }) {
     try {
-      return ok(await dashboardStatsService.getAdminCounts(query.projectId, query.city));
+      return ok(
+        await dashboardStatsService.getAdminCounts(query.projectId, query.city, {
+          siteId: query.siteId,
+          month: query.month ? Number(query.month) : undefined,
+          year: query.year ? Number(query.year) : undefined,
+        }),
+      );
     } catch (error) {
       set.status = statusFromError(error);
       return { success: false, message: errorMessage(error, "Unable to load admin stats summary") };

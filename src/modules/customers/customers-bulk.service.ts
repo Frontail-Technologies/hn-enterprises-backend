@@ -300,6 +300,24 @@ export const customersBulkService = {
       throw new Error("No editable fields were provided.");
     }
 
+    // Billing -> completion synchronization (bulk path). Same rule as the
+    // single-record update: a bill marked Done implies the work is complete,
+    // never the reverse, and an already-complete section's completedAt is
+    // never overwritten. Expressed as a per-row CASE so one batched UPDATE
+    // still only backfills rows that don't already have a completion stamp.
+    const giCompletionSync =
+      changes.giBillDone === true
+        ? sql`CASE WHEN (coalesce(${customers.giMeasurements}, '{}'::jsonb)->'completion'->>'completedAt') IS NULL
+            THEN coalesce(${customers.giMeasurements}, '{}'::jsonb) || jsonb_build_object('completion', jsonb_build_object('completedAt', now(), 'completedBy', ${currentUser.id}::text))
+            ELSE ${customers.giMeasurements} END`
+        : undefined;
+    const gcCompletionSync =
+      changes.gcBillDone === true
+        ? sql`CASE WHEN (coalesce(${customers.progressMilestones}, '{}'::jsonb)->'gc'->>'completedAt') IS NULL
+            THEN coalesce(${customers.progressMilestones}, '{}'::jsonb) || jsonb_build_object('gc', jsonb_build_object('completedAt', now(), 'completedBy', ${currentUser.id}::text))
+            ELSE ${customers.progressMilestones} END`
+        : undefined;
+
     await db.transaction(async (tx) => {
       await tx
         .update(customers)
@@ -310,6 +328,8 @@ export const customersBulkService = {
                 billingCompletion: sql`coalesce(${customers.billingCompletion}, '{}'::jsonb) || ${JSON.stringify(jsonMerge)}::jsonb`,
               }
             : {}),
+          ...(giCompletionSync ? { giMeasurements: giCompletionSync } : {}),
+          ...(gcCompletionSync ? { progressMilestones: gcCompletionSync } : {}),
           updatedBy: currentUser.id,
           updatedAt: new Date(),
         })

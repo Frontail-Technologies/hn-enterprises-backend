@@ -65,3 +65,11 @@ export const upsertDprRecordBodySchema = t.Object({
   tasks: t.Array(dprTaskSchema),
   evidence: t.Optional(t.Array(evidenceFileSchema)),
 });
+
+export const planningOverviewQuerySchema = t.Object({
+  date: t.String({ minLength: 1 }),
+});
+
+export const siteCustomersQuerySchema = t.Object({
+  siteId: t.String({ minLength: 1 }),
+});

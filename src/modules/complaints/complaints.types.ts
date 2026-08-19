@@ -9,6 +9,7 @@ export type ComplaintListQuery = {
   customerId?: string;
   supervisorId?: string;
   status?: ComplaintStatus;
+  search?: string;
 };
 
 export type CreateComplaintBody = {

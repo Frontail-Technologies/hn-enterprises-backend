@@ -1,10 +1,17 @@
-import { and, count, desc, eq, ilike, or } from "drizzle-orm";
+import { and, count, desc, eq, ilike, inArray, or } from "drizzle-orm";
 import { getDb } from "@db";
-import { customerDocuments, customerLmcPipeRecords, customerNotes, customers, plumbers, users, workProgressUpdates } from "@db/schema";
+import { complaints, customerDocuments, customerLmcPipeRecords, customerNotes, customers, plumbers, users, workProgressUpdates } from "@db/schema";
 import { normalizeKey } from "@modules/master-import/master-import.mapper";
 import { buildPaginationMeta, cleanObject, parsePagination, toSearchPattern } from "@utils";
 import { auditService, permissionService } from "@services";
-import { buildCustomerCompletionAudit, customerStatCondition, evaluateCustomerCompletion } from "./customer-completion";
+import {
+  buildCustomerCompletionAudit,
+  customerStatCondition,
+  customerStatDateCondition,
+  evaluateCustomerCompletion,
+  PROGRESS_MILESTONE_KEYS,
+  type ProgressMilestoneKey,
+} from "./customer-completion";
 import { customersDeletionService } from "./customers-deletion.service";
 import type { AuthTokenPayload } from "@types";
 import type {
@@ -39,6 +46,18 @@ const EXPLICIT_COMPLETION_SECTIONS: Record<string, true> = {
   lmcPipelineWork: true,
 };
 
+const PROGRESS_MILESTONE_SECTIONS: Record<string, true> = Object.fromEntries(
+  PROGRESS_MILESTONE_KEYS.map((key) => [key, true]),
+);
+
+// Sections whose bill is "Done" reopening must block: work can finish before
+// billing, but a completed bill must never be silently contradicted by
+// reopening the underlying work. Correct the billing flag first.
+const REOPEN_BLOCKED_BY_BILL: Partial<Record<string, { billField: string; label: string }>> = {
+  giMeasurements: { billField: "giBillDone", label: "GI Bill Done" },
+  gc: { billField: "gcBillDone", label: "GC Bill Done" },
+};
+
 async function getPlumberNameOrThrow(plumberId: string) {
   const db = getDb();
   const [plumber] = await db.select({ name: plumbers.name }).from(plumbers).where(eq(plumbers.id, plumberId)).limit(1);
@@ -69,6 +88,17 @@ async function getCustomerOrThrow(id: string) {
   return customer;
 }
 
+// Same resolver list() uses (§ shared column config) - so the single-customer
+// detail view's Completed On/By never disagrees with the Web master sheet or
+// Excel export.
+async function buildCompletionAuditFor(customer: Parameters<typeof buildCustomerCompletionAudit>[0]) {
+  const db = getDb();
+  const userRows = await db.select({ id: users.id, name: users.name }).from(users);
+  const userNames = new Map(userRows.map((u) => [u.id, u.name]));
+  const resolveUserName = (userId: string | null | undefined) => (userId ? (userNames.get(userId) ?? userId) : null);
+  return buildCustomerCompletionAudit(customer, resolveUserName);
+}
+
 // Single source of truth lives in customer-completion.ts; this stays as the
 // list-query entry point but no longer defines its own copy of the conditions.
 export function getStatKeyCondition(statKey: string) {
@@ -94,6 +124,9 @@ export const customersService = {
           )
         : undefined,
       query.statKey ? getStatKeyCondition(query.statKey) : undefined,
+      query.statKey
+        ? customerStatDateCondition(query.statKey, Number(query.month) || undefined, Number(query.year) || undefined)
+        : undefined,
     ].filter((condition): condition is NonNullable<typeof condition> => Boolean(condition));
 
     const where = conditions.length ? and(...conditions) : undefined;
@@ -133,6 +166,35 @@ export const customersService = {
       completionAudit: buildCustomerCompletionAudit(row, resolveUserName),
     }));
 
+    // Complaint drill-down columns (Complaint Status/Date, Resolved Date) need
+    // real complaint rows, not just the customer record - only fetched for the
+    // two complaint-based stats so the plain customer list/master table never
+    // pays for this join.
+    if (query.statKey === "complaint-customer" || query.statKey === "customer-resolved") {
+      const ids = rowsWithCompletionAudit.map((row) => row.id);
+      const complaintRows = ids.length
+        ? await db
+            .select({
+              customerId: complaints.customerId,
+              status: complaints.status,
+              createdAt: complaints.createdAt,
+              resolvedAt: complaints.resolvedAt,
+              supervisorRemark: complaints.supervisorRemark,
+            })
+            .from(complaints)
+            .where(inArray(complaints.customerId, ids))
+            .orderBy(desc(complaints.createdAt))
+        : [];
+      const latestByCustomer = new Map<string, (typeof complaintRows)[number]>();
+      for (const complaint of complaintRows) {
+        if (!latestByCustomer.has(complaint.customerId)) latestByCustomer.set(complaint.customerId, complaint);
+      }
+      return {
+        rows: rowsWithCompletionAudit.map((row) => ({ ...row, latestComplaint: latestByCustomer.get(row.id) ?? null })),
+        pagination: buildPaginationMeta(page, limit, total),
+      };
+    }
+
     return { rows: rowsWithCompletionAudit, pagination: buildPaginationMeta(page, limit, total) };
   },
 
@@ -141,6 +203,7 @@ export const customersService = {
     return {
       ...customer,
       sectionCompletion: evaluateCustomerCompletion(customer, customer.lmcPipeRecords),
+      completionAudit: await buildCompletionAuditFor(customer),
     };
   },
 
@@ -150,24 +213,48 @@ export const customersService = {
     completed: boolean,
     currentUser: AuthTokenPayload,
   ) {
-    if (!(sectionKey in EXPLICIT_COMPLETION_SECTIONS)) {
+    const isJsonSection = sectionKey in EXPLICIT_COMPLETION_SECTIONS;
+    const isMilestone = sectionKey in PROGRESS_MILESTONE_SECTIONS;
+    if (!isJsonSection && !isMilestone) {
       throw new Error("This section does not support explicit completion");
     }
 
     const db = getDb();
     const existing = await getCustomerOrThrow(id);
-    const oldSection = (existing[sectionKey as keyof typeof existing] as Record<string, unknown> | null) ?? {};
+
+    if (!completed) {
+      const guard = REOPEN_BLOCKED_BY_BILL[sectionKey];
+      const billing = (existing.billingCompletion ?? {}) as Record<string, unknown>;
+      if (guard && billing[guard.billField] === true) {
+        throw new Error(`${guard.label} is already marked - correct the billing status before reopening this section.`);
+      }
+    }
+
     const completion = completed
       ? { completedAt: new Date().toISOString(), completedBy: currentUser.id }
       : null;
 
     const [customer] = await db
       .update(customers)
-      .set({
-        [sectionKey]: { ...oldSection, completion },
-        updatedBy: currentUser.id,
-        updatedAt: new Date(),
-      })
+      .set(
+        isJsonSection
+          ? {
+              [sectionKey]: {
+                ...((existing[sectionKey as keyof typeof existing] as Record<string, unknown> | null) ?? {}),
+                completion,
+              },
+              updatedBy: currentUser.id,
+              updatedAt: new Date(),
+            }
+          : {
+              progressMilestones: {
+                ...(existing.progressMilestones ?? {}),
+                [sectionKey as ProgressMilestoneKey]: completion,
+              },
+              updatedBy: currentUser.id,
+              updatedAt: new Date(),
+            },
+      )
       .where(eq(customers.id, id))
       .returning();
 
@@ -183,7 +270,11 @@ export const customersService = {
     });
 
     const refreshed = await getCustomerOrThrow(id);
-    return { ...refreshed, sectionCompletion: evaluateCustomerCompletion(refreshed, refreshed.lmcPipeRecords) };
+    return {
+      ...refreshed,
+      sectionCompletion: evaluateCustomerCompletion(refreshed, refreshed.lmcPipeRecords),
+      completionAudit: await buildCompletionAuditFor(refreshed),
+    };
   },
 
   async create(input: CreateCustomerBody, userId: string) {
@@ -330,6 +421,37 @@ export const customersService = {
               remarks: section.approvalComments || `Status updated to ${newStatus} via web dashboard`,
             });
           }
+        }
+      }
+    }
+
+    // Billing -> completion synchronization: a bill marked Done always implies
+    // the corresponding work is complete, even if nobody separately hit "Mark
+    // Complete". Never runs in reverse (marking work complete never touches a
+    // bill flag) - see customer-completion.ts's gi-done/gc-done conditions for
+    // the read-time OR that backs this up for write paths other than this one.
+    // Only fires "not already complete" (never overwrites an earlier real
+    // completedAt), and stamps the actual acting user, never a fabricated one.
+    const billingPatch = jsonPatch.billingCompletion;
+    if (billingPatch) {
+      if (billingPatch.giBillDone === true) {
+        const currentGi = (jsonPatch.giMeasurements ?? existing.giMeasurements ?? {}) as Record<string, unknown>;
+        const currentCompletion = (currentGi.completion ?? {}) as { completedAt?: string | null };
+        if (!currentCompletion.completedAt) {
+          jsonPatch.giMeasurements = {
+            ...currentGi,
+            completion: { completedAt: new Date().toISOString(), completedBy: userId },
+          };
+        }
+      }
+      if (billingPatch.gcBillDone === true) {
+        const currentMilestones = (jsonPatch.progressMilestones ?? existing.progressMilestones ?? {}) as Record<string, unknown>;
+        const currentGc = (currentMilestones.gc ?? {}) as { completedAt?: string | null };
+        if (!currentGc.completedAt) {
+          jsonPatch.progressMilestones = {
+            ...currentMilestones,
+            gc: { completedAt: new Date().toISOString(), completedBy: userId },
+          };
         }
       }
     }

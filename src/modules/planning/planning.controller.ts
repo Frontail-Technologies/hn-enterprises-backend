@@ -67,4 +67,61 @@ export const planningController = {
       return { success: false, message: errorMessage(error, "Unable to save DPR record") };
     }
   },
+
+  async getWorkPlanningOverview({
+    query,
+    currentUser,
+    set,
+  }: {
+    query: { date: string };
+    currentUser: AuthTokenPayload | null;
+    set: SetContext;
+  }) {
+    try {
+      if (!currentUser) throw new Error("Authentication required");
+      const rows = await planningService.getWorkPlanningOverview(query.date, currentUser);
+      return ok(rows);
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to load Work Planning overview") };
+    }
+  },
+
+  async getDprOverview({
+    query,
+    currentUser,
+    set,
+  }: {
+    query: { date: string };
+    currentUser: AuthTokenPayload | null;
+    set: SetContext;
+  }) {
+    try {
+      if (!currentUser) throw new Error("Authentication required");
+      const rows = await planningService.getDprOverview(query.date, currentUser);
+      return ok(rows);
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to load DPR overview") };
+    }
+  },
+
+  async listSiteCustomers({
+    query,
+    currentUser,
+    set,
+  }: {
+    query: { siteId: string };
+    currentUser: AuthTokenPayload | null;
+    set: SetContext;
+  }) {
+    try {
+      if (!currentUser) throw new Error("Authentication required");
+      const rows = await planningService.listSiteCustomers(query.siteId, currentUser);
+      return ok(rows);
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to list Site customers") };
+    }
+  },
 };

@@ -102,7 +102,10 @@ export const staffService = {
 
       if (!userId) {
         if (!input.newUser) throw new Error("Either userId or newUser is required");
-        assertCanAssignRole(actorRole, input.newUser.role);
+        // The Staff page exists to onboard field supervisors - the role is
+        // always "supervisor" regardless of what a caller sends, so there's
+        // nothing here for assertCanAssignRole to gate (supervisor is never
+        // an elevated role).
         assertStrongPassword(input.newUser.password);
         const email = input.newUser.email.toLowerCase().trim();
         const username = input.newUser.username.toLowerCase().trim();
@@ -122,7 +125,7 @@ export const staffService = {
             email,
             mobile: input.newUser.mobile || null,
             passwordHash: await hashPassword(input.newUser.password),
-            role: input.newUser.role,
+            role: "supervisor",
             status: "active",
             passwordChangedAt: new Date(),
           })
@@ -132,6 +135,10 @@ export const staffService = {
       } else {
         const [existingStaff] = await tx.select({ id: staff.id }).from(staff).where(eq(staff.userId, userId)).limit(1);
         if (existingStaff) throw new Error("This user already has a staff record");
+
+        const [linkUser] = await tx.select({ role: users.role }).from(users).where(eq(users.id, userId)).limit(1);
+        if (!linkUser) throw new Error("User not found");
+        if (linkUser.role !== "supervisor") throw new Error("Only supervisor accounts can be linked as staff");
       }
 
       const [staffRow] = await tx

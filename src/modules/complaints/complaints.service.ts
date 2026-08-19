@@ -1,8 +1,8 @@
-import { and, count, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq, ilike, or } from "drizzle-orm";
 import { getDb } from "@db";
 import { complaints, customers } from "@db/schema";
 import type { AuthTokenPayload } from "@types";
-import { buildPaginationMeta, cleanObject, parsePagination } from "@utils";
+import { buildPaginationMeta, cleanObject, parsePagination, toSearchPattern } from "@utils";
 import type { ComplaintListQuery, CreateComplaintBody, UpdateComplaintBody } from "./complaints.types";
 
 async function getComplaintOrThrow(id: string) {
@@ -22,10 +22,21 @@ export const complaintsService = {
     const db = getDb();
     const { page, limit, offset } = parsePagination(query);
 
+    const searchPattern = toSearchPattern(query.search);
+
     const conditions = [
       query.customerId ? eq(complaints.customerId, query.customerId) : undefined,
       query.supervisorId ? eq(customers.supervisorId, query.supervisorId) : undefined,
       query.status ? eq(complaints.status, query.status) : undefined,
+      // Matches every field Mobile's complaint list card shows (was filtered
+      // client-side over a flat fetch before).
+      searchPattern
+        ? or(
+            ilike(complaints.title, searchPattern),
+            ilike(complaints.description, searchPattern),
+            ilike(customers.customerName, searchPattern),
+          )
+        : undefined,
     ].filter((condition): condition is NonNullable<typeof condition> => Boolean(condition));
 
     const where = conditions.length ? and(...conditions) : undefined;
