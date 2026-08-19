@@ -62,56 +62,71 @@ function resolveCloudinaryCredentials() {
   );
 }
 
-function uploadBuffer(buffer: Buffer, storageKey: string): Promise<UploadApiResponse> {
+// Deliberately NOT cloudinary.uploader.upload_stream() - under Bun (this
+// backend's runtime), that call silently loses its options/credentials for
+// any payload >= 1 MiB (reproduced directly: identical code, credentials,
+// and file succeed under plain Node and fail under Bun every time above
+// exactly 1,048,576 bytes), surfacing as this same "Upload preset must be
+// specified when using unsigned upload" regardless of how correct the
+// resolved credentials are. That's a Bun/SDK streaming incompatibility, not
+// anything about our config. uploader.upload() with a base64 data URI
+// avoids the streaming path entirely and has been verified to work under
+// Bun up to 8MB; tested well above this app's own 20MB upload cap.
+function uploadBuffer(buffer: Buffer, mimeType: string, storageKey: string): Promise<UploadApiResponse> {
   const credentials = resolveCloudinaryCredentials();
+  const dataUri = `data:${mimeType};base64,${buffer.toString("base64")}`;
 
-  return new Promise((resolve, reject) => {
-    const stream = cloudinary.uploader.upload_stream(
-      {
-        ...credentials,
-        folder: CLOUDINARY_FOLDER,
-        public_id: storageKeyWithoutExtension(storageKey),
-        resource_type: "auto",
-        overwrite: true,
-      },
-      (error, result) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-
-        if (!result) {
-          reject(new Error("Cloudinary upload did not return a result"));
-          return;
-        }
-
-        resolve(result);
-      },
-    );
-
-    stream.end(buffer);
+  return cloudinary.uploader.upload(dataUri, {
+    ...credentials,
+    folder: CLOUDINARY_FOLDER,
+    public_id: storageKeyWithoutExtension(storageKey),
+    resource_type: "auto",
+    overwrite: true,
   });
 }
 
 export const cloudinaryUploadProvider: UploadProvider = {
   async store(file: File, context: UploadContext): Promise<StoredFile> {
     const storageKey = buildStorageKey(file, context);
-    const result = await uploadBuffer(await fileToBuffer(file), storageKey);
 
-    return {
-      fileName: file.name,
-      mimeType: file.type || "application/octet-stream",
-      size: file.size,
-      storageKey: result.public_id,
-      url: result.secure_url,
-      driver: "cloudinary",
-      metadata: {
-        assetId: result.asset_id,
-        resourceType: result.resource_type,
-        format: result.format,
-        bytes: result.bytes,
-      },
-    };
+    try {
+      const mimeType = file.type || "application/octet-stream";
+      const result = await uploadBuffer(await fileToBuffer(file), mimeType, storageKey);
+
+      return {
+        fileName: file.name,
+        mimeType: file.type || "application/octet-stream",
+        size: file.size,
+        storageKey: result.public_id,
+        url: result.secure_url,
+        driver: "cloudinary",
+        metadata: {
+          assetId: result.asset_id,
+          resourceType: result.resource_type,
+          format: result.format,
+          bytes: result.bytes,
+        },
+      };
+    } catch (error) {
+      // Every module (evidence, expenses, announcements, ...) goes through
+      // this same store() - if one module fails and others don't despite
+      // identical credential resolution, that's surprising enough to be
+      // worth a paper trail rather than a guess. Never logs the actual
+      // secret, only whether each source was present.
+      console.error("[cloudinary-upload] store failed", {
+        module: context.module,
+        recordId: context.recordId,
+        fileName: file.name,
+        mimeType: file.type,
+        size: file.size,
+        hasCloudName: Boolean(CLOUDINARY_CLOUD_NAME?.trim()),
+        hasApiKey: Boolean(CLOUDINARY_API_KEY?.trim()),
+        hasApiSecret: Boolean(CLOUDINARY_API_SECRET?.trim()),
+        hasCloudinaryUrl: Boolean(CLOUDINARY_URL?.trim()),
+        error,
+      });
+      throw error;
+    }
   },
 
   async remove(storageKey: string) {
