@@ -118,6 +118,50 @@ export const announcementsService = {
     };
   },
 
+  // Re-sends an already-sent announcement: same recipients, a fresh
+  // notification row for each (so it reappears unread in their list) and a
+  // fresh push. sentAt is bumped to this run so "Sent On" reflects the most
+  // recent push, not the original one.
+  async republish(id: string) {
+    const existing = await getAnnouncementOrThrow(id);
+    if (existing.status !== "sent") throw new Error("Only sent announcements can be re-pushed");
+
+    const db = getDb();
+    const recipients = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(and(eq(users.role, "supervisor"), eq(users.status, "active")));
+
+    const [row] = await db
+      .update(announcements)
+      .set({ sentAt: new Date(), updatedAt: new Date() })
+      .where(eq(announcements.id, id))
+      .returning();
+
+    if (!row) throw new Error("Unable to re-push announcement");
+
+    const notifyResult = await notificationService.queue({
+      userIds: recipients.map((recipient) => recipient.id),
+      title: row.title,
+      message: row.message,
+      category: "system",
+      sourceType: "announcement",
+      sourceId: row.id,
+      imageUrl: row.imageUrl ?? undefined,
+      route: { pathname: "/notifications" },
+    });
+
+    return {
+      ...row,
+      recipientCount: recipients.length,
+      notifiedCount: notifyResult.notifiedCount,
+      notifyError: notifyResult.notifyError,
+      pushTokenCount: notifyResult.pushTokenCount,
+      pushSuccess: notifyResult.pushSuccess,
+      pushError: notifyResult.pushError,
+    };
+  },
+
   async delete(id: string) {
     const db = getDb();
     await getAnnouncementOrThrow(id); // Ensure it exists

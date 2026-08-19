@@ -83,6 +83,19 @@ export const announcementsController = {
     }
   },
 
+  async republish({ params, set }: { params: { id: string }; set: SetContext }) {
+    try {
+      const result = await announcementsService.republish(params.id);
+      const message = result.pushSuccess
+        ? `Announcement re-pushed to ${result.pushTokenCount} device${result.pushTokenCount === 1 ? "" : "s"}`
+        : `Announcement re-pushed, but push delivery failed${result.pushError ? `: ${result.pushError}` : ""}. It's still visible in the mobile app's notification list.`;
+      return ok(result, message);
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to re-push announcement") };
+    }
+  },
+
   async delete({ params, set }: { params: { id: string }; set: SetContext }) {
     try {
       await announcementsService.delete(params.id);
