@@ -97,6 +97,7 @@ export const announcementsService = {
       category: "system",
       sourceType: "announcement",
       sourceId: row.id,
+      imageUrl: row.imageUrl ?? undefined,
       route: { pathname: "/notifications" },
     });
 

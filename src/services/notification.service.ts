@@ -13,6 +13,7 @@ type NotificationInput = {
   category?: NotificationCategory;
   sourceType?: string;
   sourceId?: string;
+  imageUrl?: string;
   route?: NotificationRoutePayload;
 };
 
@@ -128,6 +129,7 @@ export const notificationService = {
             category: input.category ?? "system",
             sourceType: input.sourceType || null,
             sourceId: input.sourceId || null,
+            imageUrl: input.imageUrl || null,
             route: input.route,
           })),
         )

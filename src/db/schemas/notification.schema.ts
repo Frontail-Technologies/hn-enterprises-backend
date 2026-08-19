@@ -25,6 +25,7 @@ export const notifications = pgTable(
     category: notificationCategoryEnum("category").notNull().default("system"),
     sourceType: text("source_type"),
     sourceId: uuid("source_id"),
+    imageUrl: text("image_url"),
     route: jsonb("route").$type<NotificationRoutePayload>(),
     read: boolean("read").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
