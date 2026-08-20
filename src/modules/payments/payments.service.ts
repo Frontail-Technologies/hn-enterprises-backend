@@ -96,10 +96,14 @@ export const paymentsService = {
     );
     const where = conditions.length ? and(...conditions) : undefined;
 
-    // List-sized DTO: `evidence` (photo/document URLs) is only ever read on
-    // the single-record detail view (get()), not by any list row - selecting
-    // it here would multiply payload size by however many photos each of the
-    // `limit` payments carries for no reason a list screen actually uses.
+    // `evidence` IS needed on the list row, not just the single-record detail
+    // view: the web admin's Payments & Expenses grid reads it directly off
+    // list rows for its Attachment count column, the row-level "View" action,
+    // and to prefill the edit drawer (the frontend has no separate
+    // get-by-id call - see payments.service.ts on the frontend). Omitting it
+    // here previously left all three permanently broken (View always
+    // disabled, Attachment column always "-", edit drawer's receipt field
+    // always empty) even for payments with real uploaded evidence.
     const listSelection = {
       id: payments.id,
       category: payments.category,
@@ -115,6 +119,7 @@ export const paymentsService = {
       status: payments.status,
       purpose: payments.purpose,
       remarks: payments.remarks,
+      evidence: payments.evidence,
     };
 
     const [rows, [{ value: total }]] = await Promise.all([
