@@ -121,7 +121,7 @@ export const customersRoutes = new Elysia({ prefix: "/customers" })
     {
       params: t.Object({ id: t.String() }),
       body: upsertLmcPipeRecordBodySchema,
-      requireAuth: true,
+      requireRole: ["super_admin", "admin", "supervisor"],
     },
   )
   .get(
@@ -136,7 +136,7 @@ export const customersRoutes = new Elysia({ prefix: "/customers" })
     {
       params: t.Object({ id: t.String() }),
       body: createCustomerDocumentBodySchema,
-      requireAuth: true,
+      requireRole: ["super_admin", "admin", "supervisor"],
     },
   )
   .delete(
@@ -159,6 +159,6 @@ export const customersRoutes = new Elysia({ prefix: "/customers" })
     {
       params: t.Object({ id: t.String() }),
       body: createCustomerNoteBodySchema,
-      requireAuth: true,
+      requireRole: ["super_admin", "admin", "supervisor"],
     },
   );

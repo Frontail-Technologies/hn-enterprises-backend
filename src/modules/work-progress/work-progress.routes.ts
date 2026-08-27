@@ -27,5 +27,5 @@ export const workProgressRoutes = new Elysia({ prefix: "/work-progress" })
   .post(
     "/",
     ({ body, currentUser, set }) => workProgressController.create({ body, currentUser, set }),
-    { body: createWorkProgressUpdateBodySchema, requireAuth: true },
+    { body: createWorkProgressUpdateBodySchema, requireRole: ["super_admin", "admin", "supervisor"] },
   );

@@ -21,7 +21,7 @@ export const workProgressController = {
     try {
       if (!currentUser) throw new Error("Authentication required");
       set.status = 201;
-      return ok(await workProgressService.create(body, currentUser.id), "Work progress update recorded");
+      return ok(await workProgressService.create(body, currentUser), "Work progress update recorded");
     } catch (error) {
       set.status = statusFromError(error);
       return { success: false, message: errorMessage(error, "Unable to record work progress update") };

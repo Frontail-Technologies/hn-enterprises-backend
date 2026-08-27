@@ -2,7 +2,7 @@ import { and, eq, ilike, inArray, notInArray, or, sql } from "drizzle-orm";
 import { getDb } from "@db";
 import { customerNotes, customers, plumbers, projectSites, projects, users } from "@db/schema";
 import { isForeignKeyViolation, toEntityInUseError, toSearchPattern } from "@utils";
-import { auditService } from "@services";
+import { auditService, permissionService } from "@services";
 import type { AuthTokenPayload } from "@types";
 import { getStatKeyCondition } from "./customers.service";
 import { assertCustomersDeletable } from "./customers-deletion.service";
@@ -360,8 +360,21 @@ export const customersBulkService = {
   /** Append one customerNotes row per selected customer (remarks are a history, §6/§11). */
   async bulkRemark(selection: CustomerBulkSelection, note: string, currentUser: AuthTokenPayload) {
     const db = getDb();
-    const ids = await resolveSelectionIds(selection);
+    let ids = await resolveSelectionIds(selection);
     if (!ids.length) return { count: 0 };
+
+    // Unlike bulk/update and bulk/delete (admin-only), bulk/remark also
+    // allows supervisors - scope their selection down to customers actually
+    // assigned to them rather than trusting a client-provided id/filter set
+    // that could reach any customer.
+    if (!permissionService.canManage(currentUser)) {
+      const owned = await db
+        .select({ id: customers.id })
+        .from(customers)
+        .where(and(inArray(customers.id, ids), eq(customers.supervisorId, currentUser.id)));
+      ids = owned.map((row) => row.id);
+      if (!ids.length) return { count: 0 };
+    }
 
     await db.transaction(async (tx) => {
       await tx.insert(customerNotes).values(

@@ -222,6 +222,10 @@ export const customersService = {
     const db = getDb();
     const existing = await getCustomerOrThrow(id);
 
+    if (!permissionService.canModifyCustomer(currentUser, existing.supervisorId)) {
+      throw new Error("Not authorized to update this customer");
+    }
+
     if (!completed) {
       const guard = REOPEN_BLOCKED_BY_BILL[sectionKey];
       const billing = (existing.billingCompletion ?? {}) as Record<string, unknown>;
@@ -333,6 +337,11 @@ export const customersService = {
   async update(id: string, input: UpdateCustomerBody, currentUser: AuthTokenPayload) {
     const userId = currentUser.id;
     const existing = await getCustomerOrThrow(id);
+
+    if (!permissionService.canModifyCustomer(currentUser, existing.supervisorId)) {
+      throw new Error("Not authorized to update this customer");
+    }
+
     const db = getDb();
     const plumberName = input.plumberId ? await getPlumberNameOrThrow(input.plumberId) : undefined;
     const supervisorName = input.supervisorId ? await getUserNameOrThrow(input.supervisorId) : undefined;
@@ -505,8 +514,12 @@ export const customersService = {
       .orderBy(customerLmcPipeRecords.pipeSize);
   },
 
-  async upsertLmcPipeRecord(customerId: string, input: UpsertLmcPipeRecordBody, userId: string) {
-    await getCustomerOrThrow(customerId);
+  async upsertLmcPipeRecord(customerId: string, input: UpsertLmcPipeRecordBody, currentUser: AuthTokenPayload) {
+    const customer = await getCustomerOrThrow(customerId);
+    if (!permissionService.canModifyCustomer(currentUser, customer.supervisorId)) {
+      throw new Error("Not authorized to update this customer");
+    }
+
     const db = getDb();
 
     const values = {
@@ -522,7 +535,7 @@ export const customersService = {
       jointFittingDetails: input.jointFittingDetails || null,
       remarks: input.remarks || null,
       evidence: input.evidence,
-      updatedBy: userId,
+      updatedBy: currentUser.id,
       updatedAt: new Date(),
     };
 
@@ -549,8 +562,12 @@ export const customersService = {
       .orderBy(customerDocuments.uploadedAt);
   },
 
-  async createDocument(customerId: string, input: ResolvedCustomerDocumentInput, userId: string) {
+  async createDocument(customerId: string, input: ResolvedCustomerDocumentInput, currentUser: AuthTokenPayload) {
     const customer = await getCustomerOrThrow(customerId);
+    if (!permissionService.canModifyCustomer(currentUser, customer.supervisorId)) {
+      throw new Error("Not authorized to update this customer");
+    }
+
     const db = getDb();
 
     const [document] = await db
@@ -570,7 +587,7 @@ export const customersService = {
         mimeType: input.mimeType || null,
         status: input.status ?? "submitted",
         remarks: input.remarks || null,
-        uploadedBy: userId,
+        uploadedBy: currentUser.id,
       })
       .returning();
 
@@ -602,15 +619,19 @@ export const customersService = {
     });
   },
 
-  async createNote(customerId: string, input: CreateCustomerNoteBody, userId: string) {
-    await getCustomerOrThrow(customerId);
+  async createNote(customerId: string, input: CreateCustomerNoteBody, currentUser: AuthTokenPayload) {
+    const customer = await getCustomerOrThrow(customerId);
+    if (!permissionService.canModifyCustomer(currentUser, customer.supervisorId)) {
+      throw new Error("Not authorized to update this customer");
+    }
+
     const db = getDb();
 
     const [note] = await db
       .insert(customerNotes)
       .values({
         customerId,
-        authorId: userId,
+        authorId: currentUser.id,
         note: input.note,
       })
       .returning();

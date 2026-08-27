@@ -2,6 +2,8 @@ import { and, count, desc, eq, ilike, isNull, or, sql } from "drizzle-orm";
 import { getDb } from "@db";
 import { customers, projects, projectSites, users, workProgressUpdates } from "@db/schema";
 import { buildPaginationMeta, parsePagination, toSearchPattern } from "@utils";
+import { permissionService } from "@services";
+import type { AuthTokenPayload } from "@types";
 import type {
   CreateWorkProgressUpdateBody,
   WorkProgressListQuery,
@@ -10,7 +12,11 @@ import type {
 
 async function getCustomerOrThrow(id: string) {
   const db = getDb();
-  const [customer] = await db.select({ id: customers.id }).from(customers).where(eq(customers.id, id)).limit(1);
+  const [customer] = await db
+    .select({ id: customers.id, supervisorId: customers.supervisorId })
+    .from(customers)
+    .where(eq(customers.id, id))
+    .limit(1);
   if (!customer) throw new Error("Customer not found");
   return customer;
 }
@@ -73,15 +79,19 @@ function buildQueueConditions(query: WorkProgressQueueQuery, latest: LatestUpdat
 }
 
 export const workProgressService = {
-  async create(input: CreateWorkProgressUpdateBody, supervisorId: string) {
-    await getCustomerOrThrow(input.customerId);
+  async create(input: CreateWorkProgressUpdateBody, currentUser: AuthTokenPayload) {
+    const customer = await getCustomerOrThrow(input.customerId);
+    if (!permissionService.canModifyCustomer(currentUser, customer.supervisorId)) {
+      throw new Error("Not authorized to update this customer");
+    }
+
     const db = getDb();
 
     const [row] = await db
       .insert(workProgressUpdates)
       .values({
         customerId: input.customerId,
-        supervisorId,
+        supervisorId: currentUser.id,
         stage: input.stage,
         status: input.status,
         nextRequiredAction: input.nextRequiredAction || null,

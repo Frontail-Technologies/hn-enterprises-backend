@@ -279,7 +279,7 @@ export const customersController = {
       const record = await customersService.upsertLmcPipeRecord(
         params.id,
         { ...rest, evidence },
-        currentUser.id,
+        currentUser,
       );
       return ok(record, "LMC pipe record saved");
     } catch (error) {
@@ -316,7 +316,7 @@ export const customersController = {
       const document = await customersService.createDocument(
         params.id,
         { ...resolved, fileUrl: resolved.fileUrl, fileName: resolved.fileName },
-        currentUser.id,
+        currentUser,
       );
       set.status = 201;
       return ok(document, "Customer document created");
@@ -375,7 +375,7 @@ export const customersController = {
   }) {
     try {
       if (!currentUser) throw new Error("Authentication required");
-      const note = await customersService.createNote(params.id, body, currentUser.id);
+      const note = await customersService.createNote(params.id, body, currentUser);
       set.status = 201;
       return ok(note, "Note added");
     } catch (error) {
