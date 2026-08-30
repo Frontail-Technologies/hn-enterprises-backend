@@ -6,9 +6,6 @@ import { buildPaginationMeta, parsePagination } from "@utils";
 import type { AuthTokenPayload } from "@types";
 import type { SupervisorStat, SupervisorStatDetailRow, SupervisorStatId, SupervisorStatTone } from "./stats.types";
 
-// Roles that are meant to see system-wide customer stats. Everyone else is
-// scoped to the customers assigned to them, so a supervisor never sees global
-// counts on their device.
 const GLOBAL_STATS_ROLES = new Set(["super_admin", "admin"]);
 
 function supervisorScope(currentUser: AuthTokenPayload | null): string | undefined {
@@ -66,28 +63,16 @@ const STAT_ORDER: SupervisorStatId[] = [
   "customer-resolve",
 ];
 
-// "Total Conversion Done" is a UI-label alias of "conversion-done" - same
-// canonical condition, kept as its own card only because it already shipped
-// under this id; not a second source of truth (see CUSTOMER_STAT_KEY below,
-// where both ids map to the same "conversion-done" canonical key).
 const HIDDEN_STAT_IDS = new Set<SupervisorStatId>(["total-conversion-done", "dpr", "planning"]);
 
 const VISIBLE_STAT_ORDER: SupervisorStatId[] = STAT_ORDER.filter((id) => !HIDDEN_STAT_IDS.has(id));
 
-// Counts that aren't a subset of the customer base (DPR records, site plans)
-// are shown as a bare number; every other stat is a customer count and shown
-// as "x/total".
 const BARE_COUNT_STAT_IDS = new Set<SupervisorStatId>(["dpr", "planning"]);
 
 function isStatId(value: string): value is SupervisorStatId {
   return (STAT_ORDER as string[]).includes(value);
 }
 
-// Maps every mobile-visible customer stat to its canonical STAT_CONDITION_SQL
-// key in customer-completion.ts - the exact same resolver the web dashboard
-// summary and drill-down already share. This is the single place mobile and
-// web can ever disagree, and it's a straight lookup, not a reimplementation -
-// do not add bespoke per-field predicates back into this file.
 const CUSTOMER_STAT_KEY: Partial<Record<SupervisorStatId, string>> = {
   "survey-done": "survey-done",
   "gi-done": "gi-done",
@@ -105,11 +90,7 @@ const CUSTOMER_STAT_KEY: Partial<Record<SupervisorStatId, string>> = {
   "pole-marker": "pole-marker-done",
   "route-marker": "route-marker-done",
   "total-connection-done": "connection-done",
-  // BUSINESS-CONFIRMATION-PENDING: mapped to billingCompletion.remark, the
-  // closest existing field - see customer-completion.ts's STAT_CONDITION_SQL.
   "total-connection-remark": "total-connection-remark",
-  // The condition this id used to (incorrectly) carry under "Total Connection
-  // Remark" - an on-hold / sent-back / rejected workflow flag, not a remark.
   "needs-attention": "connection-remark",
   "complaint-customer": "complaint-customer",
   "customer-resolve": "customer-resolved",
@@ -396,10 +377,6 @@ export const statsService = {
 
     const scope = scopeId ? sql`WHERE supervisor_id = ${scopeId}` : sql``;
 
-    // One SQL query, one condition per stat, all sourced from the same
-    // canonical registry the web dashboard uses - see dashboard-stats.service.ts's
-    // getAdminCounts for the identical pattern (project/site/city-scoped there,
-    // supervisor-scoped here).
     const filters = CUSTOMER_STAT_ENTRIES.map(([mobileId, canonicalKey]) => {
       const alias = sql.raw(mobileId.replace(/-/g, "_"));
       const condition = customerStatCondition(canonicalKey) ?? sql`FALSE`;

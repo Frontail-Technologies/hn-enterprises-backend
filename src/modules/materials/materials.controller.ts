@@ -16,10 +16,6 @@ import type {
   UpdateMaterialBody,
 } from "./materials.types";
 
-// Attachments arrive embedded in the same multipart request as the
-// transaction fields (mobile/web) instead of via a separate /uploads call
-// beforehand - avoids leaving an orphaned uploaded file when the user picks
-// a photo but never actually saves the transaction.
 async function mergeUploadedEvidence(
   existing: Record<string, unknown>[] | undefined,
   files: File[] | undefined,

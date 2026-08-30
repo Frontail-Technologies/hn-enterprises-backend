@@ -20,24 +20,11 @@ import {
   unmergeRanges,
 } from "./workbook-helpers";
 
-/** Vertically-merged "weekly off" columns in the template - always unmerged first since
- * the template's own merge is fixed to May 2026's calendar; the correct merge (if any) for
- * the requested month is recomputed from scratch further down. */
 const SUNDAY_MERGE_RANGES = ["F7:F12", "M7:M12", "T7:T12", "AA7:AA12"];
 
-// The template's own HOLIDAY cells use a 90deg text rotation so the word fits the narrow
-// day column instead of clipping; plain P/A/HD/L cells are not rotated. Since a real
-// month's Sunday can land in any day column, this rotation must be applied wherever
-// HOLIDAY actually ends up, and explicitly cleared for any other value.
 const HOLIDAY_ALIGNMENT = { horizontal: "center", vertical: "middle", textRotation: 90 } as const;
 const NORMAL_DAY_ALIGNMENT = { horizontal: "center", vertical: "middle" } as const;
 
-// The template's own Sunday-column fill (light theme blue), read directly off its F7 cell.
-// Applied to whichever column is the REAL Sunday for the requested month/year, and
-// explicitly cleared everywhere else - the template bakes this fill onto fixed columns
-// (F/M/T/AA) that only happen to be Sunday for its May-2026 sample.
-// `bgColor.indexed` matches the reference template's raw XML exactly, but exceljs's own
-// `Color` type only declares argb/theme - a typings gap, not a runtime one - hence the cast.
 const SUNDAY_FILL = {
   type: "pattern",
   pattern: "solid",
@@ -55,8 +42,6 @@ async function loadRoster(projectId?: string) {
     .select({
       userId: users.id,
       name: users.name,
-      // `projects.city` is the closest authoritative geographic field to the template's
-      // "Place of work" (project.name is a contract/document code, not a location).
       placeOfWork: projects.city,
     })
     .from(users)
@@ -136,10 +121,6 @@ export const attendanceExportService = {
     const anchorDayCol = lastPossibleDayCol - 1;
     const lastDataRow = layout.firstDataRow + roster.length - 1;
 
-    // A Sunday column reproduces the reference's single merged "HOLIDAY" region only when
-    // NOBODY in the roster has a real attendance record for that date - the moment any one
-    // employee has an override, the column can no longer show one shared value, so it stays
-    // unmerged and every employee shows their own real status (or their own HOLIDAY default).
     const sundayShouldMerge = new Array<boolean>(maxDayColumns).fill(false);
     for (let dayIndex = 0; dayIndex < maxDayColumns; dayIndex += 1) {
       const day = period.days[dayIndex];
@@ -148,18 +129,12 @@ export const attendanceExportService = {
       sundayShouldMerge[dayIndex] = !hasOverride;
     }
 
-    // Always walk the full fixed 31-column band (not just daysInMonth): the template's
-    // day-6 row carries a shared formula (master F6, slaves through AG6) left over from
-    // its 30-day May sample. Any short month (e.g. February) that stops early leaves
-    // trailing slave cells pointing at a master we've already overwritten, which crashes
-    // at write time - so out-of-range columns must be explicitly cleared, not skipped.
     for (let dayIndex = 0; dayIndex < maxDayColumns; dayIndex += 1) {
       const col = firstDay + dayIndex;
       const headerRow5 = sheet.getRow(layout.headerLastRow - 1).getCell(col);
       const headerRow6 = sheet.getRow(layout.headerLastRow).getCell(col);
 
       if (col === lastPossibleDayCol) {
-        // 31st-day column: blank in the template for shorter months, so borrow the prior day's style.
         copyCellStyle(sheet.getRow(layout.headerLastRow - 1).getCell(anchorDayCol), headerRow5);
         copyCellStyle(sheet.getRow(layout.headerLastRow).getCell(anchorDayCol), headerRow6);
       }
@@ -176,8 +151,6 @@ export const attendanceExportService = {
       }
     }
 
-    // Merge the "everyone's off" Sundays across the whole employee block first, before any
-    // per-employee writes, and set the shared HOLIDAY value/style once on the master cell.
     if (roster.length > 0) {
       for (let dayIndex = 0; dayIndex < maxDayColumns; dayIndex += 1) {
         if (!sundayShouldMerge[dayIndex]) continue;
@@ -214,9 +187,6 @@ export const attendanceExportService = {
           continue;
         }
 
-        // Merged Sunday columns already have their single HOLIDAY value set on the master
-        // cell above - every cell in the merge range (including this one) shares that
-        // value/style, so writing here again would just re-set the same master cell.
         if (sundayShouldMerge[dayIndex]) continue;
 
         const status = byDate?.get(day.dateKey);

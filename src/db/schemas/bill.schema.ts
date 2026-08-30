@@ -29,9 +29,6 @@ export const bills = pgTable(
   "bills",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    // Billing happens at the project level - projectId is the bill's only
-    // ownership link. (Existing rows were backfilled via
-    // backfill-bill-projects.ts before this was made required.)
     projectId: uuid("project_id")
       .notNull()
       .references(() => projects.id, { onDelete: "restrict" }),
@@ -67,8 +64,6 @@ export const billPayments = pgTable(
       .references(() => bills.id, { onDelete: "cascade" }),
     amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
     paymentDate: timestamp("payment_date", { withTimezone: true }).notNull(),
-    // Free text, not an enum - see the matching note on payments.mode in
-    // payment.schema.ts.
     mode: text("mode").notNull(),
     status: billPaymentStatusEnum("status").notNull().default("cleared"),
     receivedBy: uuid("received_by").references(() => users.id, { onDelete: "set null" }),

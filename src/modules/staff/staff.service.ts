@@ -102,10 +102,6 @@ export const staffService = {
 
       if (!userId) {
         if (!input.newUser) throw new Error("Either userId or newUser is required");
-        // The Staff page exists to onboard field supervisors - the role is
-        // always "supervisor" regardless of what a caller sends, so there's
-        // nothing here for assertCanAssignRole to gate (supervisor is never
-        // an elevated role).
         assertStrongPassword(input.newUser.password);
         const email = input.newUser.email.toLowerCase().trim();
         const username = input.newUser.username.toLowerCase().trim();
@@ -220,11 +216,9 @@ export const staffService = {
   async delete(id: string) {
     const existing = await getStaffOrThrow(id);
     const db = getDb();
-    // Soft delete: set user status to inactive
     await db.update(users).set({ status: "inactive", updatedAt: new Date() }).where(eq(users.id, existing.userId));
   },
 
-  /** Same soft-delete policy as the single-record delete: deactivate the linked user, not a real row delete. */
   async bulkDelete(ids: string[]) {
     const db = getDb();
     const uniqueIds = Array.from(new Set(ids));

@@ -2,7 +2,6 @@ import type { paymentCategoryEnum, paymentStatusEnum } from "@db/schema";
 
 export type PaymentCategory = (typeof paymentCategoryEnum.enumValues)[number];
 export type PaymentStatus = (typeof paymentStatusEnum.enumValues)[number];
-// Free text, managed as master data ("Payment Types") - not a fixed enum.
 export type PaymentMode = string;
 
 export type PaymentListQuery = {
@@ -21,8 +20,6 @@ export type PaymentListQuery = {
   address?: string;
   amount?: string;
   date?: string;
-  // summary() only - "true" skips the categoryBreakdown/recent sub-queries
-  // for callers that only read count/total. Ignored by list().
   totalsOnly?: string;
 };
 

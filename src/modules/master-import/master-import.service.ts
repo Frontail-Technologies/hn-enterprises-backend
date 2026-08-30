@@ -147,11 +147,6 @@ export const masterImportService = {
     };
   },
 
-  /** Re-runs the same authoritative checks `preview()` used against one
-   * edited row - required fields, in-batch BP/TR duplicates (against
-   * sibling rows still in the batch, not removed ones), custom-field key
-   * resolution, and project/site/existing-customer matching - so a single
-   * "Save & Validate" never needs to reprocess the whole file. */
   async editRow(
     batchId: string,
     rowId: string,
@@ -199,9 +194,6 @@ export const masterImportService = {
     return { ...revalidated, id: rowId, isRemoved: existing.isRemoved };
   },
 
-  /** Toggles a row out of / back into the set confirm() will act on. Never
-   * touches any other table - "Remove" only ever hides a draft row from the
-   * next commit, it does not delete data. */
   async setRowRemoved(
     batchId: string,
     rowId: string,
@@ -261,13 +253,6 @@ export const masterImportService = {
     const projectIdByKey = new Map<string, string>();
     const siteIdByKey = new Map<string, string>();
 
-    // Each row commits in its own isolated transaction rather than one
-    // transaction for the whole batch: project/site records are naturally
-    // shared/reusable across rows, and a later row's failure has no
-    // correctness reason to undo an earlier row's already-successful,
-    // independent customer creation. This is what lets confirm() report a
-    // real per-row result and keep every other row's progress on a partial
-    // failure, instead of discarding the whole batch.
     for (const storedRow of storedRows) {
       if (storedRow.isRemoved) continue;
 
@@ -429,9 +414,6 @@ export const masterImportService = {
   },
 };
 
-/** Re-runs base validation, the in-batch BP/TR duplicate check, custom-field
- * key resolution, and project/site/existing-customer matching for a single
- * row - the shared core behind editRow(). */
 async function revalidateRow(batchId: string, rowId: string, row: NormalizedImportRow): Promise<NormalizedImportRow> {
   const db = getDb();
 
@@ -665,17 +647,6 @@ function emptyToNull<T extends Record<string, unknown>>(value: T) {
   return Object.keys(value).length ? value : null;
 }
 
-// Billing -> completion synchronization for imported rows, mirroring the same
-// rule applied on normal customer saves (customers.service.ts's update()): a
-// bill marked Done always implies the corresponding work is complete. Since
-// import rows never update an existing customer (matches are rejected, see
-// matchRows above), this always fires against a brand-new record, so there is
-// no earlier completedAt to protect - the sync is a one-time stamp at import
-// time. completedAt uses the import moment (the actual known event: "done as
-// of this import"), never a fabricated historical date; completedBy is the
-// importing admin, never client-supplied. Conversion is deliberately left
-// alone here too - it stays field-driven off an actual conversionDate, exactly
-// like the normal-save path, never a fabricated one.
 function applyBillingCompletionSync(row: NormalizedImportRow, userId: string) {
   const giMeasurements = emptyToNull(row.giMeasurements) as Record<string, unknown> | null;
   const billingCompletion = row.billingCompletion as Record<string, unknown>;

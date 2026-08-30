@@ -37,9 +37,6 @@ function buildWhere(query: CustomerRegisterQuery): SQL | undefined {
   return conditions.length ? and(...conditions) : undefined;
 }
 
-// A dynamic/custom field has no entry in CUSTOMER_COLUMN_GETTERS (that map only
-// covers the static catalog) - its value always lives at customFields[key],
-// exactly like the Web master sheet's `...customer.customFields` spread.
 function customFieldGetter(key: string): CustomerColumnGetter {
   return (row) => {
     const value = row.customFields?.[key];
@@ -67,8 +64,6 @@ export const customerExportService = {
       resolveUser: (id) => (id ? userNames.get(id) ?? id : null),
     };
 
-    // Only visible columns export, in the exact saved order - the same
-    // resolved config the Web table renders from (§ shared column config).
     const visibleColumns = resolvedColumns
       .filter((column) => column.visible)
       .map((column) => ({

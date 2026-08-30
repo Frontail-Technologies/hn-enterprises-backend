@@ -169,21 +169,10 @@ export const projectsService = {
     return getProjectOrThrow(project.id);
   },
 
-  // Delegates to the Delete Impact architecture (projects-deletion.service.ts):
-  // re-checks dependencies inside the same transaction as the delete, blocks on
-  // financial/audit records (bills, site plans, DPR), and cascades customers +
-  // their own children explicitly before removing the project row. See that
-  // module for the full audited FK policy.
   async delete(id: string, userId: string) {
     await projectsDeletionService.execute(id, userId);
   },
 
-  /**
-   * Hard delete, same FK handling as the single-project delete - but bulk
-   * deletion does not (yet) get its own Delete Impact Preview per-project, so
-   * this keeps the simpler "delete or fail atomically as one batch" behavior:
-   * one blocked project fails the whole batch rather than silently skipping it.
-   */
   async bulkDelete(ids: string[], userId: string) {
     const db = getDb();
     const uniqueIds = Array.from(new Set(ids));
@@ -232,11 +221,6 @@ export const projectsService = {
       .orderBy(projectSites.name);
   },
 
-  // Flat, cross-project site listing with each site's stable id + name -
-  // backs the Work Queue's Site filter, which (unlike the project detail
-  // screen's site list) needs every site up front, not one project at a
-  // time, so it can filter server-side by id instead of matching on the
-  // display name it currently shows.
   async listAllSites(): Promise<{ id: string; name: string; projectId: string; projectName: string }[]> {
     const db = getDb();
     const rows = await db

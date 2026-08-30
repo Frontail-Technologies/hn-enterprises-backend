@@ -17,9 +17,6 @@ type NotificationInput = {
   route?: NotificationRoutePayload;
 };
 
-// Reported back to the caller instead of swallowed, so a screen like
-// Announcements can tell an admin "sent, but push delivery failed" rather
-// than silently showing success either way.
 export type NotificationQueueResult = {
   notifiedCount: number;
   notifyError?: string;
@@ -71,8 +68,6 @@ async function sendExpoPush(messages: ExpoPushMessage[]): Promise<ExpoPushResult
       return { success: false, error: "Expo push API returned an unexpected response" };
     }
 
-    // Tokens Expo reports as no longer registered can never be delivered to
-    // again, so drop them instead of retrying.
     const deadTokens = tickets
       .map((ticket, index) =>
         ticket?.status === "error" && ticket?.details?.error === "DeviceNotRegistered"
@@ -109,11 +104,6 @@ export const notificationService = {
 
     const db = getDb();
 
-    // The in-app notification list is the first-class record of "this was
-    // sent" - a failure here is real and reported, but still doesn't throw,
-    // so a push-service hiccup below can't leave the caller (e.g. Announcement
-    // publish, which already committed `status: "sent"`) in an inconsistent
-    // state where the DB says sent but the API call reports an error.
     let notifiedCount = 0;
     let notifyError: string | undefined;
     let notificationIdByUser = new Map<string, string>();

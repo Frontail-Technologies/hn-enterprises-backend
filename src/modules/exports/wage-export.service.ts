@@ -32,8 +32,6 @@ export const wageExportService = {
     if (!sheet) throw new Error("Wage register template sheet is missing");
     stripImages(sheet);
 
-    // Plumbers have no project/site relation in the current data model, so the
-    // Contractor/Client letterhead fields have no authoritative source here.
     sheet.getCell(layout.contractorCell).value = "";
     sheet.getCell(layout.clientCell).value = "";
     sheet.getCell(layout.periodCell).value = period.periodLabel;
@@ -47,10 +45,6 @@ export const wageExportService = {
 
     records.forEach((record, index) => {
       const row = sheet.getRow(layout.firstDataRow + index);
-      // No persistent "Sl. No. in Employee register" field exists on plumbers either, but
-      // the reference WAGES-MAY sheet uses the same simple 1..N in-register-order sequence
-      // as ATTENDANCE-MAY (its own sample shows 1-6) - a report-local serial, not a
-      // database ID, kept consistent with the Attendance Register's own behavior.
       row.getCell(slNo).value = index + 1;
       row.getCell(name).value = record.plumberName;
       row.getCell(category).value = CATEGORY_DISPLAY[record.category] ?? record.category;
@@ -64,7 +58,6 @@ export const wageExportService = {
       row.getCell(netPayment).value = record.netPayment;
     });
 
-    // Column L is the template's last column (Signature, layout.columns.signature = 12).
     const lastRow = layout.headerLastRow + records.length;
     sheet.pageSetup.printArea = `A1:L${Math.max(lastRow, layout.headerLastRow)}`;
 

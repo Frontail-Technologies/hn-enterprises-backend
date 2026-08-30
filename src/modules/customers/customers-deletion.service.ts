@@ -17,26 +17,6 @@ import { EntityInUseError } from "@utils";
 import { computeDeleteImpact } from "../deletion/deletion.service";
 import type { DbHandle, DeleteImpactConfig, DeleteImpactDependencyConfig, DeleteImpactResult } from "../deletion/deletion.types";
 
-/**
- * Audited FK graph for Customer deletion (§3).
- *
- * - customer_documents, customer_notes, customer_lmc_pipe_records, complaints,
- *   work_progress_updates: all `ON DELETE CASCADE` off customers.id and are pure
- *   customer-scoped records (photos, notes, pipe-laying records, support tickets,
- *   stage-progress log) -> delete with the customer.
- * - payments: DB-level `customerId` is nullable (`ON DELETE SET NULL`), so a raw
- *   delete would technically succeed - but that's exactly the "don't just make
- *   the FK error go away" trap. Payments are financial records; silently
- *   detaching them from the customer they were paid for loses traceability.
- *   Business policy here is stricter than the DB: block, don't detach (§3, §7).
- *   (Bills are project-linked only - they no longer reference a customer at all.)
- * - material_transactions: `ON DELETE SET NULL`, and unlike bills/payments this
- *   *is* the safe case - the ledger is append-only and already treats "no
- *   customer" as a normal, valid state (e.g. store issues). Detach.
- * - site_plans, dpr_records: `ON DELETE RESTRICT` (customerId is required, not
- *   nullable - a plan/DPR is filed per customer). These are field-work history
- *   comparable in importance to bills/payments - block, don't cascade or detach.
- */
 function countOf(db: DbHandle) {
   return db.select({ value: count() });
 }
@@ -148,9 +128,6 @@ export const customersDeletionService = {
         throw new EntityInUseError(`"${impact.entity.label}" cannot be deleted: ${impact.blockers.map((b) => b.reason).join(" ")}`);
       }
 
-      // No explicit child deletes needed - every "delete" dependency here is a
-      // native DB CASCADE off customers.id, so removing the customer row cascades
-      // them automatically. Only the customer row itself needs deleting.
       await tx.delete(customers).where(eq(customers.id, customerId));
 
       return { label: impact.entity.label, totalAffected: impact.totalAffected };
@@ -169,8 +146,6 @@ export const customersDeletionService = {
   },
 };
 
-// Exported for the bulk-delete path (customers-bulk.service.ts) to reuse the same
-// audited policy instead of a second, divergent set of rules.
 export async function assertCustomersDeletable(db: DbHandle, customerIds: string[]) {
   if (!customerIds.length) return;
   const blockingPayments = await scalarCount(countOf(db).from(payments).where(inArray(payments.customerId, customerIds)));

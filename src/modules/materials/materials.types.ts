@@ -44,12 +44,7 @@ export type CreateMaterialTransactionBody = {
   type: MaterialTransactionType;
   quantity: number;
   transactionDate: string;
-  // Required (validated in the service) for issue/return/adjustment - the only types
-  // that can move either source's stock. Ignored/overridden for types where source is
-  // implied by `type` (purchase, pbg_issue, pbg_consumption, consumption).
   source?: MaterialSource;
-  // Required (validated in the service) for adjustment - determines whether the
-  // signed delta adds to or subtracts from the plumber's balance.
   direction?: AdjustmentDirection;
   projectId?: string;
   referenceNo?: string;
@@ -80,8 +75,6 @@ export type PlumberBalanceQuery = {
   projectId?: string;
 };
 
-// "unassigned" is the sentinel for "Central / Unassigned" (projectId IS NULL) - a real
-// project's UUID filters to that project, and omitting the param filters to nothing.
 export type StockBalanceQuery = {
   materialId?: string;
   source?: MaterialSource;
@@ -92,8 +85,6 @@ export type ReverseMaterialTransactionBody = {
   reason: string;
 };
 
-// All fields optional and fall back to the original row's value - a correction is a
-// prefilled copy of the original with only the changed fields supplied.
 export type CorrectMaterialTransactionBody = {
   correctionReason: string;
   quantity?: number;

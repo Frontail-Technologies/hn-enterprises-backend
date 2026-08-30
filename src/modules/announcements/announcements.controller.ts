@@ -5,8 +5,6 @@ import { errorMessage, ok, paginated, statusFromError } from "@utils";
 import { announcementsService } from "./announcements.service";
 import type { AnnouncementListQuery, CreateAnnouncementBody, UpdateAnnouncementBody } from "./announcements.types";
 
-// The image arrives embedded in the same request as the title/message
-// (mobile/web) instead of via a separate /uploads call beforehand.
 async function resolveAnnouncementImage<T extends { file?: File; imageUrl?: string; imageFileName?: string }>(
   body: T,
   uploadedBy: string,

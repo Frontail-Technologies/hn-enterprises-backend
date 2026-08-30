@@ -61,9 +61,6 @@ export const importRows = pgTable(
     matchedProjectId: uuid("matched_project_id"),
     matchedSiteId: uuid("matched_site_id"),
     importedCustomerId: uuid("imported_customer_id"),
-    // Excludes a row from confirm() without deleting it - lets a user drop a
-    // bad row from the batch and undo that later, entirely client-visible,
-    // no DB record ever touched by "Remove".
     isRemoved: boolean("is_removed").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },

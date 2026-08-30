@@ -3,10 +3,6 @@ import { customerStatusEnum } from "@db/schema";
 
 const customerStatusSchema = t.Union(customerStatusEnum.enumValues.map((value) => t.Literal(value)));
 
-// Server-evaluable filters for "select all matching" (filter mode). These
-// mirror the customer list query plus a few operational filters, so the
-// backend can reconstruct the exact matching set with an indexed WHERE
-// instead of the frontend shipping thousands of ids.
 const bulkFilterSchema = t.Object({
   search: t.Optional(t.String()),
   status: t.Optional(customerStatusSchema),
@@ -20,7 +16,6 @@ const bulkFilterSchema = t.Object({
   connectionType: t.Optional(t.String()),
 });
 
-// Two selection modes (§6): explicit ids, or filter-based with exclusions.
 export const bulkSelectionSchema = t.Union([
   t.Object({
     mode: t.Literal("ids"),
@@ -33,15 +28,6 @@ export const bulkSelectionSchema = t.Union([
   }),
 ]);
 
-// The ONLY fields a bulk operation may modify (§16, §26). Identity fields
-// (name, mobile, address, TR/report/meter numbers), unique report/meter
-// identifiers, and individual technical measurements are deliberately
-// absent - applying one value to hundreds of customers only makes sense for
-// fields where "the same value for many customers" is a real business
-// operation (assignment, classification, payment/completion status).
-// `paymentStatus`/`paymentMode`/`initialAmount`/the completion booleans are
-// merged into the billingCompletion jsonb section by the service, not set
-// as columns; `houseType` IS a top-level column (see customer.schema.ts).
 export const bulkUpdateBodySchema = t.Object({
   selection: bulkSelectionSchema,
   changes: t.Object({

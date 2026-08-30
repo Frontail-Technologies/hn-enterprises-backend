@@ -4,14 +4,6 @@ import { users } from "./auth.schema";
 
 export type ColumnPreferenceEntry = { key: string; visible: boolean };
 
-/**
- * Generic per-user, per-table saved column configuration (order + visibility).
- * `tableKey` scopes this to one configurable grid (currently only "customers") -
- * kept generic rather than a customers-specific table so a future grid can reuse
- * the same mechanism without a new migration. The array's order IS the column
- * order; a key omitted from a saved row (e.g. a newly-added catalog field or a
- * new custom field) is appended after the saved ones by the resolver, not lost.
- */
 export const userColumnPreferences = pgTable(
   "user_column_preferences",
   {

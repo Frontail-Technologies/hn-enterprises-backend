@@ -14,8 +14,6 @@ import { users } from "./auth.schema";
 import { plumbers } from "./plumber.schema";
 import { projects, projectSites } from "./project.schema";
 
-// Explicit section-completion marker, stored inside the section's own jsonb so no
-// migration is needed and no customer section data is duplicated.
 type SectionCompletionMeta = {
   completedAt?: string | null;
   completedBy?: string | null;
@@ -149,12 +147,6 @@ type CustomerCommissioningConversionPayload = {
   approvalComments?: string;
 };
 
-// Grouped completion markers for progress milestones that have no other
-// natural home in an existing section payload (§ Customer Progress Stats).
-// Each follows the same {completedAt, completedBy} shape as the completion
-// marker already embedded in giMeasurements/valvesRegulators/etc. - kept as
-// one new jsonb column instead of six, and instead of bolting onto sections
-// (survey, commissioningConversion) that mobile already owns wholesale.
 export type CustomerProgressMilestonesPayload = {
   gc?: SectionCompletionMeta;
   valveChamber?: SectionCompletionMeta;
@@ -174,8 +166,6 @@ type CustomerBillingCompletionPayload = {
   giBillDone?: boolean;
   gcBillDone?: boolean;
   conversionBillDone?: boolean;
-  // Written by master-import and the customer-connection form (customerConnection.jobCardDone
-  // on the frontend) - free text, not a boolean, despite the name.
   jobCardDone?: string;
   remark?: string;
   evidence?: Record<string, unknown>[];
@@ -274,9 +264,6 @@ export const customers = pgTable(
     nameIdx: index("customers_name_idx").on(table.normalizedCustomerName),
     plumberIdx: index("customers_plumber_idx").on(table.plumberId),
     supervisorIdx: index("customers_supervisor_idx").on(table.supervisorId),
-    // Supports the Work Queue's `ORDER BY customers.created_at DESC LIMIT/OFFSET`
-    // (work-progress.service.ts#listQueue) now that Mobile actually paginates
-    // through it instead of fetching a flat 200-row cap.
     createdAtIdx: index("customers_created_at_idx").on(table.createdAt),
   }),
 );

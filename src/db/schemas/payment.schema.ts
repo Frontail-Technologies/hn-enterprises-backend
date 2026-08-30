@@ -32,16 +32,9 @@ export const payments = pgTable(
     siteId: uuid("site_id").references(() => projectSites.id, { onDelete: "set null" }),
     address: text("address"),
     customerId: uuid("customer_id").references(() => customers.id, { onDelete: "set null" }),
-    // Nullable, additive (Command Center Phase 1) - most historical rows resolve
-    // their project via siteId/customerId instead. This exists so expenses with
-    // no site or customer (rent, transport, misc project cost) can still be
-    // attributed to a project directly, without requiring one.
     projectId: uuid("project_id").references(() => projects.id, { onDelete: "set null" }),
     amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
     paymentDate: timestamp("payment_date", { withTimezone: true }).notNull(),
-    // Free text, not an enum - payment modes are managed as master data
-    // ("Payment Types"), so any value an admin adds there must be storable
-    // without a code change/migration.
     mode: text("mode").notNull(),
     status: paymentStatusEnum("status").notNull().default("draft"),
     purpose: text("purpose"),

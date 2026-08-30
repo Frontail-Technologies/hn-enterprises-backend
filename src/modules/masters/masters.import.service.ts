@@ -14,10 +14,6 @@ function assertAdmin(role: string) {
   }
 }
 
-// Shared by the bulk preview loop and the standalone validate-row endpoint -
-// in-file duplicates are only caught during the initial bulk preview (the
-// only place every row is available at once); a later single-row
-// revalidation checks against existing system records for that category.
 export function validateMasterValueRow(data: MasterValueImportRowData, existingValues: Set<string>): { error?: string } {
   if (!data.value) return { error: "Missing value" };
   if (existingValues.has(normalizeKey(data.value))) return { error: "Duplicate value in system" };
@@ -71,8 +67,6 @@ export const masterValuesImportService = {
     return validateMasterValueRow(data, existingSet);
   },
 
-  // Per-row isolated - each master value is an independent insert, only
-  // constrained by per-category uniqueness, already checked per-row.
   async confirm(validRows: MasterValueImportRow[], category: MasterValueCategory, user: { id: string }) {
     const db = getDb();
     let insertedCount = 0;

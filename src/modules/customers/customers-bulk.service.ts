@@ -7,7 +7,6 @@ import type { AuthTokenPayload } from "@types";
 import { getStatKeyCondition } from "./customers.service";
 import { assertCustomersDeletable } from "./customers-deletion.service";
 
-// Hard ceiling so a runaway selection can't lock the whole table (§16).
 const MAX_BULK_TARGETS = 20000;
 
 export type CustomerBulkFilters = {
@@ -27,11 +26,6 @@ export type CustomerBulkSelection =
   | { mode: "ids"; ids: string[] }
   | { mode: "filter"; filters: CustomerBulkFilters; excludedIds?: string[] };
 
-// Only these fields may EVER be touched by a bulk operation. Identity fields
-// (name/mobile/address/TR & report/meter numbers), unique report/meter
-// identifiers, and individual technical measurements are intentionally
-// absent so a bulk op can never overwrite them (§26) - each field here is
-// one where "apply the same value to many customers" is a real operation.
 export type CustomerBulkChanges = {
   supervisorId?: string | null;
   plumberId?: string | null;
@@ -76,8 +70,6 @@ function humanizeEnumValue(value: string) {
   return value.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
-// Build the same WHERE the customer list uses, plus operational filters, so
-// "select all matching" resolves server-side without shipping ids around.
 function buildFilterConditions(filters: CustomerBulkFilters) {
   const searchPattern = toSearchPattern(filters.search);
   return [
@@ -100,10 +92,6 @@ function buildFilterConditions(filters: CustomerBulkFilters) {
   ].filter((condition): condition is NonNullable<typeof condition> => Boolean(condition));
 }
 
-// Resolve a selection to a concrete, existing set of customer ids. Filter mode
-// runs an indexed SELECT server-side (never trusts a client-sent id list for
-// "all matching"); ids mode is intersected with real rows so phantom ids are
-// dropped from the count.
 async function resolveSelectionIds(selection: CustomerBulkSelection): Promise<string[]> {
   const db = getDb();
 
@@ -151,17 +139,10 @@ function isSet(value: string | null | undefined): value is string {
   return typeof value === "string" && value.trim().length > 0;
 }
 
-// Booleans need their own presence check - `false` is a real, explicit
-// value (e.g. "mark GI Bill Done = No") and must not be treated the same as
-// "field not provided" the way an empty string is for `isSet`.
 function isBoolSet(value: boolean | undefined): value is boolean {
   return typeof value === "boolean";
 }
 
-// Activity foundation (Project Command Center Phase 1): a bulk op only gets
-// tagged with a projectId when every targeted customer belongs to the SAME
-// project - a selection spanning multiple projects is intentionally left
-// unscoped rather than guessing which project "owns" the event.
 async function resolveSharedProjectId(ids: string[]): Promise<string | undefined> {
   if (!ids.length) return undefined;
   const db = getDb();
@@ -173,10 +154,6 @@ async function resolveSharedProjectId(ids: string[]): Promise<string | undefined
 }
 
 export const customersBulkService = {
-  /**
-   * Set-based bulk update over an allowlisted field set. Runs ONE UPDATE for
-   * every target row inside a transaction (§17/§18) - no per-row loop.
-   */
   async bulkUpdate(
     selection: CustomerBulkSelection,
     changes: CustomerBulkChanges,
@@ -186,9 +163,7 @@ export const customersBulkService = {
     const ids = await resolveSelectionIds(selection);
     if (!ids.length) return { count: 0 };
 
-    // Build the column patch EXPLICITLY - never spread `changes` into the ORM.
     const columnPatch: Record<string, unknown> = {};
-    // Human-readable "Field → value" lines for the audit description (§ Audit Log).
     const changeSummary: string[] = [];
 
     if ("supervisorId" in changes) {
@@ -229,7 +204,6 @@ export const customersBulkService = {
           .where(eq(projectSites.id, changes.siteId))
           .limit(1);
         if (!site) throw new Error("Selected site was not found.");
-        // If project is being set in the same operation, the site must belong to it (§8).
         if (isSet(changes.projectId) && site.projectId !== changes.projectId) {
           throw new Error("Selected site does not belong to the selected project.");
         }
@@ -257,9 +231,6 @@ export const customersBulkService = {
       changeSummary.push(`${FIELD_LABELS.status} → ${humanizeEnumValue(changes.status)}`);
     }
 
-    // paymentStatus/paymentMode/initialAmount/the completion booleans all
-    // live inside the billingCompletion jsonb section - merge (never
-    // replace) so other billing fields survive.
     const jsonMerge: Record<string, unknown> = {};
     if (isSet(changes.paymentStatus)) {
       jsonMerge.paymentStatus = changes.paymentStatus;
@@ -300,11 +271,6 @@ export const customersBulkService = {
       throw new Error("No editable fields were provided.");
     }
 
-    // Billing -> completion synchronization (bulk path). Same rule as the
-    // single-record update: a bill marked Done implies the work is complete,
-    // never the reverse, and an already-complete section's completedAt is
-    // never overwritten. Expressed as a per-row CASE so one batched UPDATE
-    // still only backfills rows that don't already have a completion stamp.
     const giCompletionSync =
       changes.giBillDone === true
         ? sql`CASE WHEN (coalesce(${customers.giMeasurements}, '{}'::jsonb)->'completion'->>'completedAt') IS NULL
@@ -340,9 +306,6 @@ export const customersBulkService = {
       ...Object.keys(columnPatch).filter((k) => k !== "supervisorName" && k !== "plumberName"),
       ...Object.keys(jsonMerge),
     ];
-    // One aggregate record for the whole operation (never one per row) - the
-    // description reads as "Field → value" lines so Recent Activity shows
-    // exactly what changed without opening the metadata.
     const projectId = await resolveSharedProjectId(ids);
     await auditService.log({
       userId: currentUser.id,
@@ -357,16 +320,11 @@ export const customersBulkService = {
     return { count: ids.length };
   },
 
-  /** Append one customerNotes row per selected customer (remarks are a history, §6/§11). */
   async bulkRemark(selection: CustomerBulkSelection, note: string, currentUser: AuthTokenPayload) {
     const db = getDb();
     let ids = await resolveSelectionIds(selection);
     if (!ids.length) return { count: 0 };
 
-    // Unlike bulk/update and bulk/delete (admin-only), bulk/remark also
-    // allows supervisors - scope their selection down to customers actually
-    // assigned to them rather than trusting a client-provided id/filter set
-    // that could reach any customer.
     if (!permissionService.canManage(currentUser)) {
       const owned = await db
         .select({ id: customers.id })
@@ -396,18 +354,11 @@ export const customersBulkService = {
     return { count: ids.length };
   },
 
-  /**
-   * Hard delete, same policy as the single-customer Delete Impact flow (bills/
-   * payments block the whole batch - never silently skipped or force-detached).
-   * Re-checked inside the transaction, same as the single-delete recheck (§6/§11).
-   */
   async bulkDelete(selection: CustomerBulkSelection, currentUser: AuthTokenPayload) {
     const db = getDb();
     const ids = await resolveSelectionIds(selection);
     if (!ids.length) return { count: 0 };
 
-    // Resolved BEFORE the delete - once these customers are gone there's no
-    // way to look their project back up.
     const projectId = await resolveSharedProjectId(ids);
 
     try {

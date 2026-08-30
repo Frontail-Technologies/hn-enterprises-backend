@@ -5,34 +5,6 @@ import { EntityInUseError } from "@utils";
 import { computeDeleteImpact } from "../deletion/deletion.service";
 import type { DbHandle, DeleteImpactConfig, DeleteImpactDependencyConfig, DeleteImpactResult } from "../deletion/deletion.types";
 
-/**
- * Audited "FK" graph for Master Value deletion (§8) - deliberately in scare quotes:
- * nothing in the schema has a real foreign key to `master_values.id` (confirmed -
- * no `references(() => masterValues.id, ...)` anywhere). Master values are
- * consumed by *string equality* against free-text columns elsewhere, so "is this
- * value in use" has to be a value-match query per category, not an FK count.
- *
- * Categories actually wired to a consuming column, audited and checked below:
- *   - material_categories -> materials.category
- *   - payment_types       -> payments.mode
- *   - connection_types    -> customers.connectionType
- *   - house_types         -> customers.houseType
- *   - schemes             -> customers.scheme
- *   - document_categories -> customerDocuments.category
- *
- * `meter_types` has no plain-column consumer - the only place a meter type is
- * recorded is `customers.commissioningConversion->>'meterType'`, inside a jsonb
- * blob. Usage detection for that one specifically was not implemented this pass
- * (reported in the report as a gap needing confirmation, not silently assumed
- * unused) - it will always report 0 usages/always deletable, which could be wrong.
- *
- * Any category with an in-use value is `block`, not `detach`: leaving e.g. a
- * material with `category = "GI Pipe"` after the "GI Pipe" master value is
- * deleted turns that field into an orphaned free-text value with no matching
- * master row - not destructive, but confusing and silently breaks category-based
- * filtering. `master_values.status` already has "active"/"inactive" - reused as
- * the Deactivate alternative.
- */
 function countOf(db: DbHandle) {
   return db.select({ value: count() });
 }
@@ -103,8 +75,6 @@ async function buildMasterValueDeleteImpactConfig(db: DbHandle, masterValueId: s
       blockReason: (n) => `${n} customer document${n === 1 ? "" : "s"} use this category.`,
     });
   }
-  // meter_types: intentionally no dependency entry - see file header. Always
-  // reports as unused/deletable for this category.
 
   return {
     entityType: "masterValue",
@@ -118,8 +88,6 @@ export const masterValuesDeletionService = {
     return masterValuesDeletionService.getDeleteImpactWithHandle(getDb(), masterValueId);
   },
 
-  /** Same computation against a caller-supplied handle (e.g. a `tx`) - lets bulk
-   * delete recheck every target inside its own transaction (§11). */
   async getDeleteImpactWithHandle(db: DbHandle, masterValueId: string): Promise<DeleteImpactResult> {
     const config = await buildMasterValueDeleteImpactConfig(db, masterValueId);
     return computeDeleteImpact(db, config, masterValueId);

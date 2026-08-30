@@ -88,9 +88,6 @@ export const projectsController = {
     }
   },
 
-  // Delete Impact Preview (§2) - what deleting this project would affect, before
-  // the user commits to it. Read-only; the actual delete still re-checks this same
-  // data inside its own transaction rather than trusting this snapshot.
   async deleteImpact({ params, set }: { params: { id: string }; set: SetContext }) {
     try {
       const impact = await projectsDeletionService.getDeleteImpact(params.id);

@@ -174,22 +174,10 @@ export const usersService = {
     return sanitizeUser(user);
   },
 
-  // Delegates to the Delete Impact architecture (users-deletion.service.ts): blocks
-  // whenever the user has attendance, a staff/payroll profile, or is the recorded
-  // creator/supervisor of complaints, site plans, DPR records, or work progress
-  // updates - all of which are `ON DELETE CASCADE` at the DB level and would
-  // otherwise be silently destroyed by a raw delete (see that file for the audit).
   async delete(id: string, currentUserId: string) {
     return usersDeletionService.execute(id, currentUserId);
   },
 
-  /**
-   * Same self-delete guard as the single-user delete - the actor's own id is
-   * silently excluded rather than failing the whole batch. Every other target is
-   * checked against the same policy as the single-delete flow (§11: no bulk path
-   * bypasses the audited dependency rules) - one blocked user fails the whole
-   * batch rather than silently skipping it or risking a partial cascade.
-   */
   async bulkDelete(ids: string[], currentUserId: string) {
     const db = getDb();
     const uniqueIds = Array.from(new Set(ids));

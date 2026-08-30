@@ -27,18 +27,8 @@ export const materialTransactionTypeEnum = pgEnum("material_transaction_type", [
   "consumption",
 ]);
 
-// Which stock the material physically came from. Receipts (purchase/pbg_issue) and
-// PBG-attributed consumption imply this from `type`; issue/return/adjustment (which
-// can move material from either source) and plain `consumption` require it explicitly
-// so a source-mixed balance ("500m PBG + 200m purchased of the same pipe") never
-// silently merges. Nullable because historical rows predate this column and their true
-// source can't be reconstructed - left honestly unknown rather than guessed.
 export const materialSourceEnum = pgEnum("material_source", ["purchase", "pbg"]);
 
-// Append-only correction/reversal linkage (§7): a "reversal" row negates its target's
-// ledger effect, a "correction" row is the replacement recorded alongside a reversal of
-// the original. Neither ever mutates the original row - "already corrected" is derived
-// by querying for any row whose relatedTransactionId points at it.
 export const materialTransactionLinkTypeEnum = pgEnum("material_transaction_link_type", [
   "reversal",
   "correction",
@@ -76,10 +66,6 @@ export const materialTransactions = pgTable(
     quantity: numeric("quantity", { precision: 14, scale: 3 }).notNull(),
     quantityDelta: numeric("quantity_delta", { precision: 14, scale: 3 }).notNull(),
     source: materialSourceEnum("source"),
-    // Direct project attribution, in addition to (and now populated from, at write
-    // time) the site/customer relations - some transactions (e.g. a plain store issue)
-    // carry neither site nor customer, so without this column they had no resolvable
-    // project at all.
     projectId: uuid("project_id").references(() => projects.id, { onDelete: "set null" }),
     referenceNo: text("reference_no"),
     vendorName: text("vendor_name"),
@@ -101,8 +87,6 @@ export const materialTransactions = pgTable(
     transactionDate: timestamp("transaction_date", { withTimezone: true }).notNull(),
     evidence: jsonb("evidence").$type<Record<string, unknown>[]>(),
     remarks: text("remarks"),
-    // Self-FK linkage for the append-only correct/reverse workflow (§7). Points at the
-    // row this one reverses or replaces; null for ordinary transactions.
     relatedTransactionId: uuid("related_transaction_id").references(
       (): AnyPgColumn => materialTransactions.id,
       { onDelete: "set null" },

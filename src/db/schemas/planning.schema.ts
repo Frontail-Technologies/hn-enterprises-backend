@@ -46,10 +46,6 @@ export const sitePlans = pgTable(
   "site_plans",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    // A plan is filed against a specific customer, not a site - a site can have
-    // many customers, so the site alone can't distinguish whose work is being
-    // planned. projectId/siteId are kept (derived from the customer at write
-    // time) purely for filtering/display continuity with the rest of the app.
     customerId: uuid("customer_id")
       .notNull()
       .references(() => customers.id, { onDelete: "restrict" }),
@@ -84,7 +80,6 @@ export const dprRecords = pgTable(
   "dpr_records",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    // Same customer-first rationale as site_plans - see comment there.
     customerId: uuid("customer_id")
       .notNull()
       .references(() => customers.id, { onDelete: "restrict" }),

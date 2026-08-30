@@ -40,9 +40,6 @@ export const materialTransactionListQuerySchema = t.Object({
 export const createMaterialTransactionBodySchema = t.Object({
   materialId: t.String({ minLength: 1 }),
   type: transactionTypeSchema,
-  // t.Numeric() (not t.Number()) so these also accept the numeric strings a
-  // multipart/form-data body delivers - evidence photos are embedded in the
-  // same request instead of uploaded separately first.
   quantity: t.Numeric(),
   transactionDate: t.String({ minLength: 1 }),
   source: t.Optional(materialSourceSchema),

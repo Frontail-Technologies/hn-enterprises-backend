@@ -19,9 +19,6 @@ export type CustomerListQuery = {
   siteId?: string;
   statKey?: string;
   city?: string;
-  // Only applied alongside statKey - filters by THAT stat's own real event
-  // date (see customer-completion.ts's customerStatDateCondition), so the
-  // drill-down list always matches the summary tile's count exactly.
   month?: number | string;
   year?: number | string;
 };
@@ -94,9 +91,6 @@ export type CreateCustomerDocumentBody = {
   remarks?: string;
 };
 
-// The controller resolves `file`/`fileUrl` down to a guaranteed fileUrl+fileName
-// (uploading `file` if present) before calling the service - this is what the
-// service actually persists.
 export type ResolvedCustomerDocumentInput = Omit<CreateCustomerDocumentBody, "file" | "fileUrl" | "fileName"> & {
   fileUrl: string;
   fileName: string;

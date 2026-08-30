@@ -29,12 +29,6 @@ function assertAdmin(role: string) {
   }
 }
 
-// The single authoritative rule set, reused by the bulk preview loop and the
-// standalone validate-row endpoint (re-run after an in-place edit) - a
-// single edit never needs the whole file reprocessed. In-file duplicates are
-// only caught during the initial bulk preview (the only place every row is
-// available at once) - a later single-row revalidation checks against
-// existing system records, the authoritative source either way.
 export function validateMaterialRow(data: MaterialImportRowData, existingNames: Set<string>): { error?: string } {
   if (!data.name) return { error: "Missing name" };
   if (!data.unit) return { error: "Missing unit" };
@@ -85,9 +79,6 @@ export const materialsImportService = {
     return validateMaterialRow(data, existingSet);
   },
 
-  // Per-row isolated - each row is a single independent insert (no cross-row
-  // dependency), so a failing row is simply reported and skipped instead of
-  // discarding the rows around it.
   async confirm(validRows: MaterialImportRow[], user: { id: string }) {
     const db = getDb();
     let insertedCount = 0;

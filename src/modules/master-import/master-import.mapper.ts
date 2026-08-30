@@ -221,7 +221,6 @@ export async function readSheetRows(file: File): Promise<RawSheetRow[]> {
     return parseCsvRows(buffer.toString("utf8"));
   }
 
-  // Try ExcelJS first (works well with .xlsx)
   const workbook = new ExcelJS.Workbook();
   try {
     await workbook.xlsx.load(buffer as unknown as Parameters<typeof workbook.xlsx.load>[0]);
@@ -240,7 +239,6 @@ export async function readSheetRows(file: File): Promise<RawSheetRow[]> {
 
     return matrixToRows(matrix);
   } catch (excelJsError) {
-    // Fall back to SheetJS which supports .xls, .xlsb, and other legacy formats
     try {
       const xlsWorkbook = XLSX.read(buffer, { type: "buffer", cellDates: true });
       const firstSheetName = xlsWorkbook.SheetNames[0];
@@ -253,9 +251,7 @@ export async function readSheetRows(file: File): Promise<RawSheetRow[]> {
       }
       const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "", raw: false });
       const matrix: SheetCellValue[][] = [
-        // Header row
         Object.keys(rows[0] ?? {}),
-        // Data rows
         ...rows.map((row) => Object.values(row) as SheetCellValue[]),
       ];
       return matrixToRows(matrix);
@@ -270,10 +266,6 @@ export async function readSheetRows(file: File): Promise<RawSheetRow[]> {
 }
 
 
-// Address consolidation and the base (single-row) validation checks are
-// extracted so a single edited row can be revalidated later (§9 - the
-// "Save & Validate" flow in the import workspace) with exactly the same
-// rules the bulk preview used, instead of a second hand-copied rule set.
 export function consolidateAddress(row: NormalizedImportRow) {
   if (!row.fullAddress && row.siteAddress) {
     row.fullAddress = row.siteAddress;
@@ -330,15 +322,6 @@ export function mapRows(rows: RawSheetRow[]): NormalizedImportRow[] {
   });
 }
 
-// Fixes the custom-field key mismatch: unmapped spreadsheet headers were
-// previously stored keyed by their raw header text (e.g. "Meter Reading
-// Notes"), but the rest of the app (CustomerForm, the detail page) reads/
-// writes custom field values by the derived camelCase `key`
-// (buildCustomFieldKey() in masters.service.ts, e.g. "meterReadingNotes").
-// Resolving each header against the active custom field definitions before
-// storage means an imported value actually lines up with the UI that
-// displays it. A header with no matching definition falls back to its raw
-// label rather than being silently dropped.
 export function resolveCustomFieldKeys(
   customFields: Record<string, unknown>,
   definitions: { key: string; label: string }[],

@@ -17,10 +17,6 @@ import type {
   UpdateMasterValueBody,
 } from "./masters.types";
 
-// Deterministic label -> camelCase key derivation, shared by single-create and
-// bulk import so the two paths can't drift into generating different keys for
-// the same label. Callers are responsible for resolving uniqueness (a DB
-// lookup for one-off creates, an in-memory set for a batch import).
 export function buildCustomFieldKey(label: string): string {
   return label
     .trim()
@@ -97,15 +93,10 @@ export const masterValuesService = {
     return row;
   },
 
-  // Delegates to the Delete Impact architecture (master-values-deletion.service.ts):
-  // blocks whenever any business record still uses this value (matched by string
-  // equality against the one column that category actually feeds - see that file).
   async delete(id: string) {
     return masterValuesDeletionService.execute(id);
   },
 
-  /** Same in-use policy as the single-delete flow, rechecked per value inside the
-   * transaction (§11) - one in-use value fails the whole batch. */
   async bulkDelete(ids: string[]) {
     const db = getDb();
     const uniqueIds = Array.from(new Set(ids));
@@ -157,7 +148,6 @@ export const customFieldDefinitionsService = {
     const db = getDb();
     const key = buildCustomFieldKey(input.label);
 
-    // Make key unique if collision
     const [existing] = await db
       .select({ id: customFieldDefinitions.id })
       .from(customFieldDefinitions)
@@ -223,10 +213,6 @@ export const customFieldDefinitionsService = {
     await db.delete(customFieldDefinitions).where(eq(customFieldDefinitions.id, id));
   },
 
-  // Same safety gate as the single-field delete flow (see DynamicFieldGrid on
-  // the frontend): only fields already deactivated may be permanently
-  // deleted. Active fields in the selection are silently skipped rather than
-  // failing the whole batch, and the count reflects that.
   async bulkDelete(ids: string[]) {
     const db = getDb();
     const uniqueIds = Array.from(new Set(ids));
@@ -244,8 +230,6 @@ export const customFieldDefinitionsService = {
     return { count: deletableIds.length, skippedActive };
   },
 
-  // Bulk position/group update from drag-and-drop reordering - one transaction
-  // so a partial failure can't leave the list in a half-reordered state.
   async reorder(items: ReorderCustomFieldsBody, userId: string) {
     if (!items.length) return;
 

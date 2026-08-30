@@ -4,22 +4,6 @@ import { attendance, staff, users } from "@db/schema";
 import { computeDeleteImpact } from "../deletion/deletion.service";
 import type { DbHandle, DeleteImpactConfig, DeleteImpactResult } from "../deletion/deletion.types";
 
-/**
- * Audited FK graph for Staff deletion (§6).
- *
- * Nothing in the schema references `staff.id` at all - it's a leaf table (a
- * payroll-profile extension of exactly one user, `staff.userId` unique). The
- * *existing* delete behavior (staff.service.ts) already never removes a row: it
- * deactivates the linked user (`status: "inactive"`). That already satisfies
- * "preserve historical attendance/payroll records" by construction - there is
- * nothing to block or cascade.
- *
- * This Delete Impact config exists for UI consistency (the same dialog, the same
- * "here's what's linked" preview) rather than because deactivation carries any
- * real risk - `canDelete` is always true, and the dialog's primary action reads
- * "Deactivate Staff" rather than a destructive delete label (wired on the
- * frontend side via `entityTypeLabel`/copy, not by lying about the action here).
- */
 function countOf(db: DbHandle) {
   return db.select({ value: count() });
 }

@@ -101,12 +101,6 @@ export const announcementsService = {
       route: { pathname: "/notifications" },
     });
 
-    // The announcement is already committed as "sent" above (it did reach the
-    // in-app notification list for however many recipients that succeeded
-    // for) - notify/push failures are reported on the result rather than
-    // thrown, so the caller can show an accurate "sent, but delivery had
-    // issues" state instead of either a false success or a misleading error
-    // for an announcement that's actually already sent.
     return {
       ...row,
       recipientCount: recipients.length,
@@ -118,10 +112,6 @@ export const announcementsService = {
     };
   },
 
-  // Re-sends an already-sent announcement: same recipients, a fresh
-  // notification row for each (so it reappears unread in their list) and a
-  // fresh push. sentAt is bumped to this run so "Sent On" reflects the most
-  // recent push, not the original one.
   async republish(id: string) {
     const existing = await getAnnouncementOrThrow(id);
     if (existing.status !== "sent") throw new Error("Only sent announcements can be re-pushed");
@@ -164,7 +154,7 @@ export const announcementsService = {
 
   async delete(id: string) {
     const db = getDb();
-    await getAnnouncementOrThrow(id); // Ensure it exists
+    await getAnnouncementOrThrow(id);
     await db.delete(announcements).where(eq(announcements.id, id));
   },
 

@@ -1,13 +1,6 @@
 import type ExcelJS from "exceljs";
 import { columnLetter } from "./workbook-helpers";
 
-/**
- * Shared column/style/writer infrastructure for flat tabular registers (one header
- * row + one row per record, no template/merged-cell layout). Customer Register and
- * the Inventory registers (Stock Sheet, Purchase Register, PBG Issue, Store Issue
- * Book, Consumption Log) all render through this same writer - a new register is a
- * new column list, not a new rendering pipeline.
- */
 
 export type ColType = "text" | "num" | "money" | "date" | "bool";
 
@@ -18,11 +11,6 @@ export type FlatColumn<T> = {
   get: (row: T, rowNumber: number) => ExcelJS.CellValue;
 };
 
-// ---------------------------------------------------------------------------
-// Value coercion - keep real 0 / 0.00 visible, blank only when genuinely unset,
-// and never fabricate a value where the backend has none. Never `value || ""`:
-// that would blank out a real 0.
-// ---------------------------------------------------------------------------
 
 export function numOf(v: unknown): number | string | null {
   if (v === null || v === undefined) return null;
@@ -37,7 +25,6 @@ export function dateOf(v: unknown): Date | string | null {
   if (v === null || v === undefined || v === "") return null;
   if (v instanceof Date) return v;
   const s = String(v);
-  // Build a UTC-midnight date for plain YYYY-MM-DD so the cell never shifts a day.
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
   if (m) return new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
   const d = new Date(s);
@@ -55,18 +42,10 @@ export function boolOf(v: unknown): boolean | null {
   return Boolean(v);
 }
 
-// ---------------------------------------------------------------------------
-// Reusable styles
-// ---------------------------------------------------------------------------
 
 const HEADER_FILL: ExcelJS.Fill = {
   type: "pattern",
   pattern: "solid",
-  // The app's actual brand orange (mobile-app/src/constants/colors.ts's
-  // `primary: "#FF7900"`) as a literal ARGB, not an Excel theme-color index -
-  // a freshly created workbook's built-in theme has no relation to the app's
-  // palette, so "theme 9" (Accent 6) rendered as Excel's default green, not
-  // the brand color every export is meant to carry.
   fgColor: { argb: "FFFF7900" },
 };
 
@@ -82,9 +61,6 @@ const NUMBER_FMT = "0.00";
 const DATE_FMT = "dd-mmm-yyyy";
 
 export function applyHeaderStyle(cell: ExcelJS.Cell, wrap: boolean) {
-  // White on solid orange, matching how the app's own UI renders primary-colored
-  // elements (e.g. Button.tsx's white text on an orange background) - the old
-  // near-black text only had contrast against the previous pale green fill.
   cell.font = { name: "Calibri", size: 11, bold: true, color: { argb: "FFFFFFFF" } };
   cell.fill = HEADER_FILL;
   cell.alignment = { horizontal: "center", vertical: "middle", wrapText: wrap };
@@ -100,10 +76,6 @@ export function applyDataStyle(cell: ExcelJS.Cell, type: ColType) {
   else if (type === "date") cell.numFmt = DATE_FMT;
 }
 
-// ---------------------------------------------------------------------------
-// Content-fit column widths (used when a column has no explicit `width`): as wide
-// as the widest value or the header, padded a little and clamped to a sane range.
-// ---------------------------------------------------------------------------
 
 const MIN_WIDTH = 8;
 const MAX_WIDTH = 55;
@@ -111,8 +83,8 @@ const WIDTH_PAD = 2;
 
 function displayLength(value: ExcelJS.CellValue, type: ColType): number {
   if (value === null || value === undefined) return 0;
-  if (value instanceof Date) return 11; // dd-mmm-yyyy
-  if (type === "bool") return 5; // FALSE
+  if (value instanceof Date) return 11;
+  if (type === "bool") return 5;
   if (type === "num" && typeof value === "number") return value.toFixed(2).length;
   if (type === "money" && typeof value === "number") {
     return value.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).length;
@@ -121,22 +93,12 @@ function displayLength(value: ExcelJS.CellValue, type: ColType): number {
 }
 
 export type WriteFlatRegisterOptions = {
-  /** Number of leading columns kept frozen while scrolling right. Default 0. */
   frozenCols?: number;
-  /** Wrap header labels onto multiple lines instead of truncating. Default true. */
   wrapHeader?: boolean;
-  /** Header row height, taller by default when wrapping. */
   headerRowHeight?: number;
   dataRowHeight?: number;
 };
 
-/**
- * Renders a header row + one row per already-computed value array into `sheet`:
- * content-fit (or explicit) column widths, bold/filled/bordered header,
- * thin-bordered data cells, AutoFilter, and a frozen header row (plus `frozenCols`
- * leading columns). The lower-level primitive both `writeFlatRegisterSheet` (below)
- * and Customer Register's own value-matrix writer render through.
- */
 export function writeValueMatrixSheet(
   sheet: ExcelJS.Worksheet,
   columns: { header: string; type: ColType; width?: number }[],
@@ -183,13 +145,6 @@ export function writeValueMatrixSheet(
   sheet.views = [{ state: "frozen", xSplit: frozenCols, ySplit: HEADER_ROW }];
 }
 
-/**
- * Renders `rows` straight from column `.get()` definitions (computes the value
- * matrix, then delegates to `writeValueMatrixSheet`). What every export in this
- * module uses; Customer Register is the one exception that needs a `ColumnContext`
- * threaded through `.get()`, so it computes its own matrix and calls
- * `writeValueMatrixSheet` directly instead.
- */
 export function writeFlatRegisterSheet<T>(
   sheet: ExcelJS.Worksheet,
   columns: FlatColumn<T>[],

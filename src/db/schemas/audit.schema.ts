@@ -12,9 +12,6 @@ export const auditLogs = pgTable(
     recordId: text("record_id"),
     description: text("description"),
     metadata: jsonb("metadata").$type<Record<string, unknown>>(),
-    // Nullable, additive (Command Center Phase 1 activity foundation). Only
-    // new writes populate this - historical rows stay unscoped rather than
-    // attempting an unreliable backfill from `recordId`/`metadata`.
     projectId: uuid("project_id").references(() => projects.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },

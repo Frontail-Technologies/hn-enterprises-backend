@@ -18,8 +18,6 @@ export type CustomerRegisterQuery = {
   statKey?: string;
 };
 
-// "unassigned" is the Central/Unassigned sentinel used across the Inventory module -
-// see materials.service.ts's projectFilterCondition.
 export type InventoryStockExportQuery = {
   projectId?: string;
   source?: "purchase" | "pbg";
@@ -68,9 +66,6 @@ export type InventoryTotalIssueExportQuery = {
   to?: string;
 };
 
-// Deliberately no from/to (§5) - `issued - consumed - returned + adjusted` is a
-// running balance, not a period total; a date range would compute movement within
-// that range and mislabel it as the current balance.
 export type InventoryPlumberBalanceExportQuery = {
   projectId?: string;
   source?: "purchase" | "pbg";

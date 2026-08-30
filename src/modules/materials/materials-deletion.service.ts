@@ -6,20 +6,6 @@ import { EntityInUseError } from "@utils";
 import { computeDeleteImpact } from "../deletion/deletion.service";
 import type { DbHandle, DeleteImpactConfig, DeleteImpactResult } from "../deletion/deletion.types";
 
-/**
- * Audited FK graph for Material deletion (§4).
- *
- * The only thing that ever references `materials.id` is
- * `material_transactions.materialId` (`ON DELETE RESTRICT`) - the append-only
- * ledger built and hardened across the whole Inventory pass. Transaction history
- * must not disappear just because the catalog item is removed, so this is a hard
- * block, never a cascade or detach: an unused material (no transactions at all)
- * remains simply, immediately deletable.
- *
- * `materials` has no status/active column today, so there is no existing
- * Deactivate mechanism to offer as the alternative when blocked - this is
- * reported as a schema gap rather than invented here (§10).
- */
 function countOf(db: DbHandle) {
   return db.select({ value: count() });
 }

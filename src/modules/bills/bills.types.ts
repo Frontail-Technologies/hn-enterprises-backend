@@ -1,7 +1,6 @@
 import type { billPaymentStatusEnum, billStatusEnum } from "@db/schema";
 
 export type BillStatus = (typeof billStatusEnum.enumValues)[number];
-// Free text, managed as master data ("Payment Types") - not a fixed enum.
 export type PaymentMode = string;
 export type BillPaymentStatus = (typeof billPaymentStatusEnum.enumValues)[number];
 

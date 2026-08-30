@@ -50,7 +50,6 @@ export const wagesService = {
     return { rows: rows.map(withComputed), pagination: buildPaginationMeta(page, limit, total) };
   },
 
-  /** Unpaginated, joined with plumber names - for the Wage Register export, not the admin list UI. */
   async listForMonthWithPlumbers(month: string) {
     const db = getDb();
     const rows = await db

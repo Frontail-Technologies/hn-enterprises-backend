@@ -4,15 +4,6 @@ import { CUSTOMER_COLUMN_CATALOG } from "@modules/customers/customer-columns.cat
 import { resolveSectionCompletion } from "@modules/customers/customer-completion";
 import { boolOf, dateOf, numOf, textOf, writeValueMatrixSheet, type ColType } from "./flat-register";
 
-/**
- * Value-getters for the Customer Register export, keyed by the SAME `key`s as
- * `customer-columns.catalog.ts` (the shared config §) - the Web master sheet's
- * own resolver (`customers.service.ts` frontend) reads the identical keys off
- * its flattened row shape. Order/visibility/label/width are never decided
- * here - `customer-export.service.ts` resolves those from the user's saved
- * preference and reorders/filters this map at request time. This file only
- * answers "given a key, how do I read that value off a DB customer row".
- */
 
 export type { ColType };
 
@@ -39,7 +30,6 @@ export type CustomerExportRow = CustomerBase & {
 };
 
 export type ColumnContext = {
-  /** Resolves a user id (e.g. a section's completedBy) to a display name. */
   resolveUser: (id: string | null | undefined) => string | null;
 };
 
@@ -49,26 +39,14 @@ function pipeRecord(row: CustomerExportRow, size: LmcPipeRecordRow["pipeSize"]) 
   return row.lmcPipeRecords?.find((record) => record.pipeSize === size);
 }
 
-// Mirrors the frontend master sheet's own derivation (customers.service.ts:
-// "ID / Address Proof" + "Approved") - see that file for the source of truth
-// this was ported from, kept identical so Web and Excel never disagree.
 function kycVerified(row: CustomerExportRow): boolean {
   return Boolean(row.documents?.some((doc) => doc.category === "ID / Address Proof" && doc.status === "approved"));
 }
 
-// "Completed" (capitalized) matches the value the customer form's Payment
-// Status dropdown actually writes - see customers.service.ts (frontend)'s
-// identical `billing.paymentStatus === "Completed"` check.
 function lastPaymentDate(row: CustomerExportRow) {
   return row.billingCompletion?.paymentStatus === "Completed" ? row.commissioningConversion?.conversionDate : null;
 }
 
-/**
- * One getter per catalog key that has a real, non-fabricated backend value.
- * A catalog key with no entry here (there should be none among the static
- * fields - this is checked at startup by `assertCustomerColumnGettersComplete`)
- * would be a genuine gap, not silently rendered as 0/false.
- */
 export const CUSTOMER_COLUMN_GETTERS: Record<string, CustomerColumnGetter> = {
   reportNoGi: (r) => textOf(r.giReportNumber),
   reportNoGc: (r) => textOf(r.gcReportNumber),
@@ -198,9 +176,6 @@ export const CUSTOMER_COLUMN_GETTERS: Record<string, CustomerColumnGetter> = {
   surveyRecommendedAction: (r) => textOf(r.survey?.recommendedAction),
   surveyExpectedResolutionDate: (r) => dateOf(r.survey?.expectedResolutionDate),
   surveyApprovalComments: (r) => textOf(r.survey?.approvalComments),
-  // Same resolveSectionCompletion() used for the Web table's completionAudit
-  // projection (customers.service.ts list()) - completedBy resolves through
-  // the identical id->name lookup, so Web and Excel can never disagree here.
   giCompletedOn: (r, _n, ctx) => dateOf(resolveSectionCompletion(r.giMeasurements, ctx.resolveUser).completedOn),
   giCompletedBy: (r, _n, ctx) => resolveSectionCompletion(r.giMeasurements, ctx.resolveUser).completedBy,
   valvesCompletedOn: (r, _n, ctx) => dateOf(resolveSectionCompletion(r.valvesRegulators, ctx.resolveUser).completedOn),
@@ -216,15 +191,11 @@ export const CUSTOMER_COLUMN_GETTERS: Record<string, CustomerColumnGetter> = {
   updatedAt: (r) => dateOf(r.updatedAt),
 };
 
-// Fails loudly at import time (module load, i.e. server start) rather than
-// silently rendering a blank column if the catalog and this getter map ever
-// drift - a missing getter here is a real gap, never worth guessing at.
 const missingGetters = CUSTOMER_COLUMN_CATALOG.map((entry) => entry.key).filter((key) => !CUSTOMER_COLUMN_GETTERS[key]);
 if (missingGetters.length) {
   throw new Error(`customer-register-columns.ts is missing value getters for: ${missingGetters.join(", ")}`);
 }
 
-/** Number of leading identity columns kept frozen while scrolling right. */
 const FROZEN_IDENTITY_COLS = 5;
 
 export function writeCustomerRegisterSheet(sheet: ExcelJS.Worksheet, columns: { header: string; type: ColType }[], valueRows: ExcelJS.CellValue[][]) {

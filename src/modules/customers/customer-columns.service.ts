@@ -22,7 +22,6 @@ export type ResolvedCustomerColumn = {
   type: CustomerColumnType;
   width: number;
   visible: boolean;
-  /** True for a live custom field (from custom_field_definitions), false for a static catalog field. */
   custom: boolean;
 };
 
@@ -64,13 +63,6 @@ async function fullCatalog(): Promise<Array<ResolvedCustomerColumn & { defaultVi
   return [...staticEntries, ...customEntries];
 }
 
-/**
- * Merges the catalog (static + live active custom fields) with a user's saved
- * order/visibility. Saved order wins for keys it lists; any catalog key the
- * saved row doesn't mention (a field added after the user last saved, or a
- * newly-created custom field) is appended in catalog order, visible per its
- * own default - never dropped, never silently hidden by omission.
- */
 export async function resolveCustomerColumns(userId: string | null): Promise<ResolvedCustomerColumn[]> {
   const catalog = await fullCatalog();
   if (!userId) return catalog.map(({ defaultVisible: _defaultVisible, ...entry }) => entry);
@@ -123,8 +115,6 @@ export async function saveCustomerColumnPreferences(userId: string, columns: Col
   const db = getDb();
   const catalog = await fullCatalog();
   const validKeys = new Set(catalog.map((entry) => entry.key));
-  // Never persist a key that isn't (or no longer is) a real column - a stale
-  // saved preference must not resurrect a deleted custom field or typo'd key.
   const cleaned = columns.filter((entry) => validKeys.has(entry.key));
 
   const [existing] = await db

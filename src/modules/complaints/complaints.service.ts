@@ -28,8 +28,6 @@ export const complaintsService = {
       query.customerId ? eq(complaints.customerId, query.customerId) : undefined,
       query.supervisorId ? eq(customers.supervisorId, query.supervisorId) : undefined,
       query.status ? eq(complaints.status, query.status) : undefined,
-      // Matches every field Mobile's complaint list card shows (was filtered
-      // client-side over a flat fetch before).
       searchPattern
         ? or(
             ilike(complaints.title, searchPattern),
@@ -126,8 +124,6 @@ export const complaintsService = {
       throw new Error("Not authorized to update this complaint");
     }
 
-    // Supervisors may only change status/remark - even if other fields are present in the
-    // body, silently drop them rather than trusting a wider patch from a non-admin caller.
     const patch = isAdmin
       ? cleanObject({
           customerId: input.customerId,
@@ -162,7 +158,7 @@ export const complaintsService = {
 
   async delete(id: string) {
     const db = getDb();
-    await getComplaintOrThrow(id); // Ensure it exists
+    await getComplaintOrThrow(id);
     await db.delete(complaints).where(eq(complaints.id, id));
   },
 };

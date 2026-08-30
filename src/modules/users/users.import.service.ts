@@ -29,17 +29,10 @@ function normalizeRole(role: string) {
 
 type ExistingIdentifiers = { usernames: Set<string>; emails: Set<string>; mobiles: Set<string> };
 
-// Shared by the bulk preview loop and the standalone validate-row endpoint -
-// uniqueness is checked against existing system records either way. In-file
-// duplicates are only caught during the initial bulk preview (the only place
-// every row is available at once).
 export function validateUserRow(
   data: UserImportRowData,
   existing: ExistingIdentifiers,
 ): { error?: string; normalizedRole?: string } {
-  // email is a NOT NULL column (auth.schema.ts) - required here too, not
-  // just name/username/role/password, or the insert would fail at commit
-  // time instead of being caught during preview/edit.
   if (!data.name || !data.username || !data.email || !data.role || !data.password) {
     return { error: "Missing required fields (Name, Username, Email, Role, Password)" };
   }
@@ -111,16 +104,6 @@ export const usersImportService = {
     return { error };
   },
 
-  // Per-row isolated - actually audited, not assumed: each imported account
-  // is independent, with no FK or ordering relationship between one row and
-  // another (unlike Customers, where a row can depend on a project/site
-  // another row also creates). Username/email/mobile uniqueness is already
-  // checked per-row, both against the DB and against rows already accepted
-  // earlier in this same commit, so there is no scenario where one row
-  // succeeding depends on another also succeeding. Nothing here justifies
-  // keeping the whole accepted batch atomic ("auth is stricter" alone is not
-  // a reason - the actual invariants were checked and none exist), so this
-  // matches every other module's per-row-isolated commit policy.
   async confirm(validRows: UserImportRow[], user: { id: string }) {
     const db = getDb();
     let insertedCount = 0;

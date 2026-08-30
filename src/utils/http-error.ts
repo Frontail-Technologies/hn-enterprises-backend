@@ -1,12 +1,5 @@
 import { EntityInUseError } from "./db-errors";
 
-// Substrings that mark an error as an intentional, safe-to-show domain
-// validation failure (thrown deliberately by our own service code) rather
-// than an unexpected failure (DB/driver error, programming bug). Only the
-// former's message is ever shown to the client - everything else falls back
-// to a generic message and is logged server-side instead, so internal
-// details (SQL, constraint names, driver internals) never leak into an API
-// response.
 const KNOWN_ERROR_PATTERNS = [
   "not found",
   "already exists",
@@ -43,17 +36,12 @@ export function statusFromError(error: unknown) {
 }
 
 export function errorMessage(error: unknown, fallback: string) {
-  // Always safe: its message is authored by us specifically to be shown, never
-  // derived from the underlying driver error.
   if (error instanceof EntityInUseError) return error.message;
 
   if (error instanceof Error && isKnownDomainError(error.message)) {
     return error.message;
   }
 
-  // Some SDKs (e.g. Cloudinary) reject with plain {message, name, http_code}
-  // objects rather than real Error instances - `error instanceof Error`
-  // alone misses those.
   const rawMessage =
     error && typeof error === "object" && "message" in error && typeof error.message === "string"
       ? error.message

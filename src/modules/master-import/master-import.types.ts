@@ -122,14 +122,8 @@ export type ConfirmImportResult = {
   sitesCreated: number;
   customersCreated: number;
   rowsRejected: number;
-  /** Generic per-row commit result, matching every other import module -
-   * `imported` mirrors customersCreated, `failed` carries a message per row
-   * whose insert threw (kept in the batch, not silently discarded). */
   imported: number;
   failed: { tempId: string; message: string }[];
 };
 
-/** A batch-persisted row as returned to the frontend - the stable DB id
- * finally surfaces as `tempId` for the generic import workspace, instead of
- * the frontend fabricating one from the row number. */
 export type PersistedImportRow = NormalizedImportRow & { id: string; isRemoved: boolean };

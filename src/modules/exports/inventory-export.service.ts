@@ -17,13 +17,6 @@ import type {
   InventoryTotalIssueExportQuery,
 } from "./exports.types";
 
-/**
- * Excel exports for the Inventory & Material module's 8 operational registers.
- * Reuses materialsService for every actual number (listEffectiveTransactions,
- * plumberBalances, stockBalances, computeStockStatus) rather than recomputing
- * ledger logic here - this module is purely presentation (columns, styling,
- * filenames) over data the service layer already produces.
- */
 
 const SOURCE_LABELS: Record<string, string> = { purchase: "Purchase", pbg: "PBG" };
 function sourceLabel(source: string | null) {
@@ -36,8 +29,6 @@ const STATUS_LABELS: Record<string, string> = {
   out_of_stock: "Out of Stock",
 };
 
-/** "August-2026" when `from`/`to` span exactly one calendar month, else undefined
- * (an all-time export, or a range that isn't a clean single month). */
 function monthLabelFromRange(from: string | undefined, to: string | undefined): string | undefined {
   if (!from || !to) return undefined;
   const fromDate = new Date(`${from}T00:00:00Z`);
@@ -50,8 +41,6 @@ function monthLabelFromRange(from: string | undefined, to: string | undefined): 
   return format(fromDate, "MMMM-yyyy");
 }
 
-// Project names are free text and can run long - capped so a filter never produces
-// an "excessively long" filename (§11).
 const MAX_FILENAME_PROJECT_LENGTH = 24;
 
 async function resolveProjectName(projectId: string | undefined): Promise<string | undefined> {
@@ -71,19 +60,12 @@ function newWorkbook() {
   return workbook;
 }
 
-// ---------------------------------------------------------------------------
-// 1. Stock Sheet
-// ---------------------------------------------------------------------------
 
 export const inventoryExportService = {
   async stockSheet(query: InventoryStockExportQuery) {
     const db = getDb();
     const materialRows = await db.select().from(materials).orderBy(materials.name);
 
-    // "All Projects + All Sources" -> materials.currentBalance (the authoritative
-    // global store balance). Either filter set -> the same project/source-aware
-    // derived-balance calculation the web Stock Sheet uses (§4) - never a
-    // date-range movement sum mislabeled as a balance.
     const isFiltered = Boolean(query.projectId || query.source);
     const derivedBalances = isFiltered
       ? await materialsService.stockBalances({ projectId: query.projectId, source: query.source })
@@ -107,12 +89,6 @@ export const inventoryExportService = {
         header: "Status",
         type: "text",
         width: 14,
-        // Status is derived from whichever balance is actually displayed in the
-        // "Current Balance" column just above - unfiltered, that's the global
-        // balance; filtered, it's the same derived balance, so Status never claims
-        // a material is low/out of stock (or not) based on a number the reader
-        // can't see (§1 fix - previously always used the global balance even when
-        // the displayed balance was a filtered slice).
         get: (row) =>
           textOf(
             STATUS_LABELS[
@@ -134,9 +110,6 @@ export const inventoryExportService = {
     return { workbook, filename };
   },
 
-  // -------------------------------------------------------------------------
-  // 2. Purchase Register
-  // -------------------------------------------------------------------------
   async purchaseRegister(query: InventoryPurchaseExportQuery) {
     const rows = await materialsService.listEffectiveTransactions({
       type: "purchase",
@@ -172,9 +145,6 @@ export const inventoryExportService = {
     return { workbook, filename };
   },
 
-  // -------------------------------------------------------------------------
-  // 3. PBG Issue
-  // -------------------------------------------------------------------------
   async pbgIssue(query: InventoryPbgIssueExportQuery) {
     const rows = await materialsService.listEffectiveTransactions({
       type: "pbg_issue",
@@ -210,9 +180,6 @@ export const inventoryExportService = {
     return { workbook, filename };
   },
 
-  // -------------------------------------------------------------------------
-  // 4. Store Issue Book
-  // -------------------------------------------------------------------------
   async storeIssueBook(query: InventoryStoreIssueExportQuery) {
     const rows = await materialsService.listEffectiveTransactions({
       type: "issue",
@@ -249,14 +216,8 @@ export const inventoryExportService = {
     return { workbook, filename };
   },
 
-  // -------------------------------------------------------------------------
-  // 5. Consumption Log / Plumber Consumption
-  // -------------------------------------------------------------------------
   async consumptionLog(query: InventoryConsumptionExportQuery) {
     const db = getDb();
-    // Both consumption types are real, posted, ledger consumption events (§8) - never
-    // derived from Customer GI/MDPE/etc. JSON fields, which are separate and unrelated
-    // to the material ledger.
     const [consumptionRows, pbgConsumptionRows] = await Promise.all([
       materialsService.listEffectiveTransactions({
         type: "consumption",
@@ -318,9 +279,6 @@ export const inventoryExportService = {
     return { workbook, filename };
   },
 
-  // -------------------------------------------------------------------------
-  // 6. PBG Consumption
-  // -------------------------------------------------------------------------
   async pbgConsumption(query: InventoryPbgConsumptionExportQuery) {
     const db = getDb();
     const rows = await materialsService.listEffectiveTransactions({
@@ -350,9 +308,6 @@ export const inventoryExportService = {
       { header: "Date", type: "date", width: 13, get: (row) => dateOf(row.transactionDate) },
       { header: "RA Bill / Reference No.", type: "text", width: 18, get: (row) => textOf(row.referenceNo) },
       { header: "Project", type: "text", width: 22, get: (row) => textOf(projectById.get(row.projectId ?? "")?.name) },
-      // Historical rows recorded before Customer/Plumber capture existed on this
-      // form stay genuinely blank here rather than fabricated (§2) - textOf(undefined)
-      // is null, not a guessed value.
       { header: "TR / BP No.", type: "text", width: 14, get: (row) => textOf(customerById.get(row.customerId ?? "")?.trBpNumber) },
       { header: "Customer Name", type: "text", width: 24, get: (row) => textOf(customerById.get(row.customerId ?? "")?.customerName) },
       { header: "Plumber", type: "text", width: 18, get: (row) => textOf(plumberById.get(row.plumberId ?? "")?.name) },
@@ -360,8 +315,6 @@ export const inventoryExportService = {
       { header: "Material", type: "text", width: 26, get: (row) => textOf(materialById.get(row.materialId)?.name) },
       { header: "Unit", type: "text", width: 10, get: (row) => textOf(materialById.get(row.materialId)?.unit) },
       { header: "Quantity", type: "num", width: 12, get: (row) => numOf(row.quantity) },
-      // Always "PBG" by definition of the type - shown for legibility/consistency
-      // with the other registers rather than because it varies here.
       { header: "Source", type: "text", width: 12, get: (row) => textOf(sourceLabel(row.source)) },
       { header: "Remarks", type: "text", width: 30, get: (row) => textOf(row.remarks) },
     ];
@@ -376,9 +329,6 @@ export const inventoryExportService = {
     return { workbook, filename };
   },
 
-  // -------------------------------------------------------------------------
-  // 7. Total Issue (aggregate: one row per material)
-  // -------------------------------------------------------------------------
   async totalIssue(query: InventoryTotalIssueExportQuery) {
     const rows = await materialsService.listEffectiveTransactions({
       type: "issue",
@@ -425,23 +375,12 @@ export const inventoryExportService = {
     writeFlatRegisterSheet(sheet, columns, aggregatedRows, { frozenCols: 1 });
 
     const projectName = await resolveProjectName(query.projectId);
-    // Date/month filtering IS meaningful here (§3) - "Total Issue" means quantity
-    // issued during the selected period, unlike a point-in-time balance.
     const monthLabel = monthLabelFromRange(query.from, query.to);
     const filename = buildExportFilename(["Total-Issue", monthLabel, projectName]);
     return { workbook, filename };
   },
 
-  // -------------------------------------------------------------------------
-  // 8. Plumber Balance
-  // -------------------------------------------------------------------------
   async plumberBalance(query: InventoryPlumberBalanceExportQuery) {
-    // No from/to here, deliberately (§5): `issued - consumed - returned + adjusted`
-    // is a running balance, not a period total - restricting the underlying
-    // transactions to a date range would compute "movement within that range" and
-    // mislabel it as the current balance (the exact bug already fixed on Stock
-    // Sheet). PlumberBalanceQuery structurally has no from/to field, so this can't
-    // silently regress even if a caller tried to pass one.
     const rows = await materialsService.plumberBalances({
       projectId: query.projectId,
       source: query.source,
@@ -478,11 +417,6 @@ export const inventoryExportService = {
   },
 };
 
-// ---------------------------------------------------------------------------
-// Shared name-resolution lookups (material / project / plumber), built once per
-// export from whichever rows actually came back - small ID -> row Maps, the same
-// pattern customerExportService uses for user names.
-// ---------------------------------------------------------------------------
 
 async function loadLookups(rows: { materialId: string; projectId: string | null; plumberId?: string | null }[]) {
   const db = getDb();

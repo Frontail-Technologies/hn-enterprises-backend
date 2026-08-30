@@ -21,12 +21,6 @@ import type {
   UpsertLmcPipeRecordBody,
 } from "./customers.types";
 
-// Attachments arrive embedded in the same multipart request as the section
-// fields (mobile) instead of via a separate /uploads call beforehand - this
-// avoids leaving an orphaned uploaded file when the user picks a photo but
-// never actually saves the record. `evidence` may already contain
-// previously-uploaded entries (kept as-is on update); newly picked files get
-// uploaded here and appended.
 async function mergeUploadedEvidence(
   existing: Record<string, unknown>[] | undefined,
   files: File[] | undefined,
@@ -44,9 +38,6 @@ async function mergeUploadedEvidence(
   return [...(existing ?? []), ...uploaded];
 }
 
-// Each JSON-column section that has its own EvidenceUploader keeps its
-// evidence array under this key. Only one section is ever submitted per
-// request, so the first one present in the body is the target.
 const SECTION_EVIDENCE_FIELD: Partial<Record<keyof CustomerJsonSections, string>> = {
   survey: "evidence",
   giMeasurements: "evidence",

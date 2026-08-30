@@ -24,9 +24,6 @@ export type SectionCompletionKey =
   | "connection"
   | "siteExpenses";
 
-// Keys whose completion marker lives in the grouped `progressMilestones`
-// jsonb column rather than inside an existing section's own payload - see
-// customer.schema.ts's CustomerProgressMilestonesPayload.
 export const PROGRESS_MILESTONE_KEYS = [
   "gc",
   "valveChamber",
@@ -47,8 +44,6 @@ export type SectionCompletionMeta = {
 
 type Dict = Record<string, unknown> | null | undefined;
 
-// One rule for "a value the user actually entered": empty and whitespace-only
-// strings and empty arrays are missing, but false and 0 are legitimate values.
 export function hasValue(value: unknown): boolean {
   if (value === null || value === undefined) return false;
   if (typeof value === "string") return value.trim().length > 0;
@@ -164,12 +159,6 @@ export type ResolvedSectionCompletion = {
   completedBy: string | null;
 };
 
-// Single place that reads a section's `completion` marker and resolves its
-// `completedBy` user id to a display name - used by BOTH the Customer list
-// projection (Web table) and the Excel export getters, so "who completed
-// this section and when" can never drift between the two (§ shared column
-// config). `resolveUserName` is injected so this module doesn't need its own
-// DB access; callers build the id->name map once per request.
 export function resolveSectionCompletion(
   section: Dict,
   resolveUserName: (id: string | null | undefined) => string | null,
@@ -208,10 +197,6 @@ export type CustomerCompletionAudit = {
   siteExpensesCompletedBy: string | null;
 };
 
-// The Web table's read-only projection of all 10 Completion Audit fields for
-// one customer row, keyed identically to the shared column catalog so the
-// caller can attach it as-is and the master-sheet mapper can read it via
-// `row.values[key]` without re-deriving any of this itself.
 export function buildCustomerCompletionAudit(
   customer: {
     giMeasurements?: Dict;
@@ -285,9 +270,6 @@ function evaluateExplicit(section: Dict): SectionCompletionResult {
   return { status: started ? "IN_PROGRESS" : "NOT_STARTED", requiredFields: [], missingRequiredFields: [] };
 }
 
-// Pure completion-toggle milestones (no other section data alongside them) -
-// DONE once completedAt is set, otherwise NOT_STARTED. No IN_PROGRESS state:
-// there's nothing partial to be "in progress" on for a single mark-complete action.
 function evaluateMilestone(meta: SectionCompletionMeta | null | undefined): SectionCompletionResult {
   if (hasValue(meta?.completedAt)) return { status: "DONE", requiredFields: [], missingRequiredFields: [] };
   return { status: "NOT_STARTED", requiredFields: [], missingRequiredFields: [] };
@@ -318,8 +300,6 @@ function evaluateLmc(pipeRecords: LmcPipe[], civil: Dict): SectionCompletionResu
   return { status: "IN_PROGRESS", requiredFields: [], missingRequiredFields: [] };
 }
 
-// The single completion result for a customer, consumed by the customer API and
-// (eventually) by both clients - never recomputed independently on Web/Mobile.
 export function evaluateCustomerCompletion(
   customer: {
     survey?: Dict;
@@ -352,103 +332,31 @@ export function evaluateCustomerCompletion(
   };
 }
 
-// -------------------------------------------------------------------------
-// Single source of truth for completion-based customer STAT conditions.
-// Used by the admin dashboard counts, the customers list `statKey` filter and
-// (via the same helpers) the mobile supervisor stats - so there is one SQL
-// definition per stat instead of the previous 3-4 drifting copies. Presence is
-// empty/whitespace-safe so counts and detail rows agree.
-// -------------------------------------------------------------------------
 function present(expr: string): string {
   return `NULLIF(TRIM(${expr}), '') IS NOT NULL`;
 }
 
-// Terminal-status SQL lists shared with evaluateLmc's LAYING_TERMINAL/
-// TESTING_TERMINAL/PURGING_TERMINAL sets above - kept as string literals here
-// since these conditions run in the DB, not in JS, but the values must stay
-// identical to those sets or the summary count and the section-completion
-// badge could disagree.
 const LAYING_TERMINAL_SQL = "('laying_completed', 'not_required')";
 const TESTING_TERMINAL_SQL = "('testing_completed', 'not_required')";
 const PURGING_TERMINAL_SQL = "('purging_completed', 'not_required')";
 const UNRESOLVED_COMPLAINT_SQL = "('open', 'in_progress')";
 
-// Classification of every key below (kept here, next to the conditions
-// themselves, so it can't drift out of sync):
-//
-// CLIENT-FACING PROGRESS STATS (19 - the canonical set from the Customer
-// Progress Stats spec, each with its own dashboard tile + drill-down table):
-//   survey-done, gi-done, gc-done, conversion-done, jmr-done,
-//   total-pbg-assignment, commissioning, valve-chamber-done,
-//   pre-commissioning-done, pole-marker-done, route-marker-done, connection-done,
-//   site-expenses-done, laying-done, flushing-testing-done,
-//   complaint-customer, customer-resolved, total-connection-remark,
-//   connection-remark ("Needs Attention" tile - pre-existing workflow flag).
-//   (Pole Marker and Route Marker are two separate milestones/stats, not one
-//   combined condition - each has its own progress_milestones key.)
-//
-// PRE-EXISTING BILLING-HELPER CARDS (3 - already live on the dashboard before
-// this stats pass; kept for continuity, not newly introduced, not part of the
-// spec's 18-item list. Do not add further billing-flag tiles like these
-// unless a client explicitly asks for one):
-//   gi-bill-done, gc-bill-done, conversion-bill-done.
-//
-// INTERNAL/SUPPORTING ONLY (1 - never a dashboard tile; consumed by another
-// feature instead):
-//   commissioning-done -> used only by dpr-planning-export.service.ts. Distinct
-//   from the client-facing `commissioning` stat (which reuses commissioningDate);
-//   this one matches the full field-driven Commissioning section-completion rule.
-//
-// ALIASES (UI label only, same backend condition, no duplicate key):
-//   "Total Conversion Done" -> conversion-done
-//   "Total Connection Done" -> connection-done
-//
-// BUSINESS-CONFIRMATION-PENDING: total-connection-remark maps to
-// billing_completion->>'remark' as the closest existing field - there is no
-// field literally named "Connection Remark" in the schema. Left unchanged
-// per instruction; needs sign-off from the business owner, not a guess.
 const STAT_CONDITION_SQL: Record<string, string> = {
   "survey-done": `${present("survey->>'surveyDate'")} AND ${present("survey->>'workableStatus'")}`,
-  // GI Done reflects the GI Measurements section's explicit completion, OR a
-  // GI bill already marked Done (billing implies the work is done, even if
-  // nobody separately hit "Mark Complete" - see the write-time sync in
-  // customers.service.ts#update, which is the primary path; this OR is a
-  // read-time safety net for any write path that sync doesn't cover, e.g.
-  // bulk import). Never the reverse: GI completion never sets the bill flag.
   "gi-done": `${present("gi_measurements->'completion'->>'completedAt'")} OR billing_completion->>'giBillDone' = 'true'`,
-  // Conversion has no explicit completion marker by design (reuses conversionDate
-  // per the existing canonical source) - a Conversion bill marked Done counts as
-  // complete even with no conversionDate yet, since fabricating a date would be
-  // worse than an honest OR here.
   "conversion-done": `${present("commissioning_conversion->>'conversionDate'")} OR billing_completion->>'conversionBillDone' = 'true'`,
-  // GC Done now reflects its own explicit completion marker (progress_milestones.gc),
-  // OR a GC bill already marked Done - replacing the previous LEGACY/UNCONFIRMED
-  // condition that conflated GC with the unrelated commissioningDate/meterNo fields.
   "gc-done": `${present("progress_milestones->'gc'->>'completedAt'")} OR billing_completion->>'gcBillDone' = 'true'`,
-  // Commissioning is its own stat (distinct from GC and Conversion) - the one
-  // authoritative event date already on the customer record.
   commissioning: present("commissioning_conversion->>'commissioningDate'"),
   "jmr-done": "billing_completion->>'jmrDone' = 'true'",
   "gi-bill-done": "billing_completion->>'giBillDone' = 'true'",
   "gc-bill-done": "billing_completion->>'gcBillDone' = 'true'",
   "conversion-bill-done": "billing_completion->>'conversionBillDone' = 'true'",
   "total-pbg-assignment": "billing_completion->>'jmrSubmittedInPbg' = 'true'",
-  // Existing "needs attention" workflow flag (on_hold / sent-back / rejected /
-  // an on-hold LMC pipe) - kept unchanged, NOT the same thing as the free-text
-  // Connection Remark stat below. Do not conflate the two.
   "connection-remark":
     "status = 'on_hold' OR survey->>'approvalStatus' IN ('Sent Back', 'Rejected') OR EXISTS (SELECT 1 FROM customer_lmc_pipe_records WHERE customer_id = customers.id AND laying_status = 'on_hold')",
-  // Total Connection Remark: BUSINESS-CONFIRMATION-PENDING. Customers carrying a
-  // meaningful free-text remark on the billing/connection completion payload.
-  // `billingCompletion.remark` is the best-match existing field (there is no
-  // field literally named "connection remark" in the schema) - left unchanged
-  // per instruction, but this mapping is an assumption, not a confirmed one.
   "total-connection-remark": present("billing_completion->>'remark'"),
-  // Internal - matches the section-completion rule (all commissioning fields
-  // present), distinct from the single-field `commissioning` stat above.
   "commissioning-done": COMMISSIONING_REQUIRED.map((field) => present(`commissioning_conversion->>'${field}'`)).join(" AND "),
 
-  // --- New explicit milestones (progress_milestones jsonb) ---
   "valve-chamber-done": present("progress_milestones->'valveChamber'->>'completedAt'"),
   "pre-commissioning-done": present("progress_milestones->'preCommissioning'->>'completedAt'"),
   "pole-marker-done": present("progress_milestones->'poleMarker'->>'completedAt'"),
@@ -456,15 +364,9 @@ const STAT_CONDITION_SQL: Record<string, string> = {
   "connection-done": present("progress_milestones->'connection'->>'completedAt'"),
   "site-expenses-done": present("progress_milestones->'siteExpenses'->>'completedAt'"),
 
-  // --- LMC-derived: laying and flushing/testing as their own stats, split out
-  // of the combined `lmc` section-completion rule. "Done" = at least one pipe
-  // record exists AND every pipe record for this customer has reached a
-  // terminal status for the relevant stage - matches evaluateLmc's own
-  // terminal-status sets so the stat and the section badge can't disagree.
   "laying-done": `EXISTS (SELECT 1 FROM customer_lmc_pipe_records WHERE customer_id = customers.id) AND NOT EXISTS (SELECT 1 FROM customer_lmc_pipe_records WHERE customer_id = customers.id AND laying_status NOT IN ${LAYING_TERMINAL_SQL})`,
   "flushing-testing-done": `EXISTS (SELECT 1 FROM customer_lmc_pipe_records WHERE customer_id = customers.id) AND NOT EXISTS (SELECT 1 FROM customer_lmc_pipe_records WHERE customer_id = customers.id AND (testing_status NOT IN ${TESTING_TERMINAL_SQL} OR purging_status NOT IN ${PURGING_TERMINAL_SQL}))`,
 
-  // --- Complaints: DISTINCT customers, never complaint-row counts ---
   "complaint-customer": `EXISTS (SELECT 1 FROM complaints WHERE customer_id = customers.id AND status IN ${UNRESOLVED_COMPLAINT_SQL})`,
   "customer-resolved": `EXISTS (SELECT 1 FROM complaints WHERE customer_id = customers.id) AND NOT EXISTS (SELECT 1 FROM complaints WHERE customer_id = customers.id AND status IN ${UNRESOLVED_COMPLAINT_SQL})`,
 };
@@ -475,20 +377,12 @@ export function customerStatCondition(statKey: string): SQL | undefined {
   return sql`(${sql.raw(expr)})`;
 }
 
-// -------------------------------------------------------------------------
-// Each stat's real business-event date, for date/month/year filtering. Never
-// customer.createdAt as a generic stand-in - a stat with no reliable date
-// (e.g. Total Connection Remark, a free-text field with no associated date)
-// is simply absent here, and callers must treat that as "not date-filterable"
-// rather than inventing one.
-// -------------------------------------------------------------------------
 const STAT_DATE_SQL: Record<string, string> = {
   "survey-done": "survey->>'surveyDate'",
   "gi-done": "gi_measurements->'completion'->>'completedAt'",
   "gc-done": "progress_milestones->'gc'->>'completedAt'",
   "conversion-done": "commissioning_conversion->>'conversionDate'",
   commissioning: "commissioning_conversion->>'commissioningDate'",
-  // jmr-done intentionally omitted: billingCompletion.jmrDone has no associated date field.
   "valve-chamber-done": "progress_milestones->'valveChamber'->>'completedAt'",
   "pre-commissioning-done": "progress_milestones->'preCommissioning'->>'completedAt'",
   "pole-marker-done": "progress_milestones->'poleMarker'->>'completedAt'",
@@ -497,17 +391,10 @@ const STAT_DATE_SQL: Record<string, string> = {
   "site-expenses-done": "progress_milestones->'siteExpenses'->>'completedAt'",
 };
 
-/** Which stats have a real, filterable event date - see STAT_DATE_SQL's comment. */
 export function statHasEventDate(statKey: string): boolean {
   return typeof STAT_DATE_SQL[statKey] === "string";
 }
 
-/**
- * Month/year filter for one stat, using THAT stat's own real event date
- * column (never a generic customer.createdAt). Returns undefined when the
- * stat has no reliable date (caller should not apply a date filter to it) or
- * when no month/year was requested.
- */
 export function customerStatDateCondition(statKey: string, month?: number, year?: number): SQL | undefined {
   if (!month && !year) return undefined;
   const dateExpr = STAT_DATE_SQL[statKey];

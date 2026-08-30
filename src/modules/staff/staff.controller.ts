@@ -77,9 +77,6 @@ export const staffController = {
     }
   },
 
-  // Always canDelete: true (nothing is ever destroyed - see staff-deletion.service.ts).
-  // Exists purely so the shared DeleteImpactDialog can show the same "here's what's
-  // linked" preview here as everywhere else (§9).
   async deleteImpact({ params, set }: { params: { id: string }; set: SetContext }) {
     try {
       const impact = await staffDeletionService.getDeleteImpact(params.id);

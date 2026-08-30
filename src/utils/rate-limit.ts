@@ -1,8 +1,5 @@
 type Bucket = { count: number; resetAt: number };
 
-// In-memory, per-process fixed-window limiter - fine for a single backend
-// instance; move to a shared store (Redis) if this ever runs behind more
-// than one process.
 const buckets = new Map<string, Bucket>();
 
 export function checkRateLimit(key: string, windowMs: number, max: number) {

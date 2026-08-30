@@ -29,10 +29,6 @@ function assertAdmin(role: string) {
   }
 }
 
-// Shared by the bulk preview loop and the standalone validate-row endpoint.
-// In-file duplicates are only caught during the initial bulk preview (the
-// only place every row is available at once); a later single-row
-// revalidation checks against existing system records.
 export function validatePlumberRow(data: PlumberImportRowData, existingNames: Set<string>): { error?: string } {
   if (!data.name) return { error: "Missing name" };
   if (existingNames.has(normalizeKey(data.name))) return { error: "Duplicate plumber name in system" };
@@ -82,7 +78,6 @@ export const plumbersImportService = {
     return validatePlumberRow(data, existingSet);
   },
 
-  // Per-row isolated - each plumber row is an independent insert.
   async confirm(validRows: PlumberImportRow[], user: { id: string }) {
     const db = getDb();
     let insertedCount = 0;

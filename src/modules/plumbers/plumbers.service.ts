@@ -86,8 +86,6 @@ export const plumbersService = {
     return plumber;
   },
 
-  // Delegates to the Delete Impact architecture (plumbers-deletion.service.ts):
-  // blocks on wage/payroll history, detaches customer/ledger/payment assignments.
   async remove(id: string, userId: string) {
     return plumbersDeletionService.execute(id, userId);
   },

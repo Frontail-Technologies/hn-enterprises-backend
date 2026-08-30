@@ -12,21 +12,12 @@ import type {
   UpsertSitePlanBody,
 } from "./planning.types";
 
-// Roles that see every Site's Planning/DPR overview and every supervisor's
-// filed records; everyone else is scoped to their own assigned customers and
-// their own filed records - matches the same split used for mobile stats
-// (stats.service.ts's GLOBAL_STATS_ROLES) and the existing per-customer
-// editors, which already always scope by the acting user's id.
 const GLOBAL_PLANNING_ROLES = new Set(["super_admin", "admin"]);
 
 function planningScope(currentUser: AuthTokenPayload): string | undefined {
   return GLOBAL_PLANNING_ROLES.has(currentUser.role) ? undefined : currentUser.id;
 }
 
-// A customer counts toward a Site's population once it has both a project and
-// a site assigned - the same eligibility rule the existing customer picker
-// (mobile customers.service.ts#listOptions) already applies; a Planning/DPR
-// record can't be filed against a customer with no site to attribute it to.
 async function fetchSiteTotals(scopeId: string | undefined) {
   const db = getDb();
   const conditions = [
@@ -87,8 +78,6 @@ function buildOverviewRows(
     .sort((a, b) => a.siteName.localeCompare(b.siteName));
 }
 
-// A plan/DPR is filed per customer now, not per site (a site can have many
-// customers) - so the match/uniqueness key is (customerId, date, supervisorId).
 async function findSitePlan(customerId: string, date: string, supervisorId: string) {
   const db = getDb();
   const [record] = await db
@@ -266,12 +255,6 @@ export const planningService = {
     return record;
   },
 
-  // Site-wise aggregate for the mobile overview - never a second source of
-  // truth: totals come straight from the customer roster, completions come
-  // straight from DISTINCT customerId on the same site_plans table the
-  // per-customer editor reads/writes. One customer with a record still only
-  // counts once, and duplicate rows across supervisors on the same date (for
-  // the unscoped/global view) can't inflate the count either.
   async getWorkPlanningOverview(date: string, currentUser: AuthTokenPayload): Promise<SiteOverviewRow[]> {
     const db = getDb();
     const scopeId = planningScope(currentUser);
@@ -334,9 +317,6 @@ export const planningService = {
     );
   },
 
-  // Lightweight roster for the Site editor's customer list - scoped the same
-  // way the overview is, so a supervisor never sees a customer here that
-  // wasn't already counted in their own overview totals.
   async listSiteCustomers(siteId: string, currentUser: AuthTokenPayload): Promise<SiteCustomerRow[]> {
     const db = getDb();
     const scopeId = planningScope(currentUser);

@@ -39,11 +39,6 @@ const customerJsonSectionsSchema = t.Object({
   customFields: jsonSection,
 });
 
-// t.Files() is a Transform type internally, and t.Composite()/t.Intersect()
-// refuse to merge transform types with anything else ("Cannot intersect
-// transform types") - so `files` has to be added as a plain object property
-// after the (transform-free) base+sections composite resolves, not merged in
-// via another Composite member.
 const createCustomerFieldsSchema = t.Composite([
   t.Object({
     projectId: t.String({ minLength: 1 }),
@@ -106,8 +101,6 @@ export const createCustomerDocumentBodySchema = t.Object({
   issueDate: t.Optional(t.String()),
   expiryDate: t.Optional(t.String()),
   amount: t.Optional(t.Numeric()),
-  // Either a pre-uploaded fileUrl/fileName (legacy JSON path) or an embedded
-  // `file` to upload here - the controller resolves whichever is present.
   fileUrl: t.Optional(t.String({ minLength: 1 })),
   fileName: t.Optional(t.String({ minLength: 1 })),
   mimeType: t.Optional(t.String()),

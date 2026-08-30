@@ -44,7 +44,6 @@ async function sendWithResend(input: SendEmailInput) {
   }
 }
 
-// Reused across calls instead of creating a fresh SMTP connection per email.
 let smtpTransport: Transporter | null = null;
 
 function getSmtpTransport() {

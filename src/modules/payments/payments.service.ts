@@ -6,12 +6,6 @@ import { buildPaginationMeta, cleanObject, parsePagination, toSearchPattern } fr
 import type { AuthTokenPayload } from "@types";
 import type { CreatePaymentBody, PaymentCategory, PaymentFilterColumn, PaymentListQuery, PaymentStatus, UpdatePaymentBody } from "./payments.types";
 
-// Supervisors only handle plumber payments and miscellaneous ("Other")
-// expenses on site - everything else (worker/supervisor payroll, rent,
-// material expenses) belongs to office/admin roles. Enforced here (list,
-// summary, filter-values, get, create, update) rather than just hidden in
-// the UI, since a role restriction that only hides options client-side is
-// trivially bypassed by calling the API directly.
 const SUPERVISOR_VISIBLE_CATEGORIES: PaymentCategory[] = ["plumber_payment", "other_expense"];
 
 function isCategoryRestricted(currentUser?: AuthTokenPayload | null) {
@@ -28,11 +22,6 @@ function parseCsv(value?: string): string[] {
   return value ? value.split(",").map((item) => item.trim()).filter(Boolean) : [];
 }
 
-// Shared by list() and summary() - every filter that can narrow "the
-// expenses" being viewed: search, date range, category, site/plumber/
-// project, and the column-filter checkboxes. summary() is called with two
-// different subsets of this same query shape depending on caller intent -
-// see summary()'s own comment for why.
 function buildListConditions(query: PaymentListQuery, currentUser?: AuthTokenPayload | null) {
   const searchPattern = toSearchPattern(query.search);
   const paidTo = parseCsv(query.paidTo);
@@ -59,16 +48,9 @@ function buildListConditions(query: PaymentListQuery, currentUser?: AuthTokenPay
     query.siteId ? eq(payments.siteId, query.siteId) : undefined,
     query.plumberId ? eq(payments.plumberId, query.plumberId) : undefined,
     query.projectId ? projectPaymentCondition(query.projectId) : undefined,
-    // The All Expenses column-filter checkboxes (purpose/paidTo/address/
-    // amount/date/status) - each an exact-value multi-select over whatever
-    // the sheet shows as options (see filterValues() below), sent up as a
-    // comma-separated list of the selected values.
     paidTo.length ? inArray(payments.paidTo, paidTo) : undefined,
     purpose.length ? inArray(payments.purpose, purpose) : undefined,
     address.length ? inArray(payments.address, address) : undefined,
-    // amount/paymentDate are numeric/timestamp columns - the checkbox sheet
-    // deals in the same display strings Mobile renders, so compare as text
-    // rather than requiring the client to round-trip a numeric/date type.
     amount.length ? inArray(sql`${payments.amount}::text`, amount) : undefined,
     date.length ? inArray(sql`to_char(${payments.paymentDate}, 'YYYY-MM-DD')`, date) : undefined,
     status.length ? inArray(payments.status, status) : undefined,
@@ -83,13 +65,6 @@ async function getPaymentOrThrow(id: string) {
   return payment;
 }
 
-// A payment belongs to a project via any of three paths, in order of how
-// directly it's known: its own `projectId` (only set going forward - see
-// payment.schema.ts), its site's project, or its customer's project. Most
-// historical rows only resolve through the latter two, so all three are
-// checked - this stays backward compatible without requiring a backfill.
-// Exported so the project summary endpoint can reuse the exact same
-// definition of "belongs to this project" instead of re-deriving it.
 export function projectPaymentCondition(projectId: string) {
   const db = getDb();
   return or(
@@ -115,19 +90,6 @@ export const paymentsService = {
     );
     const where = conditions.length ? and(...conditions) : undefined;
 
-    // `evidence` IS needed on the list row, not just the single-record detail
-    // view: the web admin's Payments & Expenses grid reads it directly off
-    // list rows for its Attachment count column, the row-level "View" action,
-    // and to prefill the edit drawer (the frontend has no separate
-    // get-by-id call - see payments.service.ts on the frontend). Omitting it
-    // here previously left all three permanently broken (View always
-    // disabled, Attachment column always "-", edit drawer's receipt field
-    // always empty) even for payments with real uploaded evidence.
-    // customerName: joined in (not stored on payments itself) purely for
-    // display - the mobile Expense card shows it as secondary context under
-    // Purpose when a payment is actually linked to a customer. Left join
-    // since customerId is optional on most categories (worker/rent/material
-    // expenses rarely have one).
     const listSelection = {
       id: payments.id,
       category: payments.category,
@@ -162,16 +124,6 @@ export const paymentsService = {
     return { rows, pagination: buildPaginationMeta(page, limit, total) };
   },
 
-  // Same query shape (and the exact same condition-building) as list(), just
-  // aggregated instead of paginated - reused by two different callers with
-  // two different scopes:
-  //  - Overview tab: search/date only, deliberately omitting category/
-  //    status/column filters, so drilling into one category on the All
-  //    Expenses list can never collapse Overview's own totals to that slice.
-  //  - All Expenses list's own "N expenses, ₹total" line: the full active
-  //    filter set, so that figure matches exactly what's on screen.
-  // Either way this is computed directly in SQL over the full matching
-  // dataset, never the paginated list's loaded pages.
   async summary(query: PaymentListQuery, currentUser?: AuthTokenPayload | null) {
     const db = getDb();
     const conditions = buildListConditions(query, currentUser).filter(
@@ -179,10 +131,6 @@ export const paymentsService = {
     );
     const where = conditions.length ? and(...conditions) : undefined;
 
-    // The All Expenses list's own total line and the "any expenses at all"
-    // check only ever read count/total - skip the groupBy and the recent-5
-    // lookup for them so a category drill-down isn't waiting on two
-    // sub-queries whose results are thrown away.
     const totalsOnly = query.totalsOnly === "true";
 
     const [[totals], categoryRows, recentRows] = await Promise.all([
@@ -197,9 +145,6 @@ export const paymentsService = {
             .from(payments)
             .where(where)
             .groupBy(payments.category),
-      // list() orders ascending (oldest first, for stable pagination) - the
-      // "recent" 5 shown here are the opposite end of that, so this can't
-      // reuse whatever page the All Expenses list happens to have loaded.
       totalsOnly
         ? Promise.resolve([])
         : db
@@ -239,11 +184,6 @@ export const paymentsService = {
     };
   },
 
-  // Authoritative option universe for the All Expenses column-filter
-  // checkboxes - status/category are canonical enums (free, no DB round
-  // trip); the free-text/numeric columns are a real DISTINCT scan since
-  // there's no master-data source for them. Capped since these are meant to
-  // populate a checkbox list, not export the dataset.
   async filterValues(column: PaymentFilterColumn, currentUser?: AuthTokenPayload | null): Promise<string[]> {
     if (column === "status") return [...paymentStatusEnum.enumValues];
     if (column === "category") {
@@ -285,10 +225,6 @@ export const paymentsService = {
       throw new Error("You do not have permission to record this category of expense");
     }
 
-    // A freshly-created payment can only start as "approved"/"rejected" if the
-    // submitter is actually allowed to approve payments - otherwise anyone
-    // could bypass the approval workflow entirely by setting the status on
-    // create instead of going through update().
     const requestedStatus = input.status ?? "draft";
     if ((requestedStatus === "approved" || requestedStatus === "rejected") && !permissionService.canManage(currentUser)) {
       throw new Error("Only admins can create a payment that is already approved or rejected");
@@ -335,10 +271,6 @@ export const paymentsService = {
     }
     const db = getDb();
 
-    // Only treat this as an approval action if the status is actually changing
-    // to approved/rejected - otherwise every unrelated edit (e.g. adding a
-    // receipt photo) to an already-approved payment would re-trip this check
-    // for the non-admin who originally submitted it.
     const isApprovalTransition =
       (input.status === "approved" || input.status === "rejected") && input.status !== existing.status;
     if (isApprovalTransition && !permissionService.canManage(currentUser)) {

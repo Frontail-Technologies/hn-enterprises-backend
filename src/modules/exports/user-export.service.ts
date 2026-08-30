@@ -19,9 +19,6 @@ const STATUS_LABELS: Record<string, string> = {
   suspended: "Suspended",
 };
 
-// The Users & Roles page only ever shows admin-level accounts (Super Admin /
-// Supervisor) - staff/plumber accounts live in their own modules - so the
-// export mirrors that same restriction rather than dumping the full roster.
 const PAGE_ROLES = ["super_admin", "supervisor"] as const;
 
 export const userExportService = {
@@ -30,11 +27,6 @@ export const userExportService = {
       ? query.role.split(",").map((role) => role.trim()).filter((role) => (PAGE_ROLES as readonly string[]).includes(role))
       : [...PAGE_ROLES];
 
-    // usersService.list() returns a bare array when called without page/limit
-    // (as here), or {rows, pagination} when they're set - its return type is
-    // the union of both regardless of which branch a given call takes, so
-    // this needs the runtime check even though only the array shape is ever
-    // actually possible here.
     const result = requestedRoles.length
       ? await usersService.list({
           role: requestedRoles.join(","),

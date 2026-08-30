@@ -4,16 +4,7 @@ import { dprRecords, projects, staff, users } from "@db/schema";
 import { projectPaymentCondition } from "@modules/payments/payments.service";
 import { dashboardStatsService } from "@modules/stats/dashboard-stats.service";
 
-// Lightweight KPI counts for the Overview tab (§4) - every number here comes
-// from a real, already-scoped query, never a full customer/payment table
-// load into Node. Kept separate from projects-team.service.ts, which builds
-// the much heavier per-person team roster only when the Team tab is opened.
 
-// Reuses the SAME already-project-filterable admin dashboard KPI query
-// (dashboard-stats.service.ts) instead of re-deriving the same "done"
-// predicates a second time - covers both Overview's Execution Progress AND
-// Billing's five indicators (jmrDone/jmrSubmittedInPbg/gi·gc·conversion
-// BillDone) from the one call this function makes.
 async function getCustomerHealth(projectId: string) {
   const counts = await dashboardStatsService.getAdminCounts(projectId);
   return {
@@ -33,10 +24,6 @@ async function getCustomerHealth(projectId: string) {
 
 async function getSites(projectId: string) {
   const db = getDb();
-  // One grouped query gives the Overview "Sites" section its full row list
-  // (§3: Site/Area, Status, Supervisor, Planned Connections, Customer Count)
-  // without the frontend fetching this project's entire customer list a
-  // second time just to count rows per site.
   const rows = await db.execute<{
     id: string;
     name: string;
@@ -98,8 +85,6 @@ async function getDprCounts(projectId: string) {
 
 async function getExpenseTotal(projectId: string) {
   const db = getDb();
-  // "Approved" only - matches the Expenses tab's own "Approved" total (§8)
-  // rather than counting drafts/pending as money actually spent.
   const [row] = await db.execute<{ total: string }>(sql`
     SELECT COALESCE(SUM(amount), 0) as total
     FROM payments
@@ -111,12 +96,6 @@ async function getExpenseTotal(projectId: string) {
 
 async function getLowStockAlertCount(projectId: string) {
   const db = getDb();
-  // A material "counts" for this project only if it has actually been
-  // transacted at one of the project's sites - global warehouse stock that
-  // was never allocated here is intentionally excluded (§9, §26: no fake
-  // allocation). Low stock itself is still a global fact about the material
-  // (materials aren't project-scoped - see the audit), so this reads as
-  // "materials this project uses that are currently running low overall".
   const [row] = await db.execute<{ value: string }>(sql`
     SELECT COUNT(DISTINCT m.id) as value
     FROM materials m
@@ -131,7 +110,6 @@ async function getLowStockAlertCount(projectId: string) {
   return Number(row?.value ?? 0);
 }
 
-/** Cheap distinct-people COUNTs for the Overview tab - the full roster is only built when the Team tab opens (projects-team.service.ts). */
 async function getTeamCounts(projectId: string) {
   const db = getDb();
 

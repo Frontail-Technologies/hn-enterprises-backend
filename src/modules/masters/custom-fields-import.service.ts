@@ -81,9 +81,6 @@ export type CustomFieldEditableData = Pick<
   "label" | "groupName" | "valueType" | "dropdownOptions" | "required" | "supervisorAccess" | "sortOrder"
 >;
 
-// Shared by the bulk preview loop's header-parsing path and the standalone
-// validate-row endpoint (already-structured edited fields, no header parsing
-// needed) - the exact same field-shape checks either way.
 function validateFields(fields: CustomFieldEditableData, valueTypeRaw: string, sortOrderRaw: string): { issues: string[]; warnings: string[] } {
   const issues: string[] = [];
   if (!fields.label) issues.push("Label is required");
@@ -95,10 +92,6 @@ function validateFields(fields: CustomFieldEditableData, valueTypeRaw: string, s
   return { issues, warnings: [] };
 }
 
-/** Re-runs the label-required/value-type/dropdown-options/sort-order checks
- * plus the existing-label duplicate check against an already-edited row - no
- * raw header parsing involved, since the row is already in its typed shape
- * by the time it reaches "Save & Validate". */
 export function validateCustomFieldRow(data: CustomFieldEditableData, existingLabels: Set<string>): { issues: string[]; warnings: string[] } {
   const { issues } = validateFields(data, data.valueType, data.sortOrder != null ? String(data.sortOrder) : "");
   const warnings: string[] = [];
@@ -214,10 +207,6 @@ export const customFieldsImportService = {
     return validateCustomFieldRow(data, existingLabels);
   },
 
-  // Per-row isolated - each field definition is an independent insert, only
-  // constrained by label/key uniqueness, already checked per-row against a
-  // running in-memory set (so two rows in the same batch can't collide
-  // either).
   async confirm(rows: CustomFieldImportRow[], currentUser: CurrentUser) {
     requireImportAccess(currentUser);
     if (!rows.length) return { created: 0, skipped: 0, imported: 0, failed: [] as { tempId: string; message: string }[] };

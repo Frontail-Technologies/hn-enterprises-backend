@@ -114,7 +114,6 @@ export const exportsRoutes = new Elysia({ prefix: "/exports" })
     "/inventory/plumber-balance",
     ({ query, set }) => exportsController.inventoryPlumberBalance({ query, set }),
     {
-      // No from/to (§5) - a running balance, not a period total.
       query: t.Object({
         projectId: t.Optional(t.String()),
         source: materialSourceQuerySchema,
@@ -133,8 +132,6 @@ export const exportsRoutes = new Elysia({ prefix: "/exports" })
     "/customers",
     ({ query, currentUser, set }) => exportsController.customers({ query, currentUser, set }),
     {
-      // Matches the Customers list's own access (requireAuth) - anyone who can view
-      // customers can export the register they're looking at.
       query: t.Object({
         projectId: t.Optional(t.String()),
         siteId: t.Optional(t.String()),
@@ -150,7 +147,6 @@ export const exportsRoutes = new Elysia({ prefix: "/exports" })
     "/users",
     ({ query, set }) => exportsController.users({ query, set }),
     {
-      // Matches the Users list's own access.
       query: t.Object({
         role: t.Optional(t.String()),
         status: t.Optional(t.String()),
@@ -163,7 +159,6 @@ export const exportsRoutes = new Elysia({ prefix: "/exports" })
     "/masters/values",
     ({ query, set }) => exportsController.masterValues({ query, set }),
     {
-      // Matches the Master Values list's own access.
       query: t.Object({ category: t.String(), search: t.Optional(t.String()) }),
       requireAuth: true,
     },
@@ -172,7 +167,6 @@ export const exportsRoutes = new Elysia({ prefix: "/exports" })
     "/masters/holidays",
     ({ query, set }) => exportsController.holidays({ query, set }),
     {
-      // Matches the Holidays list's own access.
       query: t.Object({ search: t.Optional(t.String()) }),
       requireAuth: true,
     },

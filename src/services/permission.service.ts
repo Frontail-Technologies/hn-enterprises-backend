@@ -19,9 +19,6 @@ export const permissionService = {
     return hasRole(user, ["super_admin", "admin", "supervisor"]);
   },
 
-  // Admins can modify any customer; everyone else must be that customer's
-  // assigned supervisor. Mirrors the same ownership check already used for
-  // complaints (complaints.service.ts's `update`).
   canModifyCustomer(user: CurrentUser | null, customerSupervisorId: string | null | undefined) {
     if (!user) return false;
     if (hasRole(user, ["super_admin", "admin"])) return true;

@@ -21,9 +21,6 @@ async function getCustomerOrThrow(id: string) {
   return customer;
 }
 
-// One customer's most recent work-progress update - shared by listQueue()
-// and queueSummary() so both compute the queue's rows and its aggregate
-// counts from the exact same "current state per customer" definition.
 function buildLatestUpdateSubquery() {
   const db = getDb();
   return db
@@ -32,10 +29,6 @@ function buildLatestUpdateSubquery() {
       stage: workProgressUpdates.stage,
       status: workProgressUpdates.status,
       nextRequiredAction: workProgressUpdates.nextRequiredAction,
-      // Queue rows only ever display a count badge (WorkProgressCard), never
-      // the evidence files themselves - counting in SQL avoids shipping every
-      // photo/document URL for every customer in the queue just to discard
-      // everything but `.length` on the client.
       evidenceCount: sql<number>`coalesce(jsonb_array_length(${workProgressUpdates.evidence}), 0)`.as("evidence_count"),
       createdAt: workProgressUpdates.createdAt,
       supervisorId: workProgressUpdates.supervisorId,
@@ -47,9 +40,6 @@ function buildLatestUpdateSubquery() {
 
 type LatestUpdateSubquery = ReturnType<typeof buildLatestUpdateSubquery>;
 
-// Shared by listQueue() and queueSummary() - the exact same filter scope
-// (project/site/stage/status/search) must produce the exact same customer
-// set whether it's being paginated through or aggregated into counts.
 function buildQueueConditions(query: WorkProgressQueueQuery, latest: LatestUpdateSubquery) {
   const searchPattern = toSearchPattern(query.search);
 
@@ -62,9 +52,6 @@ function buildQueueConditions(query: WorkProgressQueueQuery, latest: LatestUpdat
         ? or(isNull(latest.status), eq(latest.status, "not_started"))
         : eq(latest.status, query.status)
       : undefined,
-    // Matches every field the queue row itself displays (Mobile used to
-    // filter this same set client-side over a flat fetch) - project/site
-    // are already joined in below for the row's own display columns.
     searchPattern
       ? or(
           ilike(customers.customerName, searchPattern),
@@ -191,17 +178,12 @@ export const workProgressService = {
       ...row,
       stage: row.stage ?? "survey",
       status: row.status ?? "not_started",
-      // Customers with no work-progress row at all leftJoin to nulls, not 0.
       evidenceCount: row.evidenceCount ?? 0,
     }));
 
     return { rows: mapped, pagination: buildPaginationMeta(page, limit, total) };
   },
 
-  // Backs the Work Queue's 3 summary tiles - the same filter scope as
-  // listQueue (project/site/stage/status/search), computed as SQL aggregates
-  // over the whole matching set rather than whatever pages Mobile happens to
-  // have loaded. Pagination-independent: this doesn't take page/limit.
   async queueSummary(query: WorkProgressQueueQuery) {
     const db = getDb();
     const latest = buildLatestUpdateSubquery();

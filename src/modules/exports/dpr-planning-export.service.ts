@@ -8,14 +8,6 @@ import { applyDataStyle, applyHeaderStyle } from "./flat-register";
 import { buildExportFilename } from "./workbook-helpers";
 import type { DprPlanningExportQuery } from "./exports.types";
 
-/**
- * Fixed activity checklist for the daily DPR/Planning summary (§ report spec).
- * `statKey` is only set where `customer-completion.ts`'s STAT_CONDITION_SQL - the
- * single canonical source already used by the admin dashboard and Customer Register
- * export (`customerExportService` filters by the same keys) - actually defines that
- * condition. Activities without a key have no authoritative backend definition yet
- * and are rendered with a blank count rather than a fabricated 0 (never guess).
- */
 const ACTIVITIES: Array<{ label: string; statKey?: string }> = [
   { label: "Survey Done", statKey: "survey-done" },
   { label: "GI Done", statKey: "gi-done" },
@@ -33,9 +25,6 @@ const ACTIVITIES: Array<{ label: string; statKey?: string }> = [
 
 type SiteBlock = { siteId: string; siteLabel: string; customerIds: string[] };
 
-// A block's customer scope is "customers with a site plan or DPR filed at this
-// site on this date" - the same activity the redesigned DPR/Planning page shows -
-// not every customer ever assigned to the site.
 async function resolveSiteBlocks(query: DprPlanningExportQuery): Promise<SiteBlock[]> {
   const db = getDb();
   const planConditions = [

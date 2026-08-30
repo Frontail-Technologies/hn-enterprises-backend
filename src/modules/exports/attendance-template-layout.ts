@@ -1,8 +1,3 @@
-/**
- * Fixed cell coordinates for the ATTENDANCE-MAY sheet in
- * templates/attendance-wages-template.xlsx. Centralized here so the export
- * service never scatters raw row/column numbers.
- */
 export const attendanceTemplateLayout = {
   sheetName: "ATTENDANCE-MAY",
   contractorCell: "A3",

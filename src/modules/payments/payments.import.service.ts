@@ -56,9 +56,6 @@ function assertAdmin(role: string) {
   }
 }
 
-// Shared by the bulk preview loop and the standalone validate-row endpoint -
-// exactly the same checks either way, so an edited row is held to the same
-// bar the original file was.
 export function validatePaymentRow(data: PaymentImportRowData): { error?: string } {
   const category = CATEGORY_ALIASES[normalizeKey(data.category)];
   if (!category) return { error: "Unrecognized category" };
@@ -112,9 +109,6 @@ export const paymentsImportService = {
     return validatePaymentRow(data);
   },
 
-  // Per-row isolated - each payment row is independent (no cross-row FK or
-  // ordering relationship), so one row's DB failure is reported and skipped
-  // rather than discarding the rest of the accepted rows.
   async confirm(validRows: PaymentImportRow[], user: { id: string }) {
     const db = getDb();
 

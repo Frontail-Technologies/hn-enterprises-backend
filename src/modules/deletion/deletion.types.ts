@@ -1,11 +1,5 @@
 import type { getDb } from "@db";
 
-/**
- * Works for both the plain db handle and a `db.transaction(async (tx) => ...)`
- * callback's `tx` - the transaction type is structurally the same query builder
- * minus `$client` (only the top-level connection has that), so it's omitted here
- * to make both assignable to this type.
- */
 export type DbHandle = Omit<ReturnType<typeof getDb>, "$client">;
 
 export type DependencyAction = "delete" | "detach" | "preserve" | "block";
@@ -15,19 +9,12 @@ export type DeleteImpactPreviewRow = {
   label: string;
 };
 
-/**
- * One audited dependency an entity's deletion may touch. `count`/`preview` receive
- * the active db handle (plain db for the preview endpoint, `tx` for the pre-delete
- * recheck) so both call sites see a consistent, race-free snapshot.
- */
 export type DeleteImpactDependencyConfig = {
   key: string;
   label: string;
   action: DependencyAction;
   count: (db: DbHandle) => Promise<number>;
-  /** Small sample of affected rows (3-5) for the dialog - omit when not useful to preview individually. */
   preview?: (db: DbHandle) => Promise<DeleteImpactPreviewRow[]>;
-  /** Required context for `action: "block"` - why this stops deletion, shown verbatim in the dialog. */
   blockReason?: (count: number) => string;
 };
 

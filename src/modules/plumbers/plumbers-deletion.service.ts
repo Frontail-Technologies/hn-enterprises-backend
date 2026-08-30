@@ -6,21 +6,6 @@ import { EntityInUseError } from "@utils";
 import { computeDeleteImpact } from "../deletion/deletion.service";
 import type { DbHandle, DeleteImpactConfig, DeleteImpactResult } from "../deletion/deletion.types";
 
-/**
- * Audited FK graph for Plumber deletion (§5).
- *
- * - wage_records: `ON DELETE RESTRICT` - payroll history. Blocked, never
- *   cascaded/detached (§7).
- * - customers.plumberId, material_transactions.plumberId, payments.plumberId: all
- *   `ON DELETE SET NULL`. These are the plumber's *assignment*, not their
- *   identity-bearing record - detaching just means "no longer attributed to a
- *   specific plumber," which is exactly how the ledger/customer record already
- *   treats an unspecified plumber. Detach (matches the DB, unlike Customer's
- *   bills/payments where the DB's SET NULL was overridden by business policy).
- *
- * `plumbers` already has `status: "active" | "inactive"` - reused as the
- * Deactivate alternative when wage history blocks a hard delete.
- */
 function countOf(db: DbHandle) {
   return db.select({ value: count() });
 }
@@ -110,7 +95,6 @@ export const plumbersDeletionService = {
   },
 };
 
-// Reused by the bulk-delete path so it shares the exact same wage-records policy.
 export async function assertPlumbersDeletable(db: DbHandle, plumberIds: string[]) {
   if (!plumberIds.length) return;
   const blocking = await scalarCount(countOf(db).from(wageRecords).where(inArray(wageRecords.plumberId, plumberIds)));

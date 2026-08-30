@@ -24,14 +24,8 @@ import type {
   UpdateMaterialBody,
 } from "./materials.types";
 
-// Only these move material into/out of STORE custody. `consumption`/`pbg_consumption`
-// draw down a plumber's already-issued balance, not the store - the pre-existing bug
-// this fixes was reducing store stock a second time on every consumption, on top of
-// the reduction already made when the material was issued to the plumber.
 const STORE_AFFECTING_TYPES = new Set<MaterialTransactionType>(["purchase", "pbg_issue", "issue", "return"]);
 
-// Source is implied by `type` for receipts and PBG-attributed consumption; every other
-// type can move either source's stock, so the caller must say which.
 const IMPLIED_SOURCE: Partial<Record<MaterialTransactionType, MaterialSource>> = {
   purchase: "purchase",
   pbg_issue: "pbg",
@@ -50,9 +44,6 @@ function resolveSource(type: MaterialTransactionType, input: MaterialSource | un
   return input ?? null;
 }
 
-// "unassigned" is the sentinel for "Central / Unassigned" (projectId IS NULL) used by
-// every project filter in the Inventory module - a real project's UUID filters to that
-// project, and omitting the param means "all projects".
 function projectFilterCondition(projectId: string | undefined) {
   if (!projectId) return undefined;
   return projectId === "unassigned" ? isNull(materialTransactions.projectId) : eq(materialTransactions.projectId, projectId);
@@ -74,12 +65,6 @@ function buildTransactionListWhere(query: MaterialTransactionListQuery) {
   return conditions.length ? and(...conditions) : undefined;
 }
 
-// Correct/Reverse (§7) needs each row to know whether it's already been superseded,
-// without mutating the original row - derived here by checking who points back at
-// it (via relatedTransactionId), rather than stored on the row itself. Deliberately
-// unfiltered by the caller's own query conditions: a correction that also moved
-// project/source must still be found so the *old* scope correctly shows the
-// original as superseded even though the replacement no longer matches that scope.
 async function computeSupersedeMap(db: ReturnType<typeof getDb>, ids: string[]) {
   const supersedeMap = new Map<string, { isReversed: boolean; isCorrected: boolean }>();
   if (!ids.length) return supersedeMap;
@@ -103,9 +88,6 @@ async function computeSupersedeMap(db: ReturnType<typeof getDb>, ids: string[]) 
   return supersedeMap;
 }
 
-// Exported so the Stock Sheet export reuses this instead of a second copy of the
-// low/out-of-stock thresholds - status is always the material's true global standing,
-// never recomputed against a project/source-filtered balance (see stockBalances()).
 export function computeStockStatus(balance: number, reorderLevel: number) {
   return balance <= 0 ? "out_of_stock" : balance <= reorderLevel ? "low_stock" : "active";
 }
@@ -143,8 +125,6 @@ function computeQuantityDelta(
     case "consumption":
       return -quantity;
     case "adjustment":
-      // Direction is required (validated by the caller) - a balance correction with an
-      // assumed sign is exactly the kind of silent, unauditable change §9 rules out.
       return direction === "out" ? -quantity : quantity;
     default:
       return quantity;
@@ -242,10 +222,6 @@ export const materialsService = {
     return withStatus(material);
   },
 
-  // Delegates to the Delete Impact architecture (materials-deletion.service.ts):
-  // re-checks inside the same transaction as the delete, blocks whenever any
-  // ledger transaction references this material (never cascade/detach - the
-  // append-only ledger is never touched to make a catalog-item delete succeed).
   async delete(id: string, userId: string) {
     return materialsDeletionService.execute(id, userId);
   },
@@ -276,15 +252,6 @@ export const materialsService = {
     return { rows: enrichedRows, pagination: buildPaginationMeta(page, limit, total) };
   },
 
-  // The current business truth of the ledger, for operational exports/registers
-  // (Purchase Register, PBG Issue, Store Issue Book, Consumption Log): the complete
-  // matching set (no pagination - callers need every row, not one page), with
-  // reversal bookkeeping rows dropped entirely and any row that's since been
-  // reversed or corrected dropped in favor of its replacement. A corrected 100->120
-  // purchase yields exactly one row here (120); a purely reversed transaction yields
-  // none. Full ledger history (including reversal/correction rows and superseded
-  // originals) remains fully intact and queryable via listTransactions - this method
-  // only changes what's *selected*, never what's stored.
   async listEffectiveTransactions(query: MaterialTransactionListQuery) {
     const db = getDb();
     const where = buildTransactionListWhere(query);
@@ -393,8 +360,6 @@ export const materialsService = {
 
       if (!transaction) throw new Error("Unable to record transaction");
 
-      // Store custody only moves on receipts and issue/return - consumption (from
-      // either source) and plumber-balance adjustments never touch it (§5).
       if (!STORE_AFFECTING_TYPES.has(input.type)) return transaction;
 
       await tx
@@ -454,9 +419,6 @@ export const materialsService = {
 
     for (const row of rows) {
       if (!row.plumberId) continue;
-      // Balance is scoped per source and per project: the same plumber can hold both
-      // PBG and purchased stock of the same material, on different projects, and
-      // those must never net against each other (§6).
       const key = `${row.plumberId}:${row.materialId}:${row.source ?? "unspecified"}:${row.projectId ?? "none"}`;
       const entry = grouped.get(key) ?? {
         plumberId: row.plumberId,
@@ -482,12 +444,6 @@ export const materialsService = {
     }));
   },
 
-  // Store-custody balance, filtered by project and/or source (§3): the sum of
-  // quantityDelta across STORE_AFFECTING_TYPES rows is exactly
-  // `purchase + pbg_issue - issue + return` since those are the only types whose delta
-  // is ever added to store custody - no separate formula needed. `projectId:
-  // "unassigned"` is the sentinel for "Central / Unassigned" (projectId IS NULL);
-  // omitting projectId/source means "all projects" / "all sources".
   async stockBalances(query: StockBalanceQuery) {
     const db = getDb();
     const conditions = [
@@ -509,10 +465,6 @@ export const materialsService = {
     return rows.map((row) => ({ materialId: row.materialId, balance: Number(row.balance) }));
   },
 
-  // Reverse: appends a same-type row with quantity/quantityDelta negated (bypassing
-  // computeQuantityDelta) so it cancels the original in both the store-balance update
-  // and plumberBalances() aggregation without either needing to change. Never mutates
-  // or deletes the original (§7).
   async reverseTransaction(id: string, reason: string, userId: string) {
     if (!reason?.trim()) throw new Error("A reversal reason is required");
     const db = getDb();
@@ -591,10 +543,6 @@ export const materialsService = {
     });
   },
 
-  // Correct: atomically reverses the original's effect (identical mechanics to
-  // reverseTransaction), then inserts a replacement row where every field falls back
-  // to the original's value unless the caller supplied a change. Both new rows link
-  // back to the original via relatedTransactionId; the original is never touched.
   async correctTransaction(id: string, input: CorrectMaterialTransactionBody, userId: string) {
     if (!input.correctionReason?.trim()) throw new Error("A correction reason is required");
     const db = getDb();

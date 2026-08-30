@@ -42,9 +42,6 @@ export const notificationsService = {
     return { updated: true };
   },
 
-  // Each row already belongs to exactly one user (fan-out at send time, see
-  // notification.service.ts#queue) - deleting "for that user" is just
-  // deleting their own row, scoped the same way markRead is.
   async remove(id: string, userId: string) {
     const db = getDb();
     const [row] = await db

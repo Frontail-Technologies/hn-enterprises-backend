@@ -41,11 +41,6 @@ export const dashboardStatsService = {
     if (city) scope.push(sql`city = ${city}`);
     const whereClause = scope.length > 0 ? sql`WHERE ${sql.join(scope, sql` AND `)}` : sql``;
 
-    // Every count is built from the one central stat definition so the dashboard
-    // cards, the customers list `statKey` filter and (future) mobile all agree.
-    // A month/year filter (when given) is ANDed in using THAT stat's own real
-    // event date - stats with no reliable date (customerStatDateCondition
-    // returns undefined for them) are simply not narrowed by it.
     const filters = STAT_KEYS.map((key) => {
       const alias = sql.raw(key.replace(/-/g, "_"));
       const condition = customerStatCondition(key) ?? sql`FALSE`;

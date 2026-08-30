@@ -36,8 +36,6 @@ const JSON_SECTION_KEYS = [
   "customFields",
 ] as const satisfies readonly (keyof CustomerJsonSections)[];
 
-// Only these jsonb sections carry an explicit completion marker; the completion
-// endpoint refuses any other key so arbitrary customer JSON can't be targeted.
 const EXPLICIT_COMPLETION_SECTIONS: Record<string, true> = {
   giMeasurements: true,
   valvesRegulators: true,
@@ -50,9 +48,6 @@ const PROGRESS_MILESTONE_SECTIONS: Record<string, true> = Object.fromEntries(
   PROGRESS_MILESTONE_KEYS.map((key) => [key, true]),
 );
 
-// Sections whose bill is "Done" reopening must block: work can finish before
-// billing, but a completed bill must never be silently contradicted by
-// reopening the underlying work. Correct the billing flag first.
 const REOPEN_BLOCKED_BY_BILL: Partial<Record<string, { billField: string; label: string }>> = {
   giMeasurements: { billField: "giBillDone", label: "GI Bill Done" },
   gc: { billField: "gcBillDone", label: "GC Bill Done" },
@@ -88,9 +83,6 @@ async function getCustomerOrThrow(id: string) {
   return customer;
 }
 
-// Same resolver list() uses (§ shared column config) - so the single-customer
-// detail view's Completed On/By never disagrees with the Web master sheet or
-// Excel export.
 async function buildCompletionAuditFor(customer: Parameters<typeof buildCustomerCompletionAudit>[0]) {
   const db = getDb();
   const userRows = await db.select({ id: users.id, name: users.name }).from(users);
@@ -99,8 +91,6 @@ async function buildCompletionAuditFor(customer: Parameters<typeof buildCustomer
   return buildCustomerCompletionAudit(customer, resolveUserName);
 }
 
-// Single source of truth lives in customer-completion.ts; this stays as the
-// list-query entry point but no longer defines its own copy of the conditions.
 export function getStatKeyCondition(statKey: string) {
   return customerStatCondition(statKey);
 }
@@ -136,18 +126,10 @@ export const customersService = {
         where,
         limit,
         offset,
-        // createdAt alone isn't unique - rows bulk-inserted in one statement
-        // (e.g. via import) share an identical timestamp, and Postgres doesn't
-        // guarantee stable ordering among ties across separate LIMIT/OFFSET
-        // queries. That let the same customer reappear (or get skipped) across
-        // pages during pagination. id is unique, so it makes the sort stable.
         orderBy: (fields, { desc }) => [desc(fields.createdAt), desc(fields.id)],
         with: {
           project: true,
           site: true,
-          // Needed for the master-sheet/Excel-export columns that read per-size
-          // LMC pipe dates and the KYC-verified flag (§ shared column config) -
-          // both previously only available via the single-customer `get()`.
           lmcPipeRecords: true,
           documents: true,
         },
@@ -156,9 +138,6 @@ export const customersService = {
       db.select({ id: users.id, name: users.name }).from(users),
     ]);
 
-    // Resolves each section's completedBy user id to a display name using the
-    // SAME helper the Excel export uses (§ shared column config) - so the
-    // Completion Audit columns can never disagree between Web and Excel.
     const userNames = new Map(userRows.map((u) => [u.id, u.name]));
     const resolveUserName = (id: string | null | undefined) => (id ? (userNames.get(id) ?? id) : null);
     const rowsWithCompletionAudit = rows.map((row) => ({
@@ -166,10 +145,6 @@ export const customersService = {
       completionAudit: buildCustomerCompletionAudit(row, resolveUserName),
     }));
 
-    // Complaint drill-down columns (Complaint Status/Date, Resolved Date) need
-    // real complaint rows, not just the customer record - only fetched for the
-    // two complaint-based stats so the plain customer list/master table never
-    // pays for this join.
     if (query.statKey === "complaint-customer" || query.statKey === "customer-resolved") {
       const ids = rowsWithCompletionAudit.map((row) => row.id);
       const complaintRows = ids.length
@@ -389,10 +364,6 @@ export const customersService = {
 
         jsonPatch[key] = { ...oldSection, ...section };
 
-        // Section-completion marker is server-authoritative: a normal save omits
-        // `completion` (shallow-merge above keeps the existing marker), Mark
-        // Complete sends a completion object (we stamp completedBy from the auth
-        // user), and Reopen sends `completion: null` to clear it.
         if (Object.prototype.hasOwnProperty.call(section, "completion")) {
           const incoming = (section as { completion?: unknown }).completion;
           if (incoming && typeof incoming === "object") {
@@ -406,7 +377,6 @@ export const customersService = {
           }
         }
 
-        // Generate work progress update if status changed
         if (newStatus && newStatus !== oldStatus) {
           let stage = null;
           if (key === "survey") stage = "survey";
@@ -434,13 +404,6 @@ export const customersService = {
       }
     }
 
-    // Billing -> completion synchronization: a bill marked Done always implies
-    // the corresponding work is complete, even if nobody separately hit "Mark
-    // Complete". Never runs in reverse (marking work complete never touches a
-    // bill flag) - see customer-completion.ts's gi-done/gc-done conditions for
-    // the read-time OR that backs this up for write paths other than this one.
-    // Only fires "not already complete" (never overwrites an earlier real
-    // completedAt), and stamps the actual acting user, never a fabricated one.
     const billingPatch = jsonPatch.billingCompletion;
     if (billingPatch) {
       if (billingPatch.giBillDone === true) {
@@ -496,10 +459,6 @@ export const customersService = {
     return customer;
   },
 
-  // Delegates to the Delete Impact architecture (customers-deletion.service.ts):
-  // re-checks dependencies inside the same transaction as the delete, blocks on
-  // financial records (bills, payments), and cascades the customer's own
-  // documents/notes/LMC records/complaints/work-progress along with it.
   async delete(id: string, userId: string) {
     return customersDeletionService.execute(id, userId);
   },

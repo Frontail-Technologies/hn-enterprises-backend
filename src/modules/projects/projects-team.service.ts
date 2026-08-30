@@ -2,19 +2,6 @@ import { and, count, eq, inArray, isNotNull, ne, sql } from "drizzle-orm";
 import { getDb } from "@db";
 import { customers, materialTransactions, plumbers, projectSites, staff, users, workProgressUpdates } from "@db/schema";
 
-// "Show the people actually working on this project" (§10-14) - every
-// person here is derived from a REAL existing relationship (project sites'
-// assigned supervisor, a customer's assigned supervisor/plumber, staff's
-// assignedProjectId). Nothing is fabricated and no new assignment table is
-// introduced - see the Phase 1 spec's explicit "do not create
-// project_team_assignments / project_plumber_assignments" instruction.
-//
-// "Customer assignment is the primary relationship" (§12): workload for
-// both supervisors and plumbers is the count of this project's customers
-// directly assigned to them (`customers.supervisorId` / `customers.plumberId`),
-// not an indirect site-population count - deterministic and matches the
-// spec's own pseudocode. Archived customers are excluded so a fully wound
-// -down relationship doesn't keep someone on the "currently working" list.
 
 type SiteRef = { id: string; name: string };
 type ProjectSiteRow = { id: string; name: string; supervisorId: string | null };
@@ -38,8 +25,6 @@ async function getSupervisors(projectId: string, sites: ProjectSiteRow[]) {
         and(eq(customers.projectId, projectId), isNotNull(customers.supervisorId), ne(customers.status, "archived")),
       )
       .groupBy(customers.supervisorId),
-    // Real, reliable "last activity" signal for a supervisor on THIS project -
-    // their most recent field update against one of this project's customers.
     db
       .select({
         supervisorId: workProgressUpdates.supervisorId,
@@ -58,9 +43,6 @@ async function getSupervisors(projectId: string, sites: ProjectSiteRow[]) {
   const distinctIds = Array.from(new Set([...siteSupervisorIds, ...customerSupervisorIds]));
   if (!distinctIds.length) return [];
 
-  // Filtering by status="active" here doubles as the "exclude inactive
-  // people" rule (§14) - a deactivated supervisor's user row simply won't
-  // resolve a name and is silently dropped from the roster.
   const supervisorUsers = await db
     .select({ id: users.id, name: users.name })
     .from(users)
@@ -108,10 +90,6 @@ async function getPlumbers(projectId: string, sites: ProjectSiteRow[]) {
           ne(customers.status, "archived"),
         ),
       ),
-    // Real "last activity" signal for a plumber on THIS project - their most
-    // recent material transaction at one of this project's sites. Optional
-    // enrichment only (§12) - a plumber with customers but no material
-    // transactions still appears, just without this field.
     db
       .select({
         plumberId: materialTransactions.plumberId,
@@ -128,8 +106,6 @@ async function getPlumbers(projectId: string, sites: ProjectSiteRow[]) {
   );
   if (!distinctIds.length) return [];
 
-  // Same "inactive people silently drop off" rule as supervisors, applied to
-  // the plumber roster.
   const plumberRows = await db
     .select({ id: plumbers.id, name: plumbers.name })
     .from(plumbers)
@@ -166,8 +142,6 @@ async function getStaffRoster(projectId: string) {
     .select({
       id: staff.id,
       name: users.name,
-      // No separate "designation" field exists anywhere in the schema - the
-      // user's role is the real, closest equivalent (not fabricated).
       designation: users.role,
       status: users.status,
     })
