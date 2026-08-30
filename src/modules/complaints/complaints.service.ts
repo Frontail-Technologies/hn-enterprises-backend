@@ -78,6 +78,27 @@ export const complaintsService = {
     return { rows, pagination: buildPaginationMeta(page, limit, total) };
   },
 
+  async statusCounts(query: { supervisorId?: string }) {
+    const db = getDb();
+    const where = query.supervisorId ? eq(customers.supervisorId, query.supervisorId) : undefined;
+
+    const rows = await db
+      .select({ status: complaints.status, value: count() })
+      .from(complaints)
+      .leftJoin(customers, eq(complaints.customerId, customers.id))
+      .where(where)
+      .groupBy(complaints.status);
+
+    const counts: Record<(typeof rows)[number]["status"], number> = {
+      open: 0,
+      in_progress: 0,
+      resolved: 0,
+      closed: 0,
+    };
+    for (const row of rows) counts[row.status] = row.value;
+    return counts;
+  },
+
   async create(input: CreateComplaintBody, adminId: string) {
     const db = getDb();
     const [complaint] = await db

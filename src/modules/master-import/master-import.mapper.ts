@@ -270,6 +270,30 @@ export async function readSheetRows(file: File): Promise<RawSheetRow[]> {
 }
 
 
+// Address consolidation and the base (single-row) validation checks are
+// extracted so a single edited row can be revalidated later (§9 - the
+// "Save & Validate" flow in the import workspace) with exactly the same
+// rules the bulk preview used, instead of a second hand-copied rule set.
+export function consolidateAddress(row: NormalizedImportRow) {
+  if (!row.fullAddress && row.siteAddress) {
+    row.fullAddress = row.siteAddress;
+  } else if (row.fullAddress && !row.siteAddress) {
+    row.siteAddress = row.fullAddress;
+  }
+}
+
+export function applyBaseValidation(row: NormalizedImportRow) {
+  if (!row.projectName) row.issues.push("Project is required");
+  if (!row.siteName) row.issues.push("Site / area is required");
+  if (!row.customerName) row.issues.push("Customer name is required");
+  if (!row.trBpNumber) row.issues.push("BP/TR number is required");
+
+  const mobileDigits = row.mobileNumber.replace(/\D/g, "");
+  if (row.mobileNumber && mobileDigits.length < 10) {
+    row.warnings.push("Mobile number looks incomplete");
+  }
+}
+
 export function mapRows(rows: RawSheetRow[]): NormalizedImportRow[] {
   const seenTrBp = new Map<string, number>();
 
@@ -289,17 +313,8 @@ export function mapRows(rows: RawSheetRow[]): NormalizedImportRow[] {
       setMappedValue(normalized, target, value);
     }
 
-    // Consolidate Address: If fullAddress is provided, use it for siteAddress as well, and vice-versa
-    if (!normalized.fullAddress && normalized.siteAddress) {
-      normalized.fullAddress = normalized.siteAddress;
-    } else if (normalized.fullAddress && !normalized.siteAddress) {
-      normalized.siteAddress = normalized.fullAddress;
-    }
-
-    if (!normalized.projectName) normalized.issues.push("Project is required");
-    if (!normalized.siteName) normalized.issues.push("Site / area is required");
-    if (!normalized.customerName) normalized.issues.push("Customer name is required");
-    if (!normalized.trBpNumber) normalized.issues.push("BP/TR number is required");
+    consolidateAddress(normalized);
+    applyBaseValidation(normalized);
 
     const trBpKey = normalizeKey(normalized.trBpNumber);
     if (trBpKey) {
@@ -311,13 +326,32 @@ export function mapRows(rows: RawSheetRow[]): NormalizedImportRow[] {
       }
     }
 
-    const mobileDigits = normalized.mobileNumber.replace(/\D/g, "");
-    if (normalized.mobileNumber && mobileDigits.length < 10) {
-      normalized.warnings.push("Mobile number looks incomplete");
-    }
-
     return normalized;
   });
+}
+
+// Fixes the custom-field key mismatch: unmapped spreadsheet headers were
+// previously stored keyed by their raw header text (e.g. "Meter Reading
+// Notes"), but the rest of the app (CustomerForm, the detail page) reads/
+// writes custom field values by the derived camelCase `key`
+// (buildCustomFieldKey() in masters.service.ts, e.g. "meterReadingNotes").
+// Resolving each header against the active custom field definitions before
+// storage means an imported value actually lines up with the UI that
+// displays it. A header with no matching definition falls back to its raw
+// label rather than being silently dropped.
+export function resolveCustomFieldKeys(
+  customFields: Record<string, unknown>,
+  definitions: { key: string; label: string }[],
+): Record<string, unknown> {
+  const entries = Object.entries(customFields);
+  if (!entries.length) return customFields;
+
+  const labelToKey = new Map(definitions.map((definition) => [normalizeKey(definition.label), definition.key]));
+  const resolved: Record<string, unknown> = {};
+  for (const [header, value] of entries) {
+    resolved[labelToKey.get(normalizeKey(header)) ?? header] = value;
+  }
+  return resolved;
 }
 
 function parseCsvRows(content: string) {

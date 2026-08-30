@@ -2,7 +2,12 @@ import type { AuthTokenPayload } from "@types";
 import type { SetContext } from "@modules/auth/auth.helpers";
 import { errorMessage, ok, paginated, statusFromError } from "@utils";
 import { complaintsService } from "./complaints.service";
-import type { ComplaintListQuery, CreateComplaintBody, UpdateComplaintBody } from "./complaints.types";
+import type {
+  ComplaintListQuery,
+  ComplaintStatusCountsQuery,
+  CreateComplaintBody,
+  UpdateComplaintBody,
+} from "./complaints.types";
 
 export const complaintsController = {
   async list({ query, set }: { query: ComplaintListQuery; set: SetContext }) {
@@ -12,6 +17,16 @@ export const complaintsController = {
     } catch (error) {
       set.status = statusFromError(error);
       return { success: false, message: errorMessage(error, "Unable to list complaints") };
+    }
+  },
+
+  async statusCounts({ query, set }: { query: ComplaintStatusCountsQuery; set: SetContext }) {
+    try {
+      const counts = await complaintsService.statusCounts(query);
+      return ok(counts);
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to load complaint status counts") };
     }
   },
 

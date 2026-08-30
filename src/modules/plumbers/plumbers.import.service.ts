@@ -3,13 +3,14 @@ import { readSheetRows, normalizeKey } from "@modules/master-import/master-impor
 import { getDb } from "@db";
 import { plumbers } from "@db/schema";
 
-type PlumberImportRow = {
-  rowNumber: number;
+export type PlumberImportRowData = {
   name: string;
   type: string;
   contactNumber: string;
   remarks: string;
 };
+
+type PlumberImportRow = PlumberImportRowData & { rowNumber: number };
 
 type PlumberImportInvalidRow = PlumberImportRow & { error: string };
 
@@ -22,20 +23,37 @@ function cell(row: Record<string, unknown>, key: string): string {
   return String(findColumn(row, key) ?? "").trim();
 }
 
+function assertAdmin(role: string) {
+  if (!["super_admin", "admin"].includes(role)) {
+    throw new Error("Only admin users can import plumbers");
+  }
+}
+
+// Shared by the bulk preview loop and the standalone validate-row endpoint.
+// In-file duplicates are only caught during the initial bulk preview (the
+// only place every row is available at once); a later single-row
+// revalidation checks against existing system records.
+export function validatePlumberRow(data: PlumberImportRowData, existingNames: Set<string>): { error?: string } {
+  if (!data.name) return { error: "Missing name" };
+  if (existingNames.has(normalizeKey(data.name))) return { error: "Duplicate plumber name in system" };
+  return {};
+}
+
+async function loadExistingNames() {
+  const db = getDb();
+  const existing = await db.select({ normalizedName: plumbers.normalizedName }).from(plumbers);
+  return new Set(existing.map((e) => e.normalizedName));
+}
+
 export const plumbersImportService = {
   async preview(file: File, user: { id: string; role: string }) {
-    if (!["super_admin", "admin"].includes(user.role)) {
-      throw new Error("Only admin users can import plumbers");
-    }
+    assertAdmin(user.role);
 
     const rawRows = await readSheetRows(file);
 
     const validRows: PlumberImportRow[] = [];
     const invalidRows: PlumberImportInvalidRow[] = [];
-
-    const db = getDb();
-    const existing = await db.select({ normalizedName: plumbers.normalizedName }).from(plumbers);
-    const existingSet = new Set(existing.map((e) => e.normalizedName));
+    const existingSet = await loadExistingNames();
 
     for (const row of rawRows) {
       const name = cell(row.values, "name");
@@ -45,42 +63,47 @@ export const plumbersImportService = {
       const type = /^team$/i.test(typeRaw) ? "team" : "individual";
 
       const base = { rowNumber: row.rowNumber, name, type, contactNumber, remarks };
-
-      if (!name) {
-        invalidRows.push({ ...base, error: "Missing name" });
+      const { error } = validatePlumberRow(base, existingSet);
+      if (error) {
+        invalidRows.push({ ...base, error });
         continue;
       }
 
-      const norm = normalizeKey(name);
-      if (existingSet.has(norm)) {
-        invalidRows.push({ ...base, error: "Duplicate plumber name in system" });
-        continue;
-      }
-
-      existingSet.add(norm);
+      existingSet.add(normalizeKey(name));
       validRows.push(base);
     }
 
     return { fileName: file.name, validRows, invalidRows };
   },
 
-  async confirm(validRows: Omit<PlumberImportRow, "rowNumber">[], user: { id: string }) {
-    if (!validRows.length) return { insertedCount: 0 };
+  async validateRow(data: PlumberImportRowData, user: { role: string }) {
+    assertAdmin(user.role);
+    const existingSet = await loadExistingNames();
+    return validatePlumberRow(data, existingSet);
+  },
 
+  // Per-row isolated - each plumber row is an independent insert.
+  async confirm(validRows: PlumberImportRow[], user: { id: string }) {
     const db = getDb();
     let insertedCount = 0;
+    const failed: { tempId: string; message: string }[] = [];
 
-    await db.transaction(async (tx) => {
-      for (const row of validRows) {
+    for (const row of validRows) {
+      const tempId = String(row.rowNumber);
+      try {
         const norm = normalizeKey(row.name);
-        const [existing] = await tx
+        const [existing] = await db
           .select({ id: plumbers.id })
           .from(plumbers)
           .where(eq(plumbers.normalizedName, norm))
           .limit(1);
-        if (existing) continue;
 
-        await tx.insert(plumbers).values({
+        if (existing) {
+          failed.push({ tempId, message: "Duplicate plumber name in system" });
+          continue;
+        }
+
+        await db.insert(plumbers).values({
           name: row.name,
           normalizedName: norm,
           type: row.type === "team" ? "team" : "individual",
@@ -91,9 +114,11 @@ export const plumbersImportService = {
           updatedBy: user.id,
         });
         insertedCount += 1;
+      } catch (error) {
+        failed.push({ tempId, message: error instanceof Error ? error.message : "Unable to import this row" });
       }
-    });
+    }
 
-    return { insertedCount };
+    return { insertedCount, imported: insertedCount, failed };
   },
 };

@@ -36,12 +36,28 @@ export const materialsRoutes = new Elysia({ prefix: "/materials" })
       body: t.Object({
         validRows: t.Array(
           t.Object({
+            rowNumber: t.Number(),
             name: t.String(),
             category: t.String(),
             unit: t.String(),
             reorderLevel: t.Number(),
           }),
         ),
+      }),
+      requireRole: ["super_admin", "admin"],
+    },
+  )
+  .post(
+    "/import/validate-row",
+    ({ body, currentUser, set }) => materialsImportController.validateRow({ body, currentUser, set }),
+    {
+      body: t.Object({
+        data: t.Object({
+          name: t.String(),
+          category: t.String(),
+          unit: t.String(),
+          reorderLevel: t.Number(),
+        }),
       }),
       requireRole: ["super_admin", "admin"],
     },

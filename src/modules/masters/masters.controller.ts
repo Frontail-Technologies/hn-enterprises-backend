@@ -290,7 +290,7 @@ export const masterValuesImportController = {
     currentUser,
     set,
   }: {
-    body: { validRows: { value: string; description: string }[]; category: string };
+    body: { validRows: { rowNumber: number; value: string; description: string }[]; category: string };
     currentUser: AuthTokenPayload | null;
     set: SetContext;
   }) {
@@ -304,5 +304,23 @@ export const masterValuesImportController = {
       set.status = statusFromError(error);
       return { success: false, message: errorMessage(error, "Unable to confirm import") };
     }
-  }
+  },
+
+  async validateRow({
+    body,
+    currentUser,
+    set,
+  }: {
+    body: { data: { value: string; description: string }; category: string };
+    currentUser: AuthTokenPayload | null;
+    set: SetContext;
+  }) {
+    try {
+      if (!currentUser) throw new Error("Authentication required");
+      return ok(await masterValuesImportService.validateRow(body.data, body.category as any, currentUser));
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to validate row") };
+    }
+  },
 };

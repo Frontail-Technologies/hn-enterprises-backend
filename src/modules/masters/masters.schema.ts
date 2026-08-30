@@ -89,6 +89,18 @@ export const confirmCustomFieldsImportBodySchema = t.Object({
   rows: t.Array(customFieldImportRowSchema),
 });
 
+export const validateCustomFieldImportRowBodySchema = t.Object({
+  data: t.Object({
+    label: t.String(),
+    groupName: t.String(),
+    valueType: customFieldValueTypeSchema,
+    dropdownOptions: t.Array(t.String()),
+    required: t.Boolean(),
+    supervisorAccess: customFieldAccessSchema,
+    sortOrder: t.Optional(t.Number()),
+  }),
+});
+
 export const holidayListQuerySchema = t.Object({
   status: t.Optional(holidayStatusSchema),
   search: t.Optional(t.String()),

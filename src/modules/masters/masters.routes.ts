@@ -15,6 +15,7 @@ import {
   updateCustomFieldBodySchema,
   updateHolidayBodySchema,
   updateMasterValueBodySchema,
+  validateCustomFieldImportRowBodySchema,
 } from "./masters.schema";
 
 export const mastersRoutes = new Elysia({ prefix: "/masters" })
@@ -71,10 +72,25 @@ export const mastersRoutes = new Elysia({ prefix: "/masters" })
         category: t.String(),
         validRows: t.Array(
           t.Object({
+            rowNumber: t.Number(),
             value: t.String(),
             description: t.String(),
           }),
         ),
+      }),
+      requireRole: ["super_admin", "admin"],
+    },
+  )
+  .post(
+    "/values/import/validate-row",
+    ({ body, currentUser, set }) => masterValuesImportController.validateRow({ body: body as any, currentUser, set }),
+    {
+      body: t.Object({
+        category: t.String(),
+        data: t.Object({
+          value: t.String(),
+          description: t.String(),
+        }),
       }),
       requireRole: ["super_admin", "admin"],
     },
@@ -128,6 +144,11 @@ export const mastersRoutes = new Elysia({ prefix: "/masters" })
     "/custom-fields/import/confirm",
     ({ body, currentUser, set }) => customFieldsImportController.confirm({ body, currentUser, set }),
     { body: confirmCustomFieldsImportBodySchema, requireRole: ["super_admin", "admin"] },
+  )
+  .post(
+    "/custom-fields/import/validate-row",
+    ({ body, currentUser, set }) => customFieldsImportController.validateRow({ body, currentUser, set }),
+    { body: validateCustomFieldImportRowBodySchema, requireRole: ["super_admin", "admin"] },
   )
   .get("/holidays", ({ query, set }) => holidaysController.list({ query, set }), {
     query: holidayListQuerySchema,

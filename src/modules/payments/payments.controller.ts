@@ -36,9 +36,17 @@ async function mergeUploadedEvidence(
 }
 
 export const paymentsController = {
-  async list({ query, set }: { query: PaymentListQuery; set: SetContext }) {
+  async list({
+    query,
+    currentUser,
+    set,
+  }: {
+    query: PaymentListQuery;
+    currentUser: AuthTokenPayload | null;
+    set: SetContext;
+  }) {
     try {
-      const { rows, pagination } = await paymentsService.list(query);
+      const { rows, pagination } = await paymentsService.list(query, currentUser);
       return paginated(rows, pagination);
     } catch (error) {
       set.status = statusFromError(error);
@@ -49,9 +57,17 @@ export const paymentsController = {
     }
   },
 
-  async summary({ query, set }: { query: PaymentListQuery; set: SetContext }) {
+  async summary({
+    query,
+    currentUser,
+    set,
+  }: {
+    query: PaymentListQuery;
+    currentUser: AuthTokenPayload | null;
+    set: SetContext;
+  }) {
     try {
-      return ok(await paymentsService.summary(query));
+      return ok(await paymentsService.summary(query, currentUser));
     } catch (error) {
       set.status = statusFromError(error);
       return {
@@ -63,13 +79,15 @@ export const paymentsController = {
 
   async filterValues({
     query,
+    currentUser,
     set,
   }: {
     query: { column: PaymentFilterColumn };
+    currentUser: AuthTokenPayload | null;
     set: SetContext;
   }) {
     try {
-      return ok(await paymentsService.filterValues(query.column));
+      return ok(await paymentsService.filterValues(query.column, currentUser));
     } catch (error) {
       set.status = statusFromError(error);
       return {
@@ -79,9 +97,17 @@ export const paymentsController = {
     }
   },
 
-  async get({ params, set }: { params: { id: string }; set: SetContext }) {
+  async get({
+    params,
+    currentUser,
+    set,
+  }: {
+    params: { id: string };
+    currentUser: AuthTokenPayload | null;
+    set: SetContext;
+  }) {
     try {
-      const payment = await paymentsService.get(params.id);
+      const payment = await paymentsService.get(params.id, currentUser);
       return ok(payment);
     } catch (error) {
       set.status = statusFromError(error);
@@ -199,6 +225,7 @@ export const paymentsImportController = {
   }: {
     body: {
       validRows: {
+        rowNumber: number;
         category: string;
         paidTo: string;
         plumberName: string;
@@ -225,6 +252,36 @@ export const paymentsImportController = {
         success: false,
         message: errorMessage(error, "Unable to confirm import"),
       };
+    }
+  },
+
+  async validateRow({
+    body,
+    currentUser,
+    set,
+  }: {
+    body: {
+      data: {
+        category: string;
+        paidTo: string;
+        plumberName: string;
+        amount: string;
+        paymentDate: string;
+        mode: string;
+        purpose: string;
+        remarks: string;
+        address: string;
+      };
+    };
+    currentUser: AuthTokenPayload | null;
+    set: SetContext;
+  }) {
+    try {
+      if (!currentUser) throw new Error("Authentication required");
+      return ok(await paymentsImportService.validateRow(body.data, currentUser));
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to validate row") };
     }
   },
 };

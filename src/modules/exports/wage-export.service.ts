@@ -47,10 +47,11 @@ export const wageExportService = {
 
     records.forEach((record, index) => {
       const row = sheet.getRow(layout.firstDataRow + index);
-      // No persistent "Sl. No. in Employee register" field exists on plumbers - a row
-      // index is NOT that register number, so the cell is left blank rather than showing
-      // a fake-looking serial. `index` is still used to place the row itself.
-      row.getCell(slNo).value = null;
+      // No persistent "Sl. No. in Employee register" field exists on plumbers either, but
+      // the reference WAGES-MAY sheet uses the same simple 1..N in-register-order sequence
+      // as ATTENDANCE-MAY (its own sample shows 1-6) - a report-local serial, not a
+      // database ID, kept consistent with the Attendance Register's own behavior.
+      row.getCell(slNo).value = index + 1;
       row.getCell(name).value = record.plumberName;
       row.getCell(category).value = CATEGORY_DISPLAY[record.category] ?? record.category;
       row.getCell(rate).value = Number(record.wageRate);

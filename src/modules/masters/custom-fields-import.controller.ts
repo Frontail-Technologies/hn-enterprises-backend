@@ -1,7 +1,7 @@
 import type { AuthTokenPayload } from "@types";
 import type { SetContext } from "@modules/auth/auth.helpers";
 import { errorMessage, ok, statusFromError } from "@utils";
-import { customFieldsImportService, type CustomFieldImportRow } from "./custom-fields-import.service";
+import { customFieldsImportService, type CustomFieldEditableData, type CustomFieldImportRow } from "./custom-fields-import.service";
 
 export const customFieldsImportController = {
   async preview({
@@ -37,6 +37,24 @@ export const customFieldsImportController = {
     } catch (error) {
       set.status = statusFromError(error);
       return { success: false, message: errorMessage(error, "Unable to confirm import") };
+    }
+  },
+
+  async validateRow({
+    body,
+    currentUser,
+    set,
+  }: {
+    body: { data: CustomFieldEditableData };
+    currentUser: AuthTokenPayload | null;
+    set: SetContext;
+  }) {
+    try {
+      if (!currentUser) throw new Error("Authentication required");
+      return ok(await customFieldsImportService.validateRow(body.data, currentUser));
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to validate row") };
     }
   },
 };

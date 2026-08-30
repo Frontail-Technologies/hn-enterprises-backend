@@ -70,7 +70,7 @@ const STAT_ORDER: SupervisorStatId[] = [
 // canonical condition, kept as its own card only because it already shipped
 // under this id; not a second source of truth (see CUSTOMER_STAT_KEY below,
 // where both ids map to the same "conversion-done" canonical key).
-const HIDDEN_STAT_IDS = new Set<SupervisorStatId>(["total-conversion-done"]);
+const HIDDEN_STAT_IDS = new Set<SupervisorStatId>(["total-conversion-done", "dpr", "planning"]);
 
 const VISIBLE_STAT_ORDER: SupervisorStatId[] = STAT_ORDER.filter((id) => !HIDDEN_STAT_IDS.has(id));
 

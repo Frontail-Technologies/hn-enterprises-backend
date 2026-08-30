@@ -12,6 +12,10 @@ export type ComplaintListQuery = {
   search?: string;
 };
 
+export type ComplaintStatusCountsQuery = {
+  supervisorId?: string;
+};
+
 export type CreateComplaintBody = {
   customerId: string;
   title: string;

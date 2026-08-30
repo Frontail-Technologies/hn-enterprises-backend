@@ -35,7 +35,34 @@ export const usersRoutes = new Elysia({ prefix: "/users" })
     ({ body, currentUser, set }) => usersImportController.confirm({ body: body as any, currentUser, set }),
     {
       body: t.Object({
-        validRows: t.Array(t.Any()),
+        validRows: t.Array(
+          t.Object({
+            rowNumber: t.Number(),
+            name: t.String(),
+            username: t.String(),
+            email: t.String(),
+            mobile: t.String(),
+            role: t.String(),
+            password: t.String(),
+          }),
+        ),
+      }),
+      requireRole: ["super_admin", "admin"],
+    },
+  )
+  .post(
+    "/import/validate-row",
+    ({ body, currentUser, set }) => usersImportController.validateRow({ body: body as any, currentUser, set }),
+    {
+      body: t.Object({
+        data: t.Object({
+          name: t.String(),
+          username: t.String(),
+          email: t.String(),
+          mobile: t.String(),
+          role: t.String(),
+          password: t.String(),
+        }),
       }),
       requireRole: ["super_admin", "admin"],
     },

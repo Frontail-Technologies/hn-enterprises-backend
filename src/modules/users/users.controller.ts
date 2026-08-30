@@ -3,7 +3,7 @@ import type { SetContext } from "@modules/auth/auth.helpers";
 import { assertUser, errorCode, errorMessage, ok, paginated, statusFromError } from "@utils";
 import { usersService } from "./users.service";
 import { usersDeletionService } from "./users-deletion.service";
-import { usersImportService } from "./users.import.service";
+import { usersImportService, type UserImportRowData } from "./users.import.service";
 import type { CreateUserBody, ResetPasswordBody, UpdateUserBody, UserListQuery } from "./users.types";
 
 export const usersController = {
@@ -173,7 +173,7 @@ export const usersImportController = {
     currentUser,
     set,
   }: {
-    body: { validRows: any[] };
+    body: { validRows: (UserImportRowData & { rowNumber: number })[] };
     currentUser: AuthTokenPayload | null;
     set: SetContext;
   }) {
@@ -187,5 +187,23 @@ export const usersImportController = {
       set.status = statusFromError(error);
       return { success: false, message: errorMessage(error, "Unable to confirm import") };
     }
-  }
+  },
+
+  async validateRow({
+    body,
+    currentUser,
+    set,
+  }: {
+    body: { data: UserImportRowData };
+    currentUser: AuthTokenPayload | null;
+    set: SetContext;
+  }) {
+    try {
+      if (!currentUser) throw new Error("Authentication required");
+      return ok(await usersImportService.validateRow(body.data, currentUser));
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to validate row") };
+    }
+  },
 };

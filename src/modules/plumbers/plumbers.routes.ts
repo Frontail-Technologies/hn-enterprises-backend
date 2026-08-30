@@ -27,12 +27,28 @@ export const plumbersRoutes = new Elysia({ prefix: "/plumbers" })
       body: t.Object({
         validRows: t.Array(
           t.Object({
+            rowNumber: t.Number(),
             name: t.String(),
             type: t.String(),
             contactNumber: t.String(),
             remarks: t.String(),
           }),
         ),
+      }),
+      requireRole: ["super_admin", "admin"],
+    },
+  )
+  .post(
+    "/import/validate-row",
+    ({ body, currentUser, set }) => plumbersImportController.validateRow({ body, currentUser, set }),
+    {
+      body: t.Object({
+        data: t.Object({
+          name: t.String(),
+          type: t.String(),
+          contactNumber: t.String(),
+          remarks: t.String(),
+        }),
       }),
       requireRole: ["super_admin", "admin"],
     },

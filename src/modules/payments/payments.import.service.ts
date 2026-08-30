@@ -3,8 +3,7 @@ import { getDb } from "@db";
 import { payments, plumbers } from "@db/schema";
 import type { PaymentCategory } from "./payments.types";
 
-type PaymentImportRow = {
-  rowNumber: number;
+export type PaymentImportRowData = {
   category: string;
   paidTo: string;
   plumberName: string;
@@ -15,6 +14,8 @@ type PaymentImportRow = {
   remarks: string;
   address: string;
 };
+
+type PaymentImportRow = PaymentImportRowData & { rowNumber: number };
 
 type PaymentImportInvalidRow = PaymentImportRow & { error: string };
 
@@ -49,11 +50,31 @@ function parseDate(value: string): Date | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
+function assertAdmin(role: string) {
+  if (!["super_admin", "admin"].includes(role)) {
+    throw new Error("Only admin users can import payments");
+  }
+}
+
+// Shared by the bulk preview loop and the standalone validate-row endpoint -
+// exactly the same checks either way, so an edited row is held to the same
+// bar the original file was.
+export function validatePaymentRow(data: PaymentImportRowData): { error?: string } {
+  const category = CATEGORY_ALIASES[normalizeKey(data.category)];
+  if (!category) return { error: "Unrecognized category" };
+
+  const amount = Number(data.amount);
+  if (!data.amount || Number.isNaN(amount) || amount <= 0) return { error: "Amount must be a positive number" };
+
+  if (!parseDate(data.paymentDate)) return { error: "Payment date is missing or unreadable" };
+  if (!data.mode) return { error: "Missing payment mode" };
+
+  return {};
+}
+
 export const paymentsImportService = {
   async preview(file: File, user: { id: string; role: string }) {
-    if (!["super_admin", "admin"].includes(user.role)) {
-      throw new Error("Only admin users can import payments");
-    }
+    assertAdmin(user.role);
 
     const rawRows = await readSheetRows(file);
 
@@ -61,48 +82,22 @@ export const paymentsImportService = {
     const invalidRows: PaymentImportInvalidRow[] = [];
 
     for (const row of rawRows) {
-      const categoryRaw = cell(row.values, "category");
-      const paidTo = cell(row.values, "paid to");
-      const plumberName = cell(row.values, "plumber name");
-      const amountRaw = cell(row.values, "amount");
-      const paymentDateRaw = cell(row.values, "payment date") || cell(row.values, "date");
-      const mode = cell(row.values, "mode");
-      const purpose = cell(row.values, "purpose");
-      const remarks = cell(row.values, "remarks");
-      const address = cell(row.values, "address");
-
       const base = {
         rowNumber: row.rowNumber,
-        category: categoryRaw,
-        paidTo,
-        plumberName,
-        amount: amountRaw,
-        paymentDate: paymentDateRaw,
-        mode,
-        purpose,
-        remarks,
-        address,
+        category: cell(row.values, "category"),
+        paidTo: cell(row.values, "paid to"),
+        plumberName: cell(row.values, "plumber name"),
+        amount: cell(row.values, "amount"),
+        paymentDate: cell(row.values, "payment date") || cell(row.values, "date"),
+        mode: cell(row.values, "mode"),
+        purpose: cell(row.values, "purpose"),
+        remarks: cell(row.values, "remarks"),
+        address: cell(row.values, "address"),
       };
 
-      const category = CATEGORY_ALIASES[normalizeKey(categoryRaw)];
-      if (!category) {
-        invalidRows.push({ ...base, error: "Unrecognized category" });
-        continue;
-      }
-
-      const amount = Number(amountRaw);
-      if (!amountRaw || Number.isNaN(amount) || amount <= 0) {
-        invalidRows.push({ ...base, error: "Amount must be a positive number" });
-        continue;
-      }
-
-      if (!parseDate(paymentDateRaw)) {
-        invalidRows.push({ ...base, error: "Payment date is missing or unreadable" });
-        continue;
-      }
-
-      if (!mode) {
-        invalidRows.push({ ...base, error: "Missing payment mode" });
+      const { error } = validatePaymentRow(base);
+      if (error) {
+        invalidRows.push({ ...base, error });
         continue;
       }
 
@@ -112,25 +107,36 @@ export const paymentsImportService = {
     return { fileName: file.name, validRows, invalidRows };
   },
 
-  async confirm(validRows: Omit<PaymentImportRow, "rowNumber">[], user: { id: string }) {
-    if (!validRows.length) return { insertedCount: 0 };
+  async validateRow(data: PaymentImportRowData, user: { role: string }) {
+    assertAdmin(user.role);
+    return validatePaymentRow(data);
+  },
 
+  // Per-row isolated - each payment row is independent (no cross-row FK or
+  // ordering relationship), so one row's DB failure is reported and skipped
+  // rather than discarding the rest of the accepted rows.
+  async confirm(validRows: PaymentImportRow[], user: { id: string }) {
     const db = getDb();
 
     const plumberRows = await db.select({ id: plumbers.id, normalizedName: plumbers.normalizedName }).from(plumbers);
     const plumberIdByName = new Map(plumberRows.map((p) => [p.normalizedName, p.id]));
 
     let insertedCount = 0;
+    const failed: { tempId: string; message: string }[] = [];
 
-    await db.transaction(async (tx) => {
-      for (const row of validRows) {
+    for (const row of validRows) {
+      const tempId = String(row.rowNumber);
+      try {
         const category = CATEGORY_ALIASES[normalizeKey(row.category)];
         const date = parseDate(row.paymentDate);
-        if (!category || !date) continue;
+        if (!category || !date) {
+          failed.push({ tempId, message: "Unrecognized category or unreadable payment date" });
+          continue;
+        }
 
         const plumberId = row.plumberName ? plumberIdByName.get(normalizeKey(row.plumberName)) ?? null : null;
 
-        await tx.insert(payments).values({
+        await db.insert(payments).values({
           category,
           plumberId,
           paidTo: row.paidTo || null,
@@ -144,10 +150,11 @@ export const paymentsImportService = {
           submittedBy: user.id,
         });
         insertedCount += 1;
+      } catch (error) {
+        failed.push({ tempId, message: error instanceof Error ? error.message : "Unable to import this row" });
       }
-    });
+    }
 
-    return { insertedCount };
+    return { insertedCount, imported: insertedCount, failed };
   },
 };
-

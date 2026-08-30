@@ -13,6 +13,10 @@ export const complaintListQuerySchema = t.Object({
   search: t.Optional(t.String()),
 });
 
+export const complaintStatusCountsQuerySchema = t.Object({
+  supervisorId: t.Optional(t.String()),
+});
+
 export const createComplaintBodySchema = t.Object({
   customerId: t.String({ minLength: 1 }),
   title: t.String({ minLength: 1 }),

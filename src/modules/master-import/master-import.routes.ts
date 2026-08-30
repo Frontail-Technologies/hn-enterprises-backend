@@ -33,4 +33,34 @@ export const masterImportRoutes = new Elysia({ prefix: "/master-import" })
       }),
       requireRole: ["super_admin", "admin"],
     },
+  )
+  .patch(
+    "/:batchId/rows/:rowId",
+    ({ params, body, currentUser, set }) =>
+      masterImportController.editRow({ params, body, currentUser, set }),
+    {
+      params: t.Object({
+        batchId: t.String(),
+        rowId: t.String(),
+      }),
+      body: t.Object({
+        data: t.Record(t.String(), t.Any()),
+      }),
+      requireRole: ["super_admin", "admin"],
+    },
+  )
+  .patch(
+    "/:batchId/rows/:rowId/remove",
+    ({ params, body, currentUser, set }) =>
+      masterImportController.setRowRemoved({ params, body, currentUser, set }),
+    {
+      params: t.Object({
+        batchId: t.String(),
+        rowId: t.String(),
+      }),
+      body: t.Object({
+        removed: t.Boolean(),
+      }),
+      requireRole: ["super_admin", "admin"],
+    },
   );

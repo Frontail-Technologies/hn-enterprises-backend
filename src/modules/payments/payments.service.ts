@@ -4,7 +4,25 @@ import { customers, payments, paymentCategoryEnum, paymentStatusEnum, projectSit
 import { permissionService } from "@services";
 import { buildPaginationMeta, cleanObject, parsePagination, toSearchPattern } from "@utils";
 import type { AuthTokenPayload } from "@types";
-import type { CreatePaymentBody, PaymentFilterColumn, PaymentListQuery, PaymentStatus, UpdatePaymentBody } from "./payments.types";
+import type { CreatePaymentBody, PaymentCategory, PaymentFilterColumn, PaymentListQuery, PaymentStatus, UpdatePaymentBody } from "./payments.types";
+
+// Supervisors only handle plumber payments and miscellaneous ("Other")
+// expenses on site - everything else (worker/supervisor payroll, rent,
+// material expenses) belongs to office/admin roles. Enforced here (list,
+// summary, filter-values, get, create, update) rather than just hidden in
+// the UI, since a role restriction that only hides options client-side is
+// trivially bypassed by calling the API directly.
+const SUPERVISOR_VISIBLE_CATEGORIES: PaymentCategory[] = ["plumber_payment", "other_expense"];
+
+function isCategoryRestricted(currentUser?: AuthTokenPayload | null) {
+  return currentUser?.role === "supervisor";
+}
+
+function supervisorCategoryCondition(currentUser?: AuthTokenPayload | null) {
+  return isCategoryRestricted(currentUser)
+    ? inArray(payments.category, SUPERVISOR_VISIBLE_CATEGORIES)
+    : undefined;
+}
 
 function parseCsv(value?: string): string[] {
   return value ? value.split(",").map((item) => item.trim()).filter(Boolean) : [];
@@ -15,7 +33,7 @@ function parseCsv(value?: string): string[] {
 // project, and the column-filter checkboxes. summary() is called with two
 // different subsets of this same query shape depending on caller intent -
 // see summary()'s own comment for why.
-function buildListConditions(query: PaymentListQuery) {
+function buildListConditions(query: PaymentListQuery, currentUser?: AuthTokenPayload | null) {
   const searchPattern = toSearchPattern(query.search);
   const paidTo = parseCsv(query.paidTo);
   const purpose = parseCsv(query.purpose);
@@ -54,6 +72,7 @@ function buildListConditions(query: PaymentListQuery) {
     amount.length ? inArray(sql`${payments.amount}::text`, amount) : undefined,
     date.length ? inArray(sql`to_char(${payments.paymentDate}, 'YYYY-MM-DD')`, date) : undefined,
     status.length ? inArray(payments.status, status) : undefined,
+    supervisorCategoryCondition(currentUser),
   ];
 }
 
@@ -87,11 +106,11 @@ export function projectPaymentCondition(projectId: string) {
 }
 
 export const paymentsService = {
-  async list(query: PaymentListQuery) {
+  async list(query: PaymentListQuery, currentUser?: AuthTokenPayload | null) {
     const db = getDb();
     const { page, limit, offset } = parsePagination(query);
 
-    const conditions = buildListConditions(query).filter(
+    const conditions = buildListConditions(query, currentUser).filter(
       (condition): condition is NonNullable<typeof condition> => Boolean(condition),
     );
     const where = conditions.length ? and(...conditions) : undefined;
@@ -104,6 +123,11 @@ export const paymentsService = {
     // here previously left all three permanently broken (View always
     // disabled, Attachment column always "-", edit drawer's receipt field
     // always empty) even for payments with real uploaded evidence.
+    // customerName: joined in (not stored on payments itself) purely for
+    // display - the mobile Expense card shows it as secondary context under
+    // Purpose when a payment is actually linked to a customer. Left join
+    // since customerId is optional on most categories (worker/rent/material
+    // expenses rarely have one).
     const listSelection = {
       id: payments.id,
       category: payments.category,
@@ -112,6 +136,7 @@ export const paymentsService = {
       siteId: payments.siteId,
       address: payments.address,
       customerId: payments.customerId,
+      customerName: customers.customerName,
       projectId: payments.projectId,
       amount: payments.amount,
       paymentDate: payments.paymentDate,
@@ -123,7 +148,14 @@ export const paymentsService = {
     };
 
     const [rows, [{ value: total }]] = await Promise.all([
-      db.select(listSelection).from(payments).where(where).limit(limit).offset(offset).orderBy(payments.paymentDate),
+      db
+        .select(listSelection)
+        .from(payments)
+        .leftJoin(customers, eq(payments.customerId, customers.id))
+        .where(where)
+        .limit(limit)
+        .offset(offset)
+        .orderBy(payments.paymentDate),
       db.select({ value: count() }).from(payments).where(where),
     ]);
 
@@ -140,9 +172,9 @@ export const paymentsService = {
   //    filter set, so that figure matches exactly what's on screen.
   // Either way this is computed directly in SQL over the full matching
   // dataset, never the paginated list's loaded pages.
-  async summary(query: PaymentListQuery) {
+  async summary(query: PaymentListQuery, currentUser?: AuthTokenPayload | null) {
     const db = getDb();
-    const conditions = buildListConditions(query).filter(
+    const conditions = buildListConditions(query, currentUser).filter(
       (condition): condition is NonNullable<typeof condition> => Boolean(condition),
     );
     const where = conditions.length ? and(...conditions) : undefined;
@@ -179,6 +211,7 @@ export const paymentsService = {
               siteId: payments.siteId,
               address: payments.address,
               customerId: payments.customerId,
+              customerName: customers.customerName,
               projectId: payments.projectId,
               amount: payments.amount,
               paymentDate: payments.paymentDate,
@@ -188,6 +221,7 @@ export const paymentsService = {
               remarks: payments.remarks,
             })
             .from(payments)
+            .leftJoin(customers, eq(payments.customerId, customers.id))
             .where(where)
             .orderBy(desc(payments.paymentDate))
             .limit(5),
@@ -210,9 +244,13 @@ export const paymentsService = {
   // trip); the free-text/numeric columns are a real DISTINCT scan since
   // there's no master-data source for them. Capped since these are meant to
   // populate a checkbox list, not export the dataset.
-  async filterValues(column: PaymentFilterColumn): Promise<string[]> {
+  async filterValues(column: PaymentFilterColumn, currentUser?: AuthTokenPayload | null): Promise<string[]> {
     if (column === "status") return [...paymentStatusEnum.enumValues];
-    if (column === "category") return [...paymentCategoryEnum.enumValues];
+    if (column === "category") {
+      return isCategoryRestricted(currentUser)
+        ? [...SUPERVISOR_VISIBLE_CATEGORIES]
+        : [...paymentCategoryEnum.enumValues];
+    }
 
     const db = getDb();
     const columnMap = {
@@ -234,11 +272,19 @@ export const paymentsService = {
     return rows.map((row) => row.value).filter((value): value is string => Boolean(value));
   },
 
-  async get(id: string) {
-    return getPaymentOrThrow(id);
+  async get(id: string, currentUser?: AuthTokenPayload | null) {
+    const payment = await getPaymentOrThrow(id);
+    if (isCategoryRestricted(currentUser) && !SUPERVISOR_VISIBLE_CATEGORIES.includes(payment.category)) {
+      throw new Error("Payment not found");
+    }
+    return payment;
   },
 
   async create(input: CreatePaymentBody, currentUser: AuthTokenPayload) {
+    if (isCategoryRestricted(currentUser) && !SUPERVISOR_VISIBLE_CATEGORIES.includes(input.category)) {
+      throw new Error("You do not have permission to record this category of expense");
+    }
+
     // A freshly-created payment can only start as "approved"/"rejected" if the
     // submitter is actually allowed to approve payments - otherwise anyone
     // could bypass the approval workflow entirely by setting the status on
@@ -279,6 +325,14 @@ export const paymentsService = {
 
   async update(id: string, input: UpdatePaymentBody, currentUser: AuthTokenPayload) {
     const existing = await getPaymentOrThrow(id);
+    if (isCategoryRestricted(currentUser)) {
+      if (!SUPERVISOR_VISIBLE_CATEGORIES.includes(existing.category)) {
+        throw new Error("Payment not found");
+      }
+      if (input.category && !SUPERVISOR_VISIBLE_CATEGORIES.includes(input.category)) {
+        throw new Error("You do not have permission to record this category of expense");
+      }
+    }
     const db = getDb();
 
     // Only treat this as an approval action if the status is actually changing

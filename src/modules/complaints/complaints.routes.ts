@@ -3,6 +3,7 @@ import { auth } from "@plugins";
 import { complaintsController } from "./complaints.controller";
 import {
   complaintListQuerySchema,
+  complaintStatusCountsQuerySchema,
   createComplaintBodySchema,
   updateComplaintBodySchema,
 } from "./complaints.schema";
@@ -13,6 +14,11 @@ export const complaintsRoutes = new Elysia({ prefix: "/complaints" })
     query: complaintListQuerySchema,
     requireAuth: true,
   })
+  .get(
+    "/status-counts",
+    ({ query, set }) => complaintsController.statusCounts({ query, set }),
+    { query: complaintStatusCountsQuerySchema, requireAuth: true },
+  )
   .post(
     "/",
     ({ body, currentUser, set }) => complaintsController.create({ body, currentUser, set }),

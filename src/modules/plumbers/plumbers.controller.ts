@@ -127,7 +127,7 @@ export const plumbersImportController = {
     currentUser,
     set,
   }: {
-    body: { validRows: { name: string; type: string; contactNumber: string; remarks: string }[] };
+    body: { validRows: { rowNumber: number; name: string; type: string; contactNumber: string; remarks: string }[] };
     currentUser: AuthTokenPayload | null;
     set: SetContext;
   }) {
@@ -137,6 +137,24 @@ export const plumbersImportController = {
     } catch (error) {
       set.status = statusFromError(error);
       return { success: false, message: errorMessage(error, "Unable to confirm import") };
+    }
+  },
+
+  async validateRow({
+    body,
+    currentUser,
+    set,
+  }: {
+    body: { data: { name: string; type: string; contactNumber: string; remarks: string } };
+    currentUser: AuthTokenPayload | null;
+    set: SetContext;
+  }) {
+    try {
+      if (!currentUser) throw new Error("Authentication required");
+      return ok(await plumbersImportService.validateRow(body.data, currentUser));
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to validate row") };
     }
   },
 };

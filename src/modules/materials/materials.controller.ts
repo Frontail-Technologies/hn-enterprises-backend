@@ -243,7 +243,7 @@ export const materialsImportController = {
     currentUser,
     set,
   }: {
-    body: { validRows: { name: string; category: string; unit: string; reorderLevel: number }[] };
+    body: { validRows: { rowNumber: number; name: string; category: string; unit: string; reorderLevel: number }[] };
     currentUser: AuthTokenPayload | null;
     set: SetContext;
   }) {
@@ -253,6 +253,24 @@ export const materialsImportController = {
     } catch (error) {
       set.status = statusFromError(error);
       return { success: false, message: errorMessage(error, "Unable to confirm import") };
+    }
+  },
+
+  async validateRow({
+    body,
+    currentUser,
+    set,
+  }: {
+    body: { data: { name: string; category: string; unit: string; reorderLevel: number } };
+    currentUser: AuthTokenPayload | null;
+    set: SetContext;
+  }) {
+    try {
+      if (!currentUser) throw new Error("Authentication required");
+      return ok(await materialsImportService.validateRow(body.data, currentUser));
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to validate row") };
     }
   },
 };
