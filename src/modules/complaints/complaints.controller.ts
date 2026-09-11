@@ -20,9 +20,9 @@ export const complaintsController = {
     }
   },
 
-  async statusCounts({ query, set }: { query: ComplaintStatusCountsQuery; set: SetContext }) {
+  async statusCounts({ set }: { query: ComplaintStatusCountsQuery; set: SetContext }) {
     try {
-      const counts = await complaintsService.statusCounts(query);
+      const counts = await complaintsService.statusCounts();
       return ok(counts);
     } catch (error) {
       set.status = statusFromError(error);

@@ -1,6 +1,6 @@
 import { and, eq, gte, inArray, isNotNull, lte, sql } from "drizzle-orm";
 import { getDb } from "@db";
-import { customers, dprRecords, projects, projectSites, sitePlans, staff, users } from "@db/schema";
+import { customers, dprRecords, projects, projectSites, sitePlans, users } from "@db/schema";
 import { cleanObject } from "@utils";
 import { activityService } from "@modules/activity/activity.service";
 import { dprAction, dprTitle } from "@modules/activity/activity.catalog";
@@ -22,30 +22,9 @@ function planningScope(currentUser: AuthTokenPayload): string | undefined {
   return GLOBAL_PLANNING_ROLES.has(currentUser.role) ? undefined : currentUser.id;
 }
 
-/**
- * Customers are not permanently owned by one supervisor (R1) - a non-admin's
- * planning view scopes to customers in whichever project they are CURRENTLY
- * assigned to (staff.assignedProjectId), not a stored customer.supervisorId.
- * Returns a project id that will never match anything if the user has no
- * current assignment, so scoping never silently falls through to "no filter".
- */
-async function resolveCustomerProjectScope(currentUser: AuthTokenPayload): Promise<string | undefined> {
-  if (GLOBAL_PLANNING_ROLES.has(currentUser.role)) return undefined;
+async function fetchSiteTotals() {
   const db = getDb();
-  const row = await db.query.staff.findFirst({
-    where: eq(staff.userId, currentUser.id),
-    columns: { assignedProjectId: true },
-  });
-  return row?.assignedProjectId ?? "00000000-0000-0000-0000-000000000000";
-}
-
-async function fetchSiteTotals(projectScopeId: string | undefined) {
-  const db = getDb();
-  const conditions = [
-    isNotNull(customers.siteId),
-    isNotNull(customers.projectId),
-    projectScopeId ? eq(customers.projectId, projectScopeId) : undefined,
-  ].filter((condition): condition is NonNullable<typeof condition> => Boolean(condition));
+  const conditions = [isNotNull(customers.siteId), isNotNull(customers.projectId)];
 
   return db
     .select({
@@ -320,11 +299,15 @@ export const planningService = {
     return record;
   },
 
+  // A supervisor is not assigned to a project (product rule correction, R2) -
+  // site/customer totals are unscoped across all projects; only which
+  // supervisor's OWN submissions count toward "completed" (planningScope,
+  // an actor-ownership concept, unrelated to project assignment) narrows.
   async getWorkPlanningOverview(date: string, currentUser: AuthTokenPayload): Promise<SiteOverviewRow[]> {
     const db = getDb();
     const scopeId = planningScope(currentUser);
 
-    const siteTotals = await fetchSiteTotals(await resolveCustomerProjectScope(currentUser));
+    const siteTotals = await fetchSiteTotals();
     if (!siteTotals.length) return [];
     const siteIds = siteTotals.map((row) => row.siteId).filter((id): id is string => Boolean(id));
 
@@ -355,7 +338,7 @@ export const planningService = {
     const db = getDb();
     const scopeId = planningScope(currentUser);
 
-    const siteTotals = await fetchSiteTotals(await resolveCustomerProjectScope(currentUser));
+    const siteTotals = await fetchSiteTotals();
     if (!siteTotals.length) return [];
     const siteIds = siteTotals.map((row) => row.siteId).filter((id): id is string => Boolean(id));
 
@@ -382,15 +365,10 @@ export const planningService = {
     );
   },
 
-  async listSiteCustomers(siteId: string, currentUser: AuthTokenPayload): Promise<SiteCustomerRow[]> {
+  // A supervisor is not assigned to a project (product rule correction, R2) -
+  // any customer at this site is visible regardless of project.
+  async listSiteCustomers(siteId: string): Promise<SiteCustomerRow[]> {
     const db = getDb();
-    const projectScopeId = await resolveCustomerProjectScope(currentUser);
-
-    const conditions = [
-      eq(customers.siteId, siteId),
-      isNotNull(customers.projectId),
-      projectScopeId ? eq(customers.projectId, projectScopeId) : undefined,
-    ].filter((condition): condition is NonNullable<typeof condition> => Boolean(condition));
 
     const rows = await db
       .select({
@@ -401,7 +379,7 @@ export const planningService = {
         siteId: customers.siteId,
       })
       .from(customers)
-      .where(and(...conditions))
+      .where(and(eq(customers.siteId, siteId), isNotNull(customers.projectId)))
       .orderBy(customers.customerName);
 
     return rows

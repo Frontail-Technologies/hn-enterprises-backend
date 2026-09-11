@@ -117,7 +117,7 @@ export const planningController = {
   }) {
     try {
       if (!currentUser) throw new Error("Authentication required");
-      const rows = await planningService.listSiteCustomers(query.siteId, currentUser);
+      const rows = await planningService.listSiteCustomers(query.siteId);
       return ok(rows);
     } catch (error) {
       set.status = statusFromError(error);

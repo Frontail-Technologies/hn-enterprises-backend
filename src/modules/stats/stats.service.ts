@@ -1,29 +1,21 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { inArray, sql } from "drizzle-orm";
 import { getDb } from "@db";
-import { complaints, customers, staff, users } from "@db/schema";
+import { complaints, customers, users } from "@db/schema";
 import { buildCustomerCompletionAudit, type CustomerCompletionAudit, customerStatCondition } from "@modules/customers/customer-completion";
 import { buildPaginationMeta, parsePagination } from "@utils";
 import type { AuthTokenPayload } from "@types";
 import type { SupervisorStat, SupervisorStatDetailRow, SupervisorStatId, SupervisorStatTone } from "./stats.types";
 
-const GLOBAL_STATS_ROLES = new Set(["super_admin", "admin"]);
-
 /**
- * Customers are not permanently owned by one supervisor (R1) - a supervisor's
- * "my stats" scope is whichever project they are CURRENTLY assigned to
- * (staff.assignedProjectId), not a stored customer.supervisorId. Returns a
- * project id that will never match if the user has no current assignment,
- * so scoping never silently falls through to "no filter".
+ * A supervisor is NOT assigned to a project (product rule correction, R2) -
+ * there is no per-supervisor project boundary for operational visibility.
+ * `currentUser` is kept on getSummary/getDetails' signatures for role checks
+ * done at the route layer and any future personalization, but it no longer
+ * narrows which customers are counted: every authenticated role (supervisor
+ * included) sees aggregate stats across ALL projects. staff.assignedProjectId
+ * remains real staff metadata (see staff.schema.ts) - it is just no longer an
+ * authorization boundary here.
  */
-async function supervisorProjectScope(currentUser: AuthTokenPayload | null): Promise<string | undefined> {
-  if (!currentUser || GLOBAL_STATS_ROLES.has(currentUser.role)) return undefined;
-  const db = getDb();
-  const row = await db.query.staff.findFirst({
-    where: eq(staff.userId, currentUser.id),
-    columns: { assignedProjectId: true },
-  });
-  return row?.assignedProjectId ?? "00000000-0000-0000-0000-000000000000";
-}
 
 const STAT_DEFINITIONS: Record<SupervisorStatId, { label: string; suffix: string; tone: SupervisorStatTone }> = {
   "survey-done": { label: "Survey Done", suffix: "Customers", tone: "green" },
@@ -162,16 +154,10 @@ async function fetchPlanningDetailRows() {
 type CustomerRow = Awaited<ReturnType<typeof fetchMatchingCustomers>>[number];
 type LatestComplaint = { status: string; createdAt: Date | string; resolvedAt: Date | string | null; supervisorRemark: string | null };
 
-async function fetchMatchingCustomers(projectScopeId: string | undefined, canonicalKey: string) {
+async function fetchMatchingCustomers(canonicalKey: string) {
   const db = getDb();
-  const conditions = [
-    projectScopeId ? eq(customers.projectId, projectScopeId) : undefined,
-    customerStatCondition(canonicalKey),
-  ].filter((condition): condition is NonNullable<typeof condition> => Boolean(condition));
-  const where = conditions.length ? and(...conditions) : undefined;
-
   return db.query.customers.findMany({
-    where,
+    where: customerStatCondition(canonicalKey),
     with: { site: true, lmcPipeRecords: true },
   });
 }
@@ -384,10 +370,7 @@ const COMPLAINT_BASED_STAT_IDS = new Set<SupervisorStatId>(["complaint-customer"
 
 export const statsService = {
   async getSummary(currentUser: AuthTokenPayload | null): Promise<SupervisorStat[]> {
-    const scopeId = await supervisorProjectScope(currentUser);
     const db = getDb();
-
-    const scope = scopeId ? sql`WHERE project_id = ${scopeId}` : sql``;
 
     const filters = CUSTOMER_STAT_ENTRIES.map(([mobileId, canonicalKey]) => {
       const alias = sql.raw(mobileId.replace(/-/g, "_"));
@@ -399,7 +382,6 @@ export const statsService = {
       db.execute<Record<string, string>>(sql`
         SELECT COUNT(*) AS total_customers, ${sql.join(filters, sql`, `)}
         FROM customers
-        ${scope}
       `),
       fetchDprDetailRows(),
       fetchPlanningDetailRows(),
@@ -425,7 +407,6 @@ export const statsService = {
 
   async getDetails(type: string, query: { page?: string; limit?: string } = {}, currentUser: AuthTokenPayload | null = null) {
     if (!isStatId(type)) throw new Error("Stat not found");
-    const scopeId = await supervisorProjectScope(currentUser);
 
     let allRows: SupervisorStatDetailRow[];
 
@@ -439,7 +420,7 @@ export const statsService = {
 
       const db = getDb();
       const [matchingCustomers, userRows] = await Promise.all([
-        fetchMatchingCustomers(scopeId, canonicalKey),
+        fetchMatchingCustomers(canonicalKey),
         db.select({ id: users.id, name: users.name }).from(users),
       ]);
 

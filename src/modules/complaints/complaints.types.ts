@@ -7,14 +7,11 @@ export type ComplaintListQuery = {
   page?: number | string;
   limit?: number | string;
   customerId?: string;
-  supervisorId?: string;
   status?: ComplaintStatus;
   search?: string;
 };
 
-export type ComplaintStatusCountsQuery = {
-  supervisorId?: string;
-};
+export type ComplaintStatusCountsQuery = Record<string, never>;
 
 export type CreateComplaintBody = {
   customerId: string;

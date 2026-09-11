@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "bun run --watch src/index.ts",
     "start": "bun run src/index.ts",
+    "build": "bunx tsc --noEmit",
     "check": "bunx tsc --noEmit",
     "test": "bun test",
     "generate": "drizzle-kit generate",

@@ -1,12 +1,10 @@
 import { and, desc, eq, gte, ilike, inArray, lte, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { getDb } from "@db";
-import { activityEvents, customers, projects, staff, users } from "@db/schema";
+import { activityEvents, customers, projects, users } from "@db/schema";
 import { buildPaginationMeta, parsePagination, toSearchPattern } from "@utils";
 import type { AuthTokenPayload } from "@types";
 import type { ActivityListQuery, ActivityRow, RecordActivityInput } from "./activity.types";
-
-const NO_MATCH_PROJECT_ID = "00000000-0000-0000-0000-000000000000";
 
 const actorUser = alias(users, "actor_user");
 const behalfUser = alias(users, "behalf_user");
@@ -32,23 +30,6 @@ async function resolveActorSnapshot(actorId?: string | null, onBehalfOfUserId?: 
     actorRole: actorId ? (byId.get(actorId)?.role ?? null) : null,
     onBehalfOfName: onBehalfOfUserId ? (byId.get(onBehalfOfUserId)?.name ?? null) : null,
   };
-}
-
-/**
- * A supervisor sees activity for their currently-assigned project (canonical
- * staff.assignedProjectId - never the removed customer.supervisorId) PLUS any
- * event they personally performed, even cross-project. Admins/super_admins see
- * everything. Returns undefined when no scoping is needed.
- */
-async function resolveActivityScope(currentUser: AuthTokenPayload) {
-  if (currentUser.role === "super_admin" || currentUser.role === "admin") return undefined;
-  const db = getDb();
-  const row = await db.query.staff.findFirst({
-    where: eq(staff.userId, currentUser.id),
-    columns: { assignedProjectId: true },
-  });
-  const projectId = row?.assignedProjectId ?? NO_MATCH_PROJECT_ID;
-  return or(eq(activityEvents.projectId, projectId), eq(activityEvents.actorId, currentUser.id));
 }
 
 export const activityService = {
@@ -142,18 +123,31 @@ export const activityService = {
     return true;
   },
 
+  // Recent Activity is personal for a supervisor (R3) - unlike Customers/
+  // Stats/Complaints (global across all projects, R2), a supervisor only
+  // ever sees events THEY performed (activity_events.actorId = their own
+  // user id), including actions they took on behalf of someone else - it's
+  // filtered by who DID the action, never by who it was done FOR/about, and
+  // never by project/customer/staff assignment. A supervisor's own actorId
+  // is a hard floor: any explicit query.actorId they pass is ignored so they
+  // can't read another user's personal feed. Admin/super_admin remain
+  // unrestricted unless they themselves request an explicit actor filter.
   async list(query: ActivityListQuery, currentUser: AuthTokenPayload) {
     const db = getDb();
     const { page, limit, offset } = parsePagination(query);
 
     const searchPattern = toSearchPattern(query.search);
-    const scope = await resolveActivityScope(currentUser);
+    const isGlobalActivityRole = currentUser.role === "super_admin" || currentUser.role === "admin";
+    const actorScope = isGlobalActivityRole
+      ? query.actorId
+        ? eq(activityEvents.actorId, query.actorId)
+        : undefined
+      : eq(activityEvents.actorId, currentUser.id);
 
     const conditions = [
-      scope,
+      actorScope,
       query.projectId ? eq(activityEvents.projectId, query.projectId) : undefined,
       query.customerId ? eq(activityEvents.customerId, query.customerId) : undefined,
-      query.actorId ? eq(activityEvents.actorId, query.actorId) : undefined,
       query.type ? eq(activityEvents.type, query.type) : undefined,
       query.from ? gte(activityEvents.occurredAt, new Date(query.from)) : undefined,
       query.to ? lte(activityEvents.occurredAt, new Date(query.to)) : undefined,

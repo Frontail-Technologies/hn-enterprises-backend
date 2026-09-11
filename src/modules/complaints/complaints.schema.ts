@@ -8,14 +8,11 @@ export const complaintListQuerySchema = t.Object({
   page: t.Optional(t.String()),
   limit: t.Optional(t.String()),
   customerId: t.Optional(t.String()),
-  supervisorId: t.Optional(t.String()),
   status: t.Optional(complaintStatusSchema),
   search: t.Optional(t.String()),
 });
 
-export const complaintStatusCountsQuerySchema = t.Object({
-  supervisorId: t.Optional(t.String()),
-});
+export const complaintStatusCountsQuerySchema = t.Object({});
 
 export const createComplaintBodySchema = t.Object({
   customerId: t.String({ minLength: 1 }),

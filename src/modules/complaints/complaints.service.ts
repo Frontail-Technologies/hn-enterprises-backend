@@ -1,6 +1,6 @@
 import { and, count, desc, eq, ilike, ne, or } from "drizzle-orm";
 import { getDb } from "@db";
-import { complaints, customers, staff, users } from "@db/schema";
+import { complaints, customers, users } from "@db/schema";
 import { notificationService } from "@services";
 import { activityService } from "@modules/activity/activity.service";
 import { humanizeToken } from "@modules/activity/activity.catalog";
@@ -74,36 +74,19 @@ async function notifyComplaintRecipients(params: {
   return { recipientCount: recipients.length };
 }
 
-/**
- * "My complaints" for a supervisor now means complaints for customers in
- * whichever project that supervisor is CURRENTLY assigned to (staff.assignedProjectId),
- * not a stored per-customer owner. Returns undefined (no scoping) if the
- * given user has no current project assignment.
- */
-async function resolveAssignedProjectId(supervisorUserId: string): Promise<string | undefined> {
-  const db = getDb();
-  const row = await db.query.staff.findFirst({
-    where: eq(staff.userId, supervisorUserId),
-    columns: { assignedProjectId: true },
-  });
-  return row?.assignedProjectId ?? undefined;
-}
-
 export const complaintsService = {
   async list(query: ComplaintListQuery) {
     const db = getDb();
     const { page, limit, offset } = parsePagination(query);
 
     const searchPattern = toSearchPattern(query.search);
-    // A requested supervisorId that resolves to no current project assignment
-    // must scope to nothing - never silently fall through to "no filter".
-    const supervisorScope = query.supervisorId
-      ? eq(customers.projectId, (await resolveAssignedProjectId(query.supervisorId)) ?? "00000000-0000-0000-0000-000000000000")
-      : undefined;
 
+    // A supervisor is not assigned to a project (product rule correction,
+    // R2) - complaints have no per-supervisor ownership concept, so there is
+    // no scoping to apply here beyond the explicit filters below. Every
+    // supervisor sees complaints across all projects/customers.
     const conditions = [
       query.customerId ? eq(complaints.customerId, query.customerId) : undefined,
-      supervisorScope,
       query.status ? eq(complaints.status, query.status) : undefined,
       searchPattern
         ? or(
@@ -153,17 +136,12 @@ export const complaintsService = {
     return { rows, pagination: buildPaginationMeta(page, limit, total) };
   },
 
-  async statusCounts(query: { supervisorId?: string }) {
+  async statusCounts() {
     const db = getDb();
-    const where = query.supervisorId
-      ? eq(customers.projectId, (await resolveAssignedProjectId(query.supervisorId)) ?? "00000000-0000-0000-0000-000000000000")
-      : undefined;
 
     const rows = await db
       .select({ status: complaints.status, value: count() })
       .from(complaints)
-      .leftJoin(customers, eq(complaints.customerId, customers.id))
-      .where(where)
       .groupBy(complaints.status);
 
     const counts: Record<(typeof rows)[number]["status"], number> = {
