@@ -231,8 +231,6 @@ export const customers = pgTable(
     scheme: text("scheme"),
     plumberName: text("plumber_name"),
     plumberId: uuid("plumber_id").references(() => plumbers.id, { onDelete: "set null" }),
-    supervisorName: text("supervisor_name"),
-    supervisorId: uuid("supervisor_id").references(() => users.id, { onDelete: "set null" }),
     giReportNumber: text("gi_report_number"),
     gcReportNumber: text("gc_report_number"),
     conversionReportNumber: text("conversion_report_number"),
@@ -263,7 +261,6 @@ export const customers = pgTable(
     mobileIdx: index("customers_mobile_idx").on(table.mobileNumber),
     nameIdx: index("customers_name_idx").on(table.normalizedCustomerName),
     plumberIdx: index("customers_plumber_idx").on(table.plumberId),
-    supervisorIdx: index("customers_supervisor_idx").on(table.supervisorId),
     createdAtIdx: index("customers_created_at_idx").on(table.createdAt),
   }),
 );
@@ -308,6 +305,8 @@ export const customerNotes = pgTable(
       .notNull()
       .references(() => customers.id, { onDelete: "cascade" }),
     authorId: uuid("author_id").references(() => users.id, { onDelete: "set null" }),
+    /** Immutable snapshot, populated at write time - survives a hard-deleted author so historical notes stay attributable. */
+    authorName: text("author_name"),
     note: text("note").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -339,6 +338,8 @@ export const customerDocuments = pgTable(
     status: customerDocumentStatusEnum("status").notNull().default("submitted"),
     remarks: text("remarks"),
     uploadedBy: uuid("uploaded_by").references(() => users.id, { onDelete: "set null" }),
+    /** Immutable snapshot, populated at write time - survives a hard-deleted uploader so historical documents stay attributable. */
+    uploadedByName: text("uploaded_by_name"),
     uploadedAt: timestamp("uploaded_at", { withTimezone: true }).notNull().defaultNow(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

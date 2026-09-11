@@ -275,9 +275,6 @@ export function consolidateAddress(row: NormalizedImportRow) {
 }
 
 export function applyBaseValidation(row: NormalizedImportRow) {
-  if (!row.projectName) row.issues.push("Project is required");
-  if (!row.siteName) row.issues.push("Site / area is required");
-  if (!row.customerName) row.issues.push("Customer name is required");
   if (!row.trBpNumber) row.issues.push("BP/TR number is required");
 
   const mobileDigits = row.mobileNumber.replace(/\D/g, "");

@@ -343,7 +343,6 @@ export const masterImportService = {
               houseType: row.houseType || null,
               scheme: row.scheme || null,
               plumberName: row.plumberName || null,
-              supervisorName: row.supervisorName || null,
               giReportNumber: row.giReportNumber || null,
               gcReportNumber: row.gcReportNumber || null,
               conversionReportNumber: row.conversionReportNumber || null,

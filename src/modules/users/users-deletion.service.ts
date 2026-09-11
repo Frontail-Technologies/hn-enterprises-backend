@@ -1,6 +1,18 @@
-import { count, eq } from "drizzle-orm";
+import { and, count, eq } from "drizzle-orm";
 import { getDb } from "@db";
-import { attendance, auditLogs, complaints, dprRecords, sitePlans, staff, users, workProgressUpdates } from "@db/schema";
+import {
+  activityEvents,
+  attendance,
+  auditLogs,
+  complaints,
+  customerNotes,
+  dprRecords,
+  projectSites,
+  sitePlans,
+  staff,
+  users,
+  workProgressUpdates,
+} from "@db/schema";
 import { auditService } from "@services";
 import { EntityInUseError } from "@utils";
 import { computeDeleteImpact } from "../deletion/deletion.service";
@@ -15,6 +27,21 @@ async function scalarCount(query: Promise<{ value: number }[]>) {
   return row?.value ?? 0;
 }
 
+/**
+ * Product decision (safe-hard-delete + remove-staff-block briefs):
+ * supervisors/users MAY be permanently hard-deleted, staff-linked or not.
+ * Every dependency below is non-blocking:
+ * - "detach": survives the delete, FK set null, readable via its own
+ *   actor-name snapshot (activity, audit, notes, attendance, complaints,
+ *   site plans, DPR, work progress - all historical business/audit records).
+ * - "delete": genuinely removed as part of this same delete. Only `staff`
+ *   is this - it is the user's CURRENT profile record (nothing else
+ *   references staff.id; verified across every schema file), not history,
+ *   and staff.userId is ON DELETE CASCADE, so it disappears together with
+ *   the user automatically. No dependency here blocks deletion: only a
+ *   dependency that genuinely cannot be safely preserved or cleared under
+ *   the current schema would, and none currently exists.
+ */
 function buildUserDeleteImpactConfig(userId: string): DeleteImpactConfig {
   return {
     entityType: "user",
@@ -25,53 +52,76 @@ function buildUserDeleteImpactConfig(userId: string): DeleteImpactConfig {
     },
     dependencies: [
       {
-        key: "attendance",
-        label: "Attendance Records",
-        action: "block",
-        count: async (db) => scalarCount(countOf(db).from(attendance).where(eq(attendance.userId, userId))),
-        blockReason: (n) => `${n} attendance record${n === 1 ? "" : "s"} belong to this user. Attendance history is never deleted automatically.`,
-      },
-      {
-        key: "staff",
-        label: "Staff / Payroll Profile",
-        action: "block",
-        count: async (db) => scalarCount(countOf(db).from(staff).where(eq(staff.userId, userId))),
-        blockReason: () => `This user has a staff/payroll profile on file. Deactivate the staff record instead of deleting the user.`,
-      },
-      {
-        key: "complaints",
-        label: "Complaints Created",
-        action: "block",
-        count: async (db) => scalarCount(countOf(db).from(complaints).where(eq(complaints.createdByAdminId, userId))),
-        blockReason: (n) => `${n} complaint${n === 1 ? "" : "s"} were created by this user.`,
-      },
-      {
-        key: "sitePlans",
-        label: "Site Plans (as supervisor)",
-        action: "block",
-        count: async (db) => scalarCount(countOf(db).from(sitePlans).where(eq(sitePlans.supervisorId, userId))),
-        blockReason: (n) => `${n} site plan${n === 1 ? "" : "s"} are attributed to this user as supervisor.`,
-      },
-      {
-        key: "dprRecords",
-        label: "DPR Records (as supervisor)",
-        action: "block",
-        count: async (db) => scalarCount(countOf(db).from(dprRecords).where(eq(dprRecords.supervisorId, userId))),
-        blockReason: (n) => `${n} DPR record${n === 1 ? "" : "s"} are attributed to this user as supervisor.`,
-      },
-      {
-        key: "workProgressUpdates",
-        label: "Work Progress Updates (as supervisor)",
-        action: "block",
+        key: "activeSiteAssignments",
+        label: "Active Site Assignments",
+        action: "detach",
         count: async (db) =>
-          scalarCount(countOf(db).from(workProgressUpdates).where(eq(workProgressUpdates.supervisorId, userId))),
-        blockReason: (n) => `${n} work progress update${n === 1 ? "" : "s"} are attributed to this user as supervisor.`,
+          scalarCount(
+            countOf(db)
+              .from(projectSites)
+              .where(and(eq(projectSites.supervisorId, userId), eq(projectSites.status, "active"))),
+          ),
+        preview: async (db) =>
+          db
+            .select({ id: projectSites.id, label: projectSites.name })
+            .from(projectSites)
+            .where(and(eq(projectSites.supervisorId, userId), eq(projectSites.status, "active")))
+            .limit(5),
+      },
+      {
+        key: "activityEvents",
+        label: "Historical Activity Events",
+        action: "detach",
+        count: async (db) => scalarCount(countOf(db).from(activityEvents).where(eq(activityEvents.actorId, userId))),
       },
       {
         key: "auditLogs",
         label: "Audit Log Entries",
         action: "detach",
         count: async (db) => scalarCount(countOf(db).from(auditLogs).where(eq(auditLogs.userId, userId))),
+      },
+      {
+        key: "customerNotes",
+        label: "Customer Notes",
+        action: "detach",
+        count: async (db) => scalarCount(countOf(db).from(customerNotes).where(eq(customerNotes.authorId, userId))),
+      },
+      {
+        key: "attendance",
+        label: "Attendance Records",
+        action: "detach",
+        count: async (db) => scalarCount(countOf(db).from(attendance).where(eq(attendance.userId, userId))),
+      },
+      {
+        key: "staff",
+        label: "Current Staff Profile",
+        action: "delete",
+        count: async (db) => scalarCount(countOf(db).from(staff).where(eq(staff.userId, userId))),
+      },
+      {
+        key: "complaints",
+        label: "Complaints Created",
+        action: "detach",
+        count: async (db) => scalarCount(countOf(db).from(complaints).where(eq(complaints.createdByAdminId, userId))),
+      },
+      {
+        key: "sitePlans",
+        label: "Site Plans (as supervisor)",
+        action: "detach",
+        count: async (db) => scalarCount(countOf(db).from(sitePlans).where(eq(sitePlans.supervisorId, userId))),
+      },
+      {
+        key: "dprRecords",
+        label: "DPR Records (as supervisor)",
+        action: "detach",
+        count: async (db) => scalarCount(countOf(db).from(dprRecords).where(eq(dprRecords.supervisorId, userId))),
+      },
+      {
+        key: "workProgressUpdates",
+        label: "Work Progress Updates (as supervisor)",
+        action: "detach",
+        count: async (db) =>
+          scalarCount(countOf(db).from(workProgressUpdates).where(eq(workProgressUpdates.supervisorId, userId))),
       },
     ],
   };
@@ -87,6 +137,36 @@ export const usersDeletionService = {
     return computeDeleteImpact(db, buildUserDeleteImpactConfig(userId), userId);
   },
 
+  /**
+   * Clears active project-site assignments to this user (safe-hard-delete
+   * brief §6/§11) - shared by both execute() (single) and
+   * usersService.bulkDelete(), so bulk delete can never skip this step. A
+   * CURRENT structural assignment, not a historical record, so it must
+   * actually read as "Unassigned" afterward (both supervisorId and the
+   * denormalized supervisorName) - unlike the historical tables, which keep
+   * their own actor-name snapshot instead.
+   */
+  async clearActiveSiteAssignments(db: DbHandle, userId: string) {
+    await db
+      .update(projectSites)
+      .set({ supervisorId: null, supervisorName: null })
+      .where(and(eq(projectSites.supervisorId, userId), eq(projectSites.status, "active")));
+  },
+
+  /**
+   * Permanent hard delete (safe-hard-delete brief §8/§12). Transaction:
+   * 1. Compute impact / assert not blocked.
+   * 2. clearActiveSiteAssignments() - see its own doc comment.
+   * 3. Delete the user row. Every other FK referencing users.id is already
+   *    ON DELETE SET NULL (or CASCADE for tokens/sessions/staff/prefs/
+   *    notifications, which are correctly meant to go) - Postgres enforces
+   *    all of those automatically as part of this single DELETE, so no
+   *    per-table UPDATE is needed for the historical tables; each one's own
+   *    actor-name snapshot (added alongside this change) is what keeps their
+   *    history readable afterward.
+   * 4. Commit. Email/mobile/username live only on the users row itself, so
+   *    deleting it is what releases those identifiers for reuse.
+   */
   async execute(userId: string, currentUserId: string): Promise<{ label: string; totalAffected: number }> {
     if (userId === currentUserId) throw new Error("Cannot delete your own account");
     const db = getDb();
@@ -98,6 +178,7 @@ export const usersDeletionService = {
         throw new EntityInUseError(`"${impact.entity.label}" cannot be deleted: ${impact.blockers.map((b) => b.reason).join(" ")}`);
       }
 
+      await usersDeletionService.clearActiveSiteAssignments(tx, userId);
       await tx.delete(users).where(eq(users.id, userId));
       return { label: impact.entity.label, totalAffected: impact.totalAffected };
     });
@@ -107,7 +188,7 @@ export const usersDeletionService = {
       module: "Users",
       action: "Deleted User",
       recordId: userId,
-      description: `Deleted user "${result.label}"`,
+      description: `Permanently deleted user "${result.label}"`,
     });
 
     return result;

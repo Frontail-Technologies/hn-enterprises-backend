@@ -1,4 +1,5 @@
 import { Elysia } from "elysia";
+import { activityRoutes } from "./activity/activity.routes";
 import { announcementsRoutes } from "./announcements/announcements.routes";
 import { attendanceRoutes } from "./attendance/attendance.routes";
 import { auditLogsRoutes } from "./audit-logs/audit-logs.routes";
@@ -6,11 +7,12 @@ import { authRoutes } from "./auth/auth.routes";
 import { billsRoutes } from "./bills/bills.routes";
 import { complaintsRoutes } from "./complaints/complaints.routes";
 import { customersRoutes } from "./customers/customers.routes";
+import { dashboardRoutes } from "./dashboard/dashboard.routes";
 import { documentsRoutes } from "./documents/documents.routes";
 import { exportsRoutes } from "./exports/exports.routes";
 import { masterImportRoutes } from "./master-import/master-import.routes";
 import { mastersRoutes } from "./masters/masters.routes";
-import { materialsRoutes } from "./materials/materials.routes";
+import { inventoryRoutes, materialsRoutes } from "./materials/materials.routes";
 import { notificationsRoutes, pushTokensRoutes } from "./notifications/notifications.routes";
 import { paymentsRoutes } from "./payments/payments.routes";
 import { planningRoutes } from "./planning/planning.routes";
@@ -37,6 +39,7 @@ export const apiModules = new Elysia()
   .use(plumbersRoutes)
   .use(billsRoutes)
   .use(materialsRoutes)
+  .use(inventoryRoutes)
   .use(paymentsRoutes)
   .use(wagesRoutes)
   .use(staffRoutes)
@@ -49,4 +52,6 @@ export const apiModules = new Elysia()
   .use(pushTokensRoutes)
   .use(workProgressRoutes)
   .use(complaintsRoutes)
-  .use(statsRoutes);
+  .use(statsRoutes)
+  .use(dashboardRoutes)
+  .use(activityRoutes);

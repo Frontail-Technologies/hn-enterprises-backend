@@ -19,9 +19,14 @@ export const permissionService = {
     return hasRole(user, ["super_admin", "admin", "supervisor"]);
   },
 
-  canModifyCustomer(user: CurrentUser | null, customerSupervisorId: string | null | undefined) {
-    if (!user) return false;
-    if (hasRole(user, ["super_admin", "admin"])) return true;
-    return customerSupervisorId === user.id;
+  /**
+   * Customers are not permanently owned by one supervisor (any supervisor can
+   * change at the project level over time) - so this is a plain role check,
+   * matching canFieldUpdate, rather than a per-customer ownership check.
+   * Actor attribution for "who changed what" lives in Recent Activity /
+   * customers.createdBy/updatedBy, not in a restrictive owner field.
+   */
+  canModifyCustomer(user: CurrentUser | null) {
+    return hasRole(user, ["super_admin", "admin", "supervisor"]);
   },
 };

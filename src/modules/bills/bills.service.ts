@@ -1,6 +1,6 @@
-import { and, count, eq, ilike, sql } from "drizzle-orm";
+import { and, count, eq, getTableColumns, ilike, sql } from "drizzle-orm";
 import { getDb } from "@db";
-import { billPayments, bills } from "@db/schema";
+import { billPayments, bills, projects } from "@db/schema";
 import { normalizeKey } from "@modules/master-import/master-import.mapper";
 import { buildPaginationMeta, cleanObject, parsePagination, toSearchPattern } from "@utils";
 import type {
@@ -43,11 +43,49 @@ export const billsService = {
     const where = conditions.length ? and(...conditions) : undefined;
 
     const [rows, [{ value: total }]] = await Promise.all([
-      db.select().from(bills).where(where).limit(limit).offset(offset).orderBy(bills.billDate),
+      db
+        .select({ ...getTableColumns(bills), projectName: projects.name })
+        .from(bills)
+        .leftJoin(projects, eq(bills.projectId, projects.id))
+        .where(where)
+        .limit(limit)
+        .offset(offset)
+        .orderBy(bills.billDate),
       db.select({ value: count() }).from(bills).where(where),
     ]);
 
     return { rows: rows.map(withPendingAmount), pagination: buildPaginationMeta(page, limit, total) };
+  },
+
+  /** Dataset-wide billing totals for the stat cards, honoring the same filters as list(). */
+  async summary(query: BillListQuery) {
+    const db = getDb();
+    const searchPattern = toSearchPattern(query.search);
+
+    const conditions = [
+      query.projectId ? eq(bills.projectId, query.projectId) : undefined,
+      query.status ? eq(bills.status, query.status) : undefined,
+      searchPattern ? ilike(bills.billNumber, searchPattern) : undefined,
+    ].filter((condition): condition is NonNullable<typeof condition> => Boolean(condition));
+
+    const where = conditions.length ? and(...conditions) : undefined;
+
+    const [row] = await db
+      .select({
+        billed: sql<string>`coalesce(sum(${bills.totalAmount}), 0)`,
+        received: sql<string>`coalesce(sum(${bills.paidAmount}), 0)`,
+        pending: sql<string>`coalesce(sum(${bills.totalAmount} + ${bills.tax} - ${bills.paidAmount}), 0)`,
+        overdue: sql<string>`coalesce(sum(case when ${bills.status} = 'overdue' then ${bills.totalAmount} + ${bills.tax} - ${bills.paidAmount} else 0 end), 0)`,
+      })
+      .from(bills)
+      .where(where);
+
+    return {
+      billed: Number(row?.billed ?? 0),
+      received: Number(row?.received ?? 0),
+      pending: Number(row?.pending ?? 0),
+      overdue: Number(row?.overdue ?? 0),
+    };
   },
 
   async get(id: string) {

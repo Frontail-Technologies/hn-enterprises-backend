@@ -37,4 +37,9 @@ export const complaintsRoutes = new Elysia({ prefix: "/complaints" })
     "/:id",
     ({ params, set }) => complaintsController.delete({ params, set }),
     { params: t.Object({ id: t.String() }), requireRole: ["super_admin", "admin"] },
+  )
+  .post(
+    "/:id/push",
+    ({ params, currentUser, set }) => complaintsController.push({ params, currentUser, set }),
+    { params: t.Object({ id: t.String() }), requireRole: ["super_admin", "admin"] },
   );

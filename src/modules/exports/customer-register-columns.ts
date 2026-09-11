@@ -69,7 +69,6 @@ export const CUSTOMER_COLUMN_GETTERS: Record<string, CustomerColumnGetter> = {
   initialAmount: (r) => numOf(r.billingCompletion?.initialAmount),
   lastPaymentDate: (r) => dateOf(lastPaymentDate(r)),
   plumberName: (r) => textOf(r.plumberName),
-  supervisorName: (r) => textOf(r.supervisorName),
   meterNo: (r) => textOf(r.commissioningConversion?.meterNo),
   installationDate: (r) => dateOf(r.commissioningConversion?.installationDate),
   commissioningDate: (r) => dateOf(r.commissioningConversion?.commissioningDate),

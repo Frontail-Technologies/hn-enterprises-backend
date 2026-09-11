@@ -37,8 +37,11 @@ export const attendanceService = {
     if (existing?.checkInAt) throw new Error("Already checked in for this date");
 
     const db = getDb();
+    // Immutable snapshot (safe-hard-delete brief §5) - survives a hard-deleted user.
+    const [user] = await db.select({ name: users.name }).from(users).where(eq(users.id, userId)).limit(1);
     const values = {
       userId,
+      userName: user?.name ?? null,
       date: input.date,
       status: "present" as const,
       checkInAt: new Date(input.location.capturedAt),
@@ -106,10 +109,13 @@ export const attendanceService = {
     const conditions = [gte(attendance.date, query.from), lte(attendance.date, query.to)];
     if (query.userId) conditions.push(eq(attendance.userId, query.userId));
 
-    return db
+    const rows = await db
       .select({
         id: attendance.id,
         userId: attendance.userId,
+        liveUserName: users.name,
+        liveUserRole: users.role,
+        userNameSnapshot: attendance.userName,
         date: attendance.date,
         status: attendance.status,
         checkInAt: attendance.checkInAt,
@@ -118,12 +124,21 @@ export const attendanceService = {
         checkOutLocation: attendance.checkOutLocation,
         remarks: attendance.remarks,
         markedBy: attendance.markedBy,
-        user: { id: users.id, name: users.name, role: users.role },
       })
       .from(attendance)
       .leftJoin(users, eq(attendance.userId, users.id))
       .where(and(...conditions))
       .orderBy(attendance.date);
+
+    return rows.map(({ userId, liveUserName, liveUserRole, userNameSnapshot, ...row }) => ({
+      ...row,
+      userId,
+      user: userId
+        ? { id: userId, name: liveUserName ?? userNameSnapshot ?? "Deleted user", role: liveUserRole }
+        : userNameSnapshot
+          ? { id: null, name: userNameSnapshot, role: null }
+          : null,
+    }));
   },
 
   async adminUpsert(input: AdminUpsertBody, markedBy: string) {
@@ -131,6 +146,8 @@ export const attendanceService = {
     const checkInAt = combineDateAndTime(input.date, input.checkInTime);
     const checkOutAt = combineDateAndTime(input.date, input.checkOutTime);
     const existing = await findRecord(input.userId, input.date);
+    // Immutable snapshots (safe-hard-delete brief §5) - survive a hard-deleted user/admin.
+    const [markedByUser] = await db.select({ name: users.name }).from(users).where(eq(users.id, markedBy)).limit(1);
 
     if (existing) {
       const [record] = await db
@@ -142,6 +159,7 @@ export const attendanceService = {
             checkOutAt,
             remarks: input.remarks,
             markedBy,
+            markedByName: markedByUser?.name ?? null,
             updatedAt: new Date(),
           }),
         )
@@ -152,16 +170,19 @@ export const attendanceService = {
       return record;
     }
 
+    const [user] = await db.select({ name: users.name }).from(users).where(eq(users.id, input.userId)).limit(1);
     const [record] = await db
       .insert(attendance)
       .values({
         userId: input.userId,
+        userName: user?.name ?? null,
         date: input.date,
         status: input.status,
         checkInAt: checkInAt ?? null,
         checkOutAt: checkOutAt ?? null,
         remarks: input.remarks || null,
         markedBy,
+        markedByName: markedByUser?.name ?? null,
       })
       .returning();
 

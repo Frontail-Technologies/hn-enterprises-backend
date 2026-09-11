@@ -10,6 +10,8 @@ export type CustomerDocumentStatus = (typeof customerDocumentStatusEnum.enumValu
 export type LmcPipeSize = (typeof lmcPipeSizeEnum.enumValues)[number];
 export type LmcPipeStatus = (typeof lmcPipeStatusEnum.enumValues)[number];
 
+export type CustomerListSortField = "customerName" | "trBpNumber" | "mobileNumber" | "createdAt";
+
 export type CustomerListQuery = {
   page?: number | string;
   limit?: number | string;
@@ -21,6 +23,25 @@ export type CustomerListQuery = {
   city?: string;
   month?: number | string;
   year?: number | string;
+  sortBy?: CustomerListSortField;
+  sortOrder?: "asc" | "desc";
+  /** Comma-separated customer IDs - used by "Export Selected" to fetch full rows for a cross-page selection, bypassing search/filters. */
+  ids?: string;
+  /** JSON-encoded Record<whitelisted column key, string[]> - server-side Excel column filters. Unsupported keys are ignored. */
+  columnFilters?: string;
+};
+
+export type CustomerFilterOptionsQuery = {
+  column: string;
+  search?: string;
+  status?: CustomerStatus;
+  projectId?: string;
+  siteId?: string;
+  statKey?: string;
+  city?: string;
+  month?: number | string;
+  year?: number | string;
+  columnFilters?: string;
 };
 
 export type CustomerJsonSections = {
@@ -47,7 +68,6 @@ export type CreateCustomerBody = CustomerJsonSections & {
   houseType?: string;
   scheme?: string;
   plumberId: string;
-  supervisorId?: string;
   giReportNumber?: string;
   gcReportNumber?: string;
   conversionReportNumber?: string;
@@ -70,6 +90,16 @@ export type UpsertLmcPipeRecordBody = {
   remarks?: string;
   evidence?: Record<string, unknown>[];
   files?: File[];
+};
+
+export type LmcPipeRecordInput = Omit<UpsertLmcPipeRecordBody, "files">;
+
+export type CreateCustomerWithPipeRecordsBody = CreateCustomerBody & {
+  pipeRecords?: UpsertLmcPipeRecordBody[];
+};
+
+export type UpdateCustomerWithPipeRecordsBody = UpdateCustomerBody & {
+  pipeRecords?: UpsertLmcPipeRecordBody[];
 };
 
 export type CreateCustomerNoteBody = {

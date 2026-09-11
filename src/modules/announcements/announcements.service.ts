@@ -51,8 +51,11 @@ export const announcementsService = {
   },
 
   async update(id: string, input: UpdateAnnouncementBody) {
-    const existing = await getAnnouncementOrThrow(id);
-    if (existing.status !== "draft") throw new Error("Only draft announcements can be edited");
+    // Editing is allowed regardless of status (including after it's been
+    // sent) - this only changes the stored title/message/image, it never
+    // retroactively rewrites a push notification already delivered to a
+    // device. Use republish() to push the updated content again.
+    await getAnnouncementOrThrow(id);
 
     const db = getDb();
     const patch = cleanObject({

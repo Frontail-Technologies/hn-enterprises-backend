@@ -1,0 +1,12 @@
+-- Additive, non-destructive: adds the compound index InventoryDetail's
+-- tab-scoped transaction queries actually filter by (materialId + type).
+-- See materials.service.ts's listTransactionsForDetailTab.
+--
+-- Hand-authored rather than `drizzle-kit generate`-produced: this repo's
+-- migration journal has a pre-existing gap (0008_import_rows_is_removed.sql
+-- is not registered in meta/_journal.json and has no matching snapshot),
+-- unrelated to this change, which currently prevents `generate` from
+-- running cleanly. This file is still the committed migration artifact of
+-- record for the index below; it was applied directly (CREATE INDEX is
+-- safe/non-destructive, unlike a `drizzle-kit push --force` column drop).
+CREATE INDEX IF NOT EXISTS "material_transactions_material_type_idx" ON "material_transactions" ("material_id","type");

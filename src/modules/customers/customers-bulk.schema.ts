@@ -10,7 +10,6 @@ const bulkFilterSchema = t.Object({
   siteId: t.Optional(t.String()),
   city: t.Optional(t.String()),
   statKey: t.Optional(t.String()),
-  supervisorId: t.Optional(t.String()),
   plumberId: t.Optional(t.String()),
   scheme: t.Optional(t.String()),
   connectionType: t.Optional(t.String()),
@@ -31,7 +30,6 @@ export const bulkSelectionSchema = t.Union([
 export const bulkUpdateBodySchema = t.Object({
   selection: bulkSelectionSchema,
   changes: t.Object({
-    supervisorId: t.Optional(t.Union([t.String(), t.Null()])),
     plumberId: t.Optional(t.Union([t.String(), t.Null()])),
     projectId: t.Optional(t.String({ minLength: 1 })),
     siteId: t.Optional(t.Union([t.String(), t.Null()])),

@@ -40,7 +40,19 @@ export const payments = pgTable(
     purpose: text("purpose"),
     remarks: text("remarks"),
     evidence: jsonb("evidence").$type<Record<string, unknown>[]>(),
-    submittedBy: uuid("submitted_by").references(() => users.id, { onDelete: "set null" }),
+    /**
+     * Financial attribution: the supervisor this expense belongs to.
+     * Set by the server (never trusted from a supervisor's own payload) -
+     * see payments.service.ts's create(). Distinct from createdById, which
+     * is always the actual authenticated actor.
+     */
+    supervisorId: uuid("supervisor_id").references(() => users.id, { onDelete: "set null" }),
+    /** Immutable snapshots, populated at write time - survive a hard-deleted supervisor/submitter so historical payments/expenses stay attributable. */
+    supervisorNameSnapshot: text("supervisor_name_snapshot"),
+    // Column stays "submitted_by" in the database (avoids a rename migration);
+    // exposed as createdById in application code to match the ownership model.
+    createdById: uuid("submitted_by").references(() => users.id, { onDelete: "set null" }),
+    createdByNameSnapshot: text("created_by_name_snapshot"),
     approvedBy: uuid("approved_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -52,6 +64,7 @@ export const payments = pgTable(
     siteIdx: index("payments_site_idx").on(table.siteId),
     projectIdx: index("payments_project_idx").on(table.projectId),
     dateIdx: index("payments_date_idx").on(table.paymentDate),
+    supervisorIdx: index("payments_supervisor_idx").on(table.supervisorId),
   }),
 );
 
@@ -60,5 +73,7 @@ export const paymentsRelations = relations(payments, ({ one, many }) => ({
   site: one(projectSites, { fields: [payments.siteId], references: [projectSites.id] }),
   customer: one(customers, { fields: [payments.customerId], references: [customers.id] }),
   project: one(projects, { fields: [payments.projectId], references: [projects.id] }),
+  supervisor: one(users, { fields: [payments.supervisorId], references: [users.id] }),
+  createdByUser: one(users, { fields: [payments.createdById], references: [users.id] }),
   transactions: many(materialTransactions),
 }));

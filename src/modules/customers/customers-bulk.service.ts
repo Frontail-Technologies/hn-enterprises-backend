@@ -16,7 +16,6 @@ export type CustomerBulkFilters = {
   siteId?: string;
   city?: string;
   statKey?: string;
-  supervisorId?: string;
   plumberId?: string;
   scheme?: string;
   connectionType?: string;
@@ -27,7 +26,6 @@ export type CustomerBulkSelection =
   | { mode: "filter"; filters: CustomerBulkFilters; excludedIds?: string[] };
 
 export type CustomerBulkChanges = {
-  supervisorId?: string | null;
   plumberId?: string | null;
   projectId?: string;
   siteId?: string | null;
@@ -46,8 +44,6 @@ export type CustomerBulkChanges = {
 };
 
 const FIELD_LABELS: Record<string, string> = {
-  supervisorId: "Supervisor",
-  supervisorName: "Supervisor",
   plumberId: "Plumber",
   plumberName: "Plumber",
   projectId: "Project",
@@ -77,7 +73,6 @@ function buildFilterConditions(filters: CustomerBulkFilters) {
     filters.siteId ? eq(customers.siteId, filters.siteId) : undefined,
     filters.status ? eq(customers.status, filters.status as (typeof customers.status.enumValues)[number]) : undefined,
     filters.city ? eq(customers.city, filters.city) : undefined,
-    filters.supervisorId ? eq(customers.supervisorId, filters.supervisorId) : undefined,
     filters.plumberId ? eq(customers.plumberId, filters.plumberId) : undefined,
     filters.scheme ? eq(customers.scheme, filters.scheme) : undefined,
     filters.connectionType ? eq(customers.connectionType, filters.connectionType) : undefined,
@@ -121,13 +116,6 @@ async function resolveSelectionIds(selection: CustomerBulkSelection): Promise<st
   return rows.map((row) => row.id);
 }
 
-async function getUserNameOrThrow(userId: string) {
-  const db = getDb();
-  const [user] = await db.select({ name: users.name }).from(users).where(eq(users.id, userId)).limit(1);
-  if (!user) throw new Error("Selected supervisor was not found.");
-  return user.name;
-}
-
 async function getPlumberNameOrThrow(plumberId: string) {
   const db = getDb();
   const [plumber] = await db.select({ name: plumbers.name }).from(plumbers).where(eq(plumbers.id, plumberId)).limit(1);
@@ -166,18 +154,6 @@ export const customersBulkService = {
     const columnPatch: Record<string, unknown> = {};
     const changeSummary: string[] = [];
 
-    if ("supervisorId" in changes) {
-      if (isSet(changes.supervisorId)) {
-        const supervisorName = await getUserNameOrThrow(changes.supervisorId);
-        columnPatch.supervisorId = changes.supervisorId;
-        columnPatch.supervisorName = supervisorName;
-        changeSummary.push(`${FIELD_LABELS.supervisorId} → ${supervisorName}`);
-      } else {
-        columnPatch.supervisorId = null;
-        columnPatch.supervisorName = null;
-        changeSummary.push(`${FIELD_LABELS.supervisorId} → Cleared`);
-      }
-    }
     if ("plumberId" in changes) {
       if (isSet(changes.plumberId)) {
         const plumberName = await getPlumberNameOrThrow(changes.plumberId);
@@ -303,7 +279,7 @@ export const customersBulkService = {
     });
 
     const changedFields = [
-      ...Object.keys(columnPatch).filter((k) => k !== "supervisorName" && k !== "plumberName"),
+      ...Object.keys(columnPatch).filter((k) => k !== "plumberName"),
       ...Object.keys(jsonMerge),
     ];
     const projectId = await resolveSharedProjectId(ids);
@@ -322,16 +298,11 @@ export const customersBulkService = {
 
   async bulkRemark(selection: CustomerBulkSelection, note: string, currentUser: AuthTokenPayload) {
     const db = getDb();
-    let ids = await resolveSelectionIds(selection);
+    const ids = await resolveSelectionIds(selection);
     if (!ids.length) return { count: 0 };
 
-    if (!permissionService.canManage(currentUser)) {
-      const owned = await db
-        .select({ id: customers.id })
-        .from(customers)
-        .where(and(inArray(customers.id, ids), eq(customers.supervisorId, currentUser.id)));
-      ids = owned.map((row) => row.id);
-      if (!ids.length) return { count: 0 };
+    if (!permissionService.canModifyCustomer(currentUser)) {
+      throw new Error("Not authorized to update these customers");
     }
 
     await db.transaction(async (tx) => {

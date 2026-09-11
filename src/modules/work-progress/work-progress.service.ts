@@ -3,6 +3,8 @@ import { getDb } from "@db";
 import { customers, projects, projectSites, users, workProgressUpdates } from "@db/schema";
 import { buildPaginationMeta, parsePagination, toSearchPattern } from "@utils";
 import { permissionService } from "@services";
+import { activityService } from "@modules/activity/activity.service";
+import { workProgressTitle, workProgressType } from "@modules/activity/activity.catalog";
 import type { AuthTokenPayload } from "@types";
 import type {
   CreateWorkProgressUpdateBody,
@@ -12,11 +14,7 @@ import type {
 
 async function getCustomerOrThrow(id: string) {
   const db = getDb();
-  const [customer] = await db
-    .select({ id: customers.id, supervisorId: customers.supervisorId })
-    .from(customers)
-    .where(eq(customers.id, id))
-    .limit(1);
+  const [customer] = await db.select({ id: customers.id }).from(customers).where(eq(customers.id, id)).limit(1);
   if (!customer) throw new Error("Customer not found");
   return customer;
 }
@@ -32,6 +30,7 @@ function buildLatestUpdateSubquery() {
       evidenceCount: sql<number>`coalesce(jsonb_array_length(${workProgressUpdates.evidence}), 0)`.as("evidence_count"),
       createdAt: workProgressUpdates.createdAt,
       supervisorId: workProgressUpdates.supervisorId,
+      supervisorName: workProgressUpdates.supervisorName,
     })
     .from(workProgressUpdates)
     .orderBy(workProgressUpdates.customerId, desc(workProgressUpdates.createdAt))
@@ -67,18 +66,21 @@ function buildQueueConditions(query: WorkProgressQueueQuery, latest: LatestUpdat
 
 export const workProgressService = {
   async create(input: CreateWorkProgressUpdateBody, currentUser: AuthTokenPayload) {
-    const customer = await getCustomerOrThrow(input.customerId);
-    if (!permissionService.canModifyCustomer(currentUser, customer.supervisorId)) {
+    await getCustomerOrThrow(input.customerId);
+    if (!permissionService.canModifyCustomer(currentUser)) {
       throw new Error("Not authorized to update this customer");
     }
 
     const db = getDb();
+    // Immutable supervisor snapshot (safe-hard-delete brief §5) - survives a hard-deleted supervisor.
+    const [supervisor] = await db.select({ name: users.name }).from(users).where(eq(users.id, currentUser.id)).limit(1);
 
     const [row] = await db
       .insert(workProgressUpdates)
       .values({
         customerId: input.customerId,
         supervisorId: currentUser.id,
+        supervisorName: supervisor?.name ?? null,
         stage: input.stage,
         status: input.status,
         nextRequiredAction: input.nextRequiredAction || null,
@@ -88,6 +90,29 @@ export const workProgressService = {
       .returning();
 
     if (!row) throw new Error("Unable to create work progress update");
+
+    const [customer] = await db
+      .select({ id: customers.id, name: customers.customerName, trBp: customers.trBpNumber, projectId: customers.projectId })
+      .from(customers)
+      .where(eq(customers.id, input.customerId))
+      .limit(1);
+
+    await activityService.record({
+      type: workProgressType(row.stage),
+      action: `work_progress.${row.status}`,
+      actorId: currentUser.id,
+      customerId: row.customerId,
+      projectId: customer?.projectId ?? null,
+      entityType: "work_progress_update",
+      entityId: row.id,
+      sourceType: "work_progress_update",
+      sourceId: row.id,
+      title: workProgressTitle(row.stage, row.status),
+      description: row.remarks || row.nextRequiredAction || "Work progress updated",
+      metadata: { stage: row.stage, status: row.status },
+      occurredAt: row.createdAt,
+    });
+
     return row;
   },
 
@@ -102,7 +127,7 @@ export const workProgressService = {
       query.status ? eq(workProgressUpdates.status, query.status) : undefined,
     ].filter((condition): condition is NonNullable<typeof condition> => Boolean(condition));
 
-    return db
+    const rows = await db
       .select({
         id: workProgressUpdates.id,
         customerId: workProgressUpdates.customerId,
@@ -120,7 +145,9 @@ export const workProgressService = {
         remarks: workProgressUpdates.remarks,
         evidence: workProgressUpdates.evidence,
         createdAt: workProgressUpdates.createdAt,
-        supervisor: { id: users.id, name: users.name },
+        supervisorId: workProgressUpdates.supervisorId,
+        liveSupervisorName: users.name,
+        supervisorNameSnapshot: workProgressUpdates.supervisorName,
       })
       .from(workProgressUpdates)
       .leftJoin(customers, eq(workProgressUpdates.customerId, customers.id))
@@ -130,6 +157,16 @@ export const workProgressService = {
       .where(conditions.length ? and(...conditions) : undefined)
       .orderBy(desc(workProgressUpdates.createdAt))
       .limit(limit);
+
+    return rows.map(({ supervisorId, liveSupervisorName, supervisorNameSnapshot, ...row }) => ({
+      ...row,
+      // Live relation name -> immutable snapshot -> "Deleted user" (never the deleted user's id).
+      supervisor: supervisorId
+        ? { id: supervisorId, name: liveSupervisorName ?? supervisorNameSnapshot ?? "Deleted user" }
+        : supervisorNameSnapshot
+          ? { id: null, name: supervisorNameSnapshot }
+          : null,
+    }));
   },
 
   async listQueue(query: WorkProgressQueueQuery) {
@@ -150,10 +187,12 @@ export const workProgressService = {
       nextRequiredAction: latest.nextRequiredAction,
       evidenceCount: latest.evidenceCount,
       lastUpdated: latest.createdAt,
-      supervisor: { id: users.id, name: users.name },
+      supervisorId: latest.supervisorId,
+      liveSupervisorName: users.name,
+      supervisorNameSnapshot: latest.supervisorName,
     };
 
-    const [rows, [{ value: total }]] = await Promise.all([
+    const [rawRows, [{ value: total }]] = await Promise.all([
       db
         .select(selection)
         .from(customers)
@@ -174,11 +213,17 @@ export const workProgressService = {
         .where(where),
     ]);
 
-    const mapped = rows.map((row) => ({
+    const mapped = rawRows.map(({ supervisorId, liveSupervisorName, supervisorNameSnapshot, ...row }) => ({
       ...row,
       stage: row.stage ?? "survey",
       status: row.status ?? "not_started",
       evidenceCount: row.evidenceCount ?? 0,
+      // Live relation name -> immutable snapshot -> "Deleted user" (never the deleted user's id).
+      supervisor: supervisorId
+        ? { id: supervisorId, name: liveSupervisorName ?? supervisorNameSnapshot ?? "Deleted user" }
+        : supervisorNameSnapshot
+          ? { id: null, name: supervisorNameSnapshot }
+          : null,
     }));
 
     return { rows: mapped, pagination: buildPaginationMeta(page, limit, total) };

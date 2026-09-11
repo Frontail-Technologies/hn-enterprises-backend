@@ -21,6 +21,15 @@ export const billsController = {
     }
   },
 
+  async summary({ query, set }: { query: BillListQuery; set: SetContext }) {
+    try {
+      return ok(await billsService.summary(query));
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to load billing summary") };
+    }
+  },
+
   async get({ params, set }: { params: { id: string }; set: SetContext }) {
     try {
       const bill = await billsService.get(params.id);

@@ -76,6 +76,7 @@ async function loadAttendanceLookup(userIds: string[], from: string, to: string)
     .where(and(inArray(attendance.userId, userIds), gte(attendance.date, from), lte(attendance.date, to)));
 
   for (const row of rows) {
+    if (!row.userId) continue;
     const byDate = lookup.get(row.userId) ?? new Map<string, AttendanceStatus>();
     byDate.set(row.date, row.status);
     lookup.set(row.userId, byDate);

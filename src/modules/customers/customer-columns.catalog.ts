@@ -32,7 +32,6 @@ export const CUSTOMER_COLUMN_CATALOG: CustomerColumnCatalogEntry[] = [
   { key: "initialAmount", label: "Initial Amount", group: "Payment", type: "money", width: 140 },
   { key: "lastPaymentDate", label: "Last Payment Date", group: "Payment", type: "date", width: 150, defaultVisible: false },
   { key: "plumberName", label: "Plumber Name", group: "Assignment", type: "text", width: 150 },
-  { key: "supervisorName", label: "Supervisor Name", group: "Assignment", type: "text", width: 160 },
   { key: "meterNo", label: "Meter No.", group: "Meter", type: "text", width: 140 },
   { key: "installationDate", label: "Installation Date", group: "Meter", type: "date", width: 150 },
   { key: "commissioningDate", label: "Commissioning Date", group: "Commissioning", type: "date", width: 160 },

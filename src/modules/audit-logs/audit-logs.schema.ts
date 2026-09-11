@@ -6,6 +6,7 @@ export const auditLogListQuerySchema = t.Object({
   module: t.Optional(t.String()),
   userId: t.Optional(t.String()),
   projectId: t.Optional(t.String()),
+  search: t.Optional(t.String()),
   from: t.Optional(t.String()),
   to: t.Optional(t.String()),
 });

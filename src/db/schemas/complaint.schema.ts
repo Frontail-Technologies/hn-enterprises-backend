@@ -19,9 +19,9 @@ export const complaints = pgTable(
     customerId: uuid("customer_id")
       .notNull()
       .references(() => customers.id, { onDelete: "cascade" }),
-    createdByAdminId: uuid("created_by_admin_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+    createdByAdminId: uuid("created_by_admin_id").references(() => users.id, { onDelete: "set null" }),
+    /** Immutable snapshot, populated at write time - survives a hard-deleted admin/supervisor so historical complaints stay attributable. */
+    createdByName: text("created_by_name"),
     title: text("title").notNull(),
     description: text("description").notNull(),
     priority: complaintPriorityEnum("priority").notNull().default("medium"),

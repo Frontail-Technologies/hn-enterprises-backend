@@ -35,7 +35,10 @@ export const PROGRESS_MILESTONE_KEYS = [
 ] as const;
 export type ProgressMilestoneKey = (typeof PROGRESS_MILESTONE_KEYS)[number];
 
-export type CustomerSectionCompletion = Record<SectionCompletionKey, SectionCompletionResult>;
+export type CustomerSectionCompletion = Record<
+  SectionCompletionKey,
+  SectionCompletionResult
+>;
 
 export type SectionCompletionMeta = {
   completedAt?: string | null;
@@ -163,7 +166,9 @@ export function resolveSectionCompletion(
   section: Dict,
   resolveUserName: (id: string | null | undefined) => string | null,
 ): ResolvedSectionCompletion {
-  const completion = (section ?? {})["completion"] as SectionCompletionMeta | undefined;
+  const completion = (section ?? {})["completion"] as
+    | SectionCompletionMeta
+    | undefined;
   return {
     completedOn: (completion?.completedAt as string | null | undefined) ?? null,
     completedBy: resolveUserName(completion?.completedBy ?? null),
@@ -209,11 +214,23 @@ export function buildCustomerCompletionAudit(
   resolveUserName: (id: string | null | undefined) => string | null,
 ): CustomerCompletionAudit {
   const gi = resolveSectionCompletion(customer.giMeasurements, resolveUserName);
-  const valves = resolveSectionCompletion(customer.valvesRegulators, resolveUserName);
-  const fittings = resolveSectionCompletion(customer.fittingsAccessories, resolveUserName);
-  const lmc = resolveSectionCompletion(customer.lmcPipelineWork, resolveUserName);
+  const valves = resolveSectionCompletion(
+    customer.valvesRegulators,
+    resolveUserName,
+  );
+  const fittings = resolveSectionCompletion(
+    customer.fittingsAccessories,
+    resolveUserName,
+  );
+  const lmc = resolveSectionCompletion(
+    customer.lmcPipelineWork,
+    resolveUserName,
+  );
   const mdpe = resolveSectionCompletion(customer.mdpeFittings, resolveUserName);
-  const milestones = (customer.progressMilestones ?? {}) as Record<string, SectionCompletionMeta | undefined>;
+  const milestones = (customer.progressMilestones ?? {}) as Record<
+    string,
+    SectionCompletionMeta | undefined
+  >;
   const resolveMilestone = (meta: SectionCompletionMeta | undefined) => ({
     completedOn: meta?.completedAt ?? null,
     completedBy: resolveUserName(meta?.completedBy ?? null),
@@ -253,40 +270,81 @@ export function buildCustomerCompletionAudit(
   };
 }
 
-function evaluateFieldDriven(section: Dict, required: string[], meaningful: string[]): SectionCompletionResult {
+function evaluateFieldDriven(
+  section: Dict,
+  required: string[],
+  meaningful: string[],
+): SectionCompletionResult {
   const data = section ?? {};
   const missing = required.filter((field) => !hasValue(data[field]));
-  if (missing.length === 0) return { status: "DONE", requiredFields: required, missingRequiredFields: [] };
+  if (missing.length === 0)
+    return {
+      status: "DONE",
+      requiredFields: required,
+      missingRequiredFields: [],
+    };
   const started = meaningful.some((field) => hasValue(data[field]));
-  return { status: started ? "IN_PROGRESS" : "NOT_STARTED", requiredFields: required, missingRequiredFields: missing };
+  return {
+    status: started ? "IN_PROGRESS" : "NOT_STARTED",
+    requiredFields: required,
+    missingRequiredFields: missing,
+  };
 }
 
 function evaluateExplicit(section: Dict): SectionCompletionResult {
-  if (hasValue(completedAtOf(section))) return { status: "DONE", requiredFields: [], missingRequiredFields: [] };
+  if (hasValue(completedAtOf(section)))
+    return { status: "DONE", requiredFields: [], missingRequiredFields: [] };
   const data = section ?? {};
   const started =
-    Object.keys(data).some((key) => key !== "completion" && key !== "evidence" && hasValue(data[key])) ||
-    hasValue(data["evidence"]);
-  return { status: started ? "IN_PROGRESS" : "NOT_STARTED", requiredFields: [], missingRequiredFields: [] };
+    Object.keys(data).some(
+      (key) =>
+        key !== "completion" && key !== "evidence" && hasValue(data[key]),
+    ) || hasValue(data["evidence"]);
+  return {
+    status: started ? "IN_PROGRESS" : "NOT_STARTED",
+    requiredFields: [],
+    missingRequiredFields: [],
+  };
 }
 
-function evaluateMilestone(meta: SectionCompletionMeta | null | undefined): SectionCompletionResult {
-  if (hasValue(meta?.completedAt)) return { status: "DONE", requiredFields: [], missingRequiredFields: [] };
-  return { status: "NOT_STARTED", requiredFields: [], missingRequiredFields: [] };
+function evaluateMilestone(
+  meta: SectionCompletionMeta | null | undefined,
+): SectionCompletionResult {
+  if (hasValue(meta?.completedAt))
+    return { status: "DONE", requiredFields: [], missingRequiredFields: [] };
+  return {
+    status: "NOT_STARTED",
+    requiredFields: [],
+    missingRequiredFields: [],
+  };
 }
 
 const LAYING_TERMINAL = new Set(["laying_completed", "not_required"]);
 const TESTING_TERMINAL = new Set(["testing_completed", "not_required"]);
 const PURGING_TERMINAL = new Set(["purging_completed", "not_required"]);
 
-type LmcPipe = { layingStatus: string; testingStatus: string; purgingStatus: string };
+type LmcPipe = {
+  layingStatus: string;
+  testingStatus: string;
+  purgingStatus: string;
+};
 
-function evaluateLmc(pipeRecords: LmcPipe[], civil: Dict): SectionCompletionResult {
-  const hasCivil = LMC_CIVIL_MEANINGFUL.some((field) => hasValue((civil ?? {})[field]));
+function evaluateLmc(
+  pipeRecords: LmcPipe[],
+  civil: Dict,
+): SectionCompletionResult {
+  const hasCivil = LMC_CIVIL_MEANINGFUL.some((field) =>
+    hasValue((civil ?? {})[field]),
+  );
 
   if (pipeRecords.length === 0) {
-    if (hasValue(completedAtOf(civil))) return { status: "DONE", requiredFields: [], missingRequiredFields: [] };
-    return { status: hasCivil ? "IN_PROGRESS" : "NOT_STARTED", requiredFields: [], missingRequiredFields: [] };
+    if (hasValue(completedAtOf(civil)))
+      return { status: "DONE", requiredFields: [], missingRequiredFields: [] };
+    return {
+      status: hasCivil ? "IN_PROGRESS" : "NOT_STARTED",
+      requiredFields: [],
+      missingRequiredFields: [],
+    };
   }
 
   const allTerminal = pipeRecords.every(
@@ -296,8 +354,13 @@ function evaluateLmc(pipeRecords: LmcPipe[], civil: Dict): SectionCompletionResu
       PURGING_TERMINAL.has(pipe.purgingStatus),
   );
 
-  if (allTerminal || hasValue(completedAtOf(civil))) return { status: "DONE", requiredFields: [], missingRequiredFields: [] };
-  return { status: "IN_PROGRESS", requiredFields: [], missingRequiredFields: [] };
+  if (allTerminal || hasValue(completedAtOf(civil)))
+    return { status: "DONE", requiredFields: [], missingRequiredFields: [] };
+  return {
+    status: "IN_PROGRESS",
+    requiredFields: [],
+    missingRequiredFields: [],
+  };
 }
 
 export function evaluateCustomerCompletion(
@@ -313,10 +376,21 @@ export function evaluateCustomerCompletion(
   },
   pipeRecords: LmcPipe[],
 ): CustomerSectionCompletion {
-  const milestones = (customer.progressMilestones ?? {}) as Record<string, SectionCompletionMeta | undefined>;
+  const milestones = (customer.progressMilestones ?? {}) as Record<
+    string,
+    SectionCompletionMeta | undefined
+  >;
   return {
-    survey: evaluateFieldDriven(customer.survey, SURVEY_REQUIRED, SURVEY_MEANINGFUL),
-    commissioning: evaluateFieldDriven(customer.commissioningConversion, COMMISSIONING_REQUIRED, COMMISSIONING_MEANINGFUL),
+    survey: evaluateFieldDriven(
+      customer.survey,
+      SURVEY_REQUIRED,
+      SURVEY_MEANINGFUL,
+    ),
+    commissioning: evaluateFieldDriven(
+      customer.commissioningConversion,
+      COMMISSIONING_REQUIRED,
+      COMMISSIONING_MEANINGFUL,
+    ),
     giMeasurements: evaluateExplicit(customer.giMeasurements),
     valvesRegulators: evaluateExplicit(customer.valvesRegulators),
     fittingsAccessories: evaluateExplicit(customer.fittingsAccessories),
@@ -354,15 +428,32 @@ const STAT_CONDITION_SQL: Record<string, string> = {
   "total-pbg-assignment": "billing_completion->>'jmrSubmittedInPbg' = 'true'",
   "connection-remark":
     "status = 'on_hold' OR survey->>'approvalStatus' IN ('Sent Back', 'Rejected') OR EXISTS (SELECT 1 FROM customer_lmc_pipe_records WHERE customer_id = customers.id AND laying_status = 'on_hold')",
+  // Mirrors the dashboard "pending approvals" survey count (dashboard.service.ts) so the
+  // drill-down can scope server-side instead of the client loading every customer.
+  "pending-survey-approval": "survey->>'approvalStatus' IN ('Submitted', 'In Review', 'Sent Back')",
   "total-connection-remark": present("billing_completion->>'remark'"),
-  "commissioning-done": COMMISSIONING_REQUIRED.map((field) => present(`commissioning_conversion->>'${field}'`)).join(" AND "),
+  "commissioning-done": COMMISSIONING_REQUIRED.map((field) =>
+    present(`commissioning_conversion->>'${field}'`),
+  ).join(" AND "),
 
-  "valve-chamber-done": present("progress_milestones->'valveChamber'->>'completedAt'"),
-  "pre-commissioning-done": present("progress_milestones->'preCommissioning'->>'completedAt'"),
-  "pole-marker-done": present("progress_milestones->'poleMarker'->>'completedAt'"),
-  "route-marker-done": present("progress_milestones->'routeMarker'->>'completedAt'"),
-  "connection-done": present("progress_milestones->'connection'->>'completedAt'"),
-  "site-expenses-done": present("progress_milestones->'siteExpenses'->>'completedAt'"),
+  "valve-chamber-done": present(
+    "progress_milestones->'valveChamber'->>'completedAt'",
+  ),
+  "pre-commissioning-done": present(
+    "progress_milestones->'preCommissioning'->>'completedAt'",
+  ),
+  "pole-marker-done": present(
+    "progress_milestones->'poleMarker'->>'completedAt'",
+  ),
+  "route-marker-done": present(
+    "progress_milestones->'routeMarker'->>'completedAt'",
+  ),
+  "connection-done": present(
+    "progress_milestones->'connection'->>'completedAt'",
+  ),
+  "site-expenses-done": present(
+    "progress_milestones->'siteExpenses'->>'completedAt'",
+  ),
 
   "laying-done": `EXISTS (SELECT 1 FROM customer_lmc_pipe_records WHERE customer_id = customers.id) AND NOT EXISTS (SELECT 1 FROM customer_lmc_pipe_records WHERE customer_id = customers.id AND laying_status NOT IN ${LAYING_TERMINAL_SQL})`,
   "flushing-testing-done": `EXISTS (SELECT 1 FROM customer_lmc_pipe_records WHERE customer_id = customers.id) AND NOT EXISTS (SELECT 1 FROM customer_lmc_pipe_records WHERE customer_id = customers.id AND (testing_status NOT IN ${TESTING_TERMINAL_SQL} OR purging_status NOT IN ${PURGING_TERMINAL_SQL}))`,
@@ -384,7 +475,8 @@ const STAT_DATE_SQL: Record<string, string> = {
   "conversion-done": "commissioning_conversion->>'conversionDate'",
   commissioning: "commissioning_conversion->>'commissioningDate'",
   "valve-chamber-done": "progress_milestones->'valveChamber'->>'completedAt'",
-  "pre-commissioning-done": "progress_milestones->'preCommissioning'->>'completedAt'",
+  "pre-commissioning-done":
+    "progress_milestones->'preCommissioning'->>'completedAt'",
   "pole-marker-done": "progress_milestones->'poleMarker'->>'completedAt'",
   "route-marker-done": "progress_milestones->'routeMarker'->>'completedAt'",
   "connection-done": "progress_milestones->'connection'->>'completedAt'",
@@ -395,13 +487,23 @@ export function statHasEventDate(statKey: string): boolean {
   return typeof STAT_DATE_SQL[statKey] === "string";
 }
 
-export function customerStatDateCondition(statKey: string, month?: number, year?: number): SQL | undefined {
+export function customerStatDateCondition(
+  statKey: string,
+  month?: number,
+  year?: number,
+): SQL | undefined {
   if (!month && !year) return undefined;
   const dateExpr = STAT_DATE_SQL[statKey];
   if (!dateExpr) return undefined;
 
   const parts: string[] = [];
-  if (month) parts.push(`EXTRACT(MONTH FROM NULLIF(${dateExpr}, '')::date) = ${Number(month)}`);
-  if (year) parts.push(`EXTRACT(YEAR FROM NULLIF(${dateExpr}, '')::date) = ${Number(year)}`);
+  if (month)
+    parts.push(
+      `EXTRACT(MONTH FROM NULLIF(${dateExpr}, '')::date) = ${Number(month)}`,
+    );
+  if (year)
+    parts.push(
+      `EXTRACT(YEAR FROM NULLIF(${dateExpr}, '')::date) = ${Number(year)}`,
+    );
   return sql`(${sql.raw(parts.join(" AND "))})`;
 }

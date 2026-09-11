@@ -18,3 +18,4 @@ export * from "./schemas/notification.schema";
 export * from "./schemas/work-progress.schema";
 export * from "./schemas/complaint.schema";
 export * from "./schemas/user-preferences.schema";
+export * from "./schemas/activity-event.schema";

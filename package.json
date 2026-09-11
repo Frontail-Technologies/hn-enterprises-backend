@@ -7,12 +7,14 @@
     "dev": "bun run --watch src/index.ts",
     "start": "bun run src/index.ts",
     "check": "bunx tsc --noEmit",
+    "test": "bun test",
     "generate": "drizzle-kit generate",
     "migrate": "drizzle-kit push",
     "seed:admin": "bun run src/scripts/seed-admin.ts",
     "seed:supervisor": "bun run src/scripts/seed-supervisor.ts",
-    "seed:payment-modes": "bun run src/scripts/seed-payment-modes.ts",
+    "seed:masters": "bun run src/scripts/seed-master-values.ts",
     "backfill:plumbers": "bun run src/scripts/backfill-plumbers.ts",
+    "backfill:actor-snapshots": "bun run src/scripts/backfill-actor-snapshots.ts",
     "studio": "drizzle-kit studio"
   },
   "dependencies": {

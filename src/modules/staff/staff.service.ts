@@ -1,4 +1,4 @@
-import { and, count, eq, ilike, inArray, or } from "drizzle-orm";
+import { and, count, eq, ilike, or } from "drizzle-orm";
 import { getDb } from "@db";
 import { staff, users } from "@db/schema";
 import {
@@ -213,21 +213,10 @@ export const staffService = {
     return getStaffOrThrow(id);
   },
 
-  async delete(id: string) {
-    const existing = await getStaffOrThrow(id);
-    const db = getDb();
-    await db.update(users).set({ status: "inactive", updatedAt: new Date() }).where(eq(users.id, existing.userId));
-  },
-
-  async bulkDelete(ids: string[]) {
-    const db = getDb();
-    const uniqueIds = Array.from(new Set(ids));
-    const rows = await db.select({ userId: staff.userId }).from(staff).where(inArray(staff.id, uniqueIds));
-    if (!rows.length) return { count: 0 };
-
-    const userIds = Array.from(new Set(rows.map((row) => row.userId)));
-    await db.update(users).set({ status: "inactive", updatedAt: new Date() }).where(inArray(users.id, userIds));
-
-    return { count: rows.length };
-  },
+  // No delete/bulkDelete here anymore - deleting a staff-linked supervisor
+  // goes through the canonical user hard-delete workflow
+  // (usersDeletionService.execute / usersService.bulkDelete), keyed by
+  // staff.userId. staff.userId is ON DELETE CASCADE, so the staff row is
+  // removed automatically when the user is hard-deleted. See
+  // remove-staff-block brief §8.
 };

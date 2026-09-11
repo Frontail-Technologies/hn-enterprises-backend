@@ -1,7 +1,9 @@
 import { and, eq, gte, inArray, isNotNull, lte, sql } from "drizzle-orm";
 import { getDb } from "@db";
-import { customers, dprRecords, projects, projectSites, sitePlans, users } from "@db/schema";
+import { customers, dprRecords, projects, projectSites, sitePlans, staff, users } from "@db/schema";
 import { cleanObject } from "@utils";
+import { activityService } from "@modules/activity/activity.service";
+import { dprAction, dprTitle } from "@modules/activity/activity.catalog";
 import type { AuthTokenPayload } from "@types";
 import type {
   DprRecordListQuery,
@@ -14,16 +16,35 @@ import type {
 
 const GLOBAL_PLANNING_ROLES = new Set(["super_admin", "admin"]);
 
+// Actor scope for sitePlans/dprRecords.supervisorId (who submitted this
+// record) - unrelated to customer ownership, unchanged.
 function planningScope(currentUser: AuthTokenPayload): string | undefined {
   return GLOBAL_PLANNING_ROLES.has(currentUser.role) ? undefined : currentUser.id;
 }
 
-async function fetchSiteTotals(scopeId: string | undefined) {
+/**
+ * Customers are not permanently owned by one supervisor (R1) - a non-admin's
+ * planning view scopes to customers in whichever project they are CURRENTLY
+ * assigned to (staff.assignedProjectId), not a stored customer.supervisorId.
+ * Returns a project id that will never match anything if the user has no
+ * current assignment, so scoping never silently falls through to "no filter".
+ */
+async function resolveCustomerProjectScope(currentUser: AuthTokenPayload): Promise<string | undefined> {
+  if (GLOBAL_PLANNING_ROLES.has(currentUser.role)) return undefined;
+  const db = getDb();
+  const row = await db.query.staff.findFirst({
+    where: eq(staff.userId, currentUser.id),
+    columns: { assignedProjectId: true },
+  });
+  return row?.assignedProjectId ?? "00000000-0000-0000-0000-000000000000";
+}
+
+async function fetchSiteTotals(projectScopeId: string | undefined) {
   const db = getDb();
   const conditions = [
     isNotNull(customers.siteId),
     isNotNull(customers.projectId),
-    scopeId ? eq(customers.supervisorId, scopeId) : undefined,
+    projectScopeId ? eq(customers.projectId, projectScopeId) : undefined,
   ].filter((condition): condition is NonNullable<typeof condition> => Boolean(condition));
 
   return db
@@ -117,7 +138,7 @@ export const planningService = {
       query.to ? lte(sitePlans.date, query.to) : undefined,
     ].filter((condition): condition is NonNullable<typeof condition> => Boolean(condition));
 
-    return db
+    const rows = await db
       .select({
         id: sitePlans.id,
         customerId: sitePlans.customerId,
@@ -125,10 +146,11 @@ export const planningService = {
         siteId: sitePlans.siteId,
         date: sitePlans.date,
         supervisorId: sitePlans.supervisorId,
+        liveSupervisorName: users.name,
+        supervisorNameSnapshot: sitePlans.supervisorName,
         tasks: sitePlans.tasks,
         createdAt: sitePlans.createdAt,
         updatedAt: sitePlans.updatedAt,
-        supervisor: { id: users.id, name: users.name },
         site: { id: projectSites.id, name: projectSites.name, address: projectSites.address },
         project: { id: projects.id, name: projects.name },
         customer: { id: customers.id, name: customers.customerName, trBpNumber: customers.trBpNumber },
@@ -140,11 +162,24 @@ export const planningService = {
       .leftJoin(customers, eq(sitePlans.customerId, customers.id))
       .where(conditions.length ? and(...conditions) : undefined)
       .orderBy(sitePlans.date);
+
+    return rows.map(({ supervisorId, liveSupervisorName, supervisorNameSnapshot, ...row }) => ({
+      ...row,
+      supervisor: supervisorId
+        ? { id: supervisorId, name: liveSupervisorName ?? supervisorNameSnapshot ?? "Deleted user" }
+        : supervisorNameSnapshot
+          ? { id: null, name: supervisorNameSnapshot }
+          : null,
+    }));
   },
 
   async upsertSitePlan(input: UpsertSitePlanBody, supervisorId: string) {
     const db = getDb();
     const existing = await findSitePlan(input.customerId, input.date, supervisorId);
+    // Immutable supervisor snapshot (safe-hard-delete brief §5) - survives a hard-deleted supervisor. Only resolved on create; an existing row keeps its original snapshot.
+    const supervisorName = existing
+      ? undefined
+      : ((await db.select({ name: users.name }).from(users).where(eq(users.id, supervisorId)).limit(1))[0]?.name ?? null);
 
     const values = {
       customerId: input.customerId,
@@ -152,6 +187,7 @@ export const planningService = {
       siteId: input.siteId,
       date: input.date,
       supervisorId,
+      ...(supervisorName !== undefined ? { supervisorName } : {}),
       tasks: input.tasks,
       updatedAt: new Date(),
     };
@@ -185,7 +221,7 @@ export const planningService = {
       query.status ? eq(dprRecords.status, query.status) : undefined,
     ].filter((condition): condition is NonNullable<typeof condition> => Boolean(condition));
 
-    return db
+    const rows = await db
       .select({
         id: dprRecords.id,
         customerId: dprRecords.customerId,
@@ -193,6 +229,8 @@ export const planningService = {
         siteId: dprRecords.siteId,
         date: dprRecords.date,
         supervisorId: dprRecords.supervisorId,
+        liveSupervisorName: users.name,
+        supervisorNameSnapshot: dprRecords.supervisorName,
         status: dprRecords.status,
         remarks: dprRecords.remarks,
         tasks: dprRecords.tasks,
@@ -200,7 +238,6 @@ export const planningService = {
         submittedAt: dprRecords.submittedAt,
         createdAt: dprRecords.createdAt,
         updatedAt: dprRecords.updatedAt,
-        supervisor: { id: users.id, name: users.name },
         site: { id: projectSites.id, name: projectSites.name, address: projectSites.address },
         project: { id: projects.id, name: projects.name },
         customer: { id: customers.id, name: customers.customerName, trBpNumber: customers.trBpNumber },
@@ -212,6 +249,15 @@ export const planningService = {
       .leftJoin(customers, eq(dprRecords.customerId, customers.id))
       .where(conditions.length ? and(...conditions) : undefined)
       .orderBy(dprRecords.date);
+
+    return rows.map(({ supervisorId, liveSupervisorName, supervisorNameSnapshot, ...row }) => ({
+      ...row,
+      supervisor: supervisorId
+        ? { id: supervisorId, name: liveSupervisorName ?? supervisorNameSnapshot ?? "Deleted user" }
+        : supervisorNameSnapshot
+          ? { id: null, name: supervisorNameSnapshot }
+          : null,
+    }));
   },
 
   async upsertDprRecord(input: UpsertDprRecordBody, supervisorId: string) {
@@ -220,6 +266,10 @@ export const planningService = {
     const status = input.status ?? existing?.status ?? "draft";
     const submittedAt =
       status === "submitted" ? (existing?.submittedAt ?? new Date()) : (existing?.submittedAt ?? null);
+    // Immutable supervisor snapshot (safe-hard-delete brief §5) - survives a hard-deleted supervisor. Only resolved on create; an existing row keeps its original snapshot.
+    const supervisorName = existing
+      ? undefined
+      : ((await db.select({ name: users.name }).from(users).where(eq(users.id, supervisorId)).limit(1))[0]?.name ?? null);
 
     const values = {
       customerId: input.customerId,
@@ -227,6 +277,7 @@ export const planningService = {
       siteId: input.siteId,
       date: input.date,
       supervisorId,
+      ...(supervisorName !== undefined ? { supervisorName } : {}),
       status,
       remarks: input.remarks,
       tasks: input.tasks,
@@ -235,23 +286,37 @@ export const planningService = {
       updatedAt: new Date(),
     };
 
-    if (existing) {
-      const [record] = await db
-        .update(dprRecords)
-        .set(cleanObject(values))
-        .where(eq(dprRecords.id, existing.id))
-        .returning();
-
-      if (!record) throw new Error("Unable to save DPR record");
-      return record;
-    }
-
-    const [record] = await db
-      .insert(dprRecords)
-      .values({ ...values, remarks: input.remarks || null, evidence: input.evidence ?? null })
-      .returning();
+    const isNew = !existing;
+    const [record] = existing
+      ? await db.update(dprRecords).set(cleanObject(values)).where(eq(dprRecords.id, existing.id)).returning()
+      : await db
+          .insert(dprRecords)
+          .values({ ...values, remarks: input.remarks || null, evidence: input.evidence ?? null })
+          .returning();
 
     if (!record) throw new Error("Unable to save DPR record");
+
+    const statusChanged = isNew || !existing || existing.status !== record.status;
+    // Only emit an event on a meaningful transition (create, or a status
+    // change) - not on every silent draft re-save.
+    if (statusChanged) {
+      await activityService.record({
+        type: "dpr",
+        action: dprAction(record.status, isNew),
+        actorId: supervisorId,
+        customerId: record.customerId,
+        projectId: record.projectId,
+        entityType: "dpr_record",
+        entityId: record.id,
+        sourceType: "dpr_record",
+        sourceId: record.id,
+        title: dprTitle(record.status, isNew),
+        description: record.remarks || "Daily progress report",
+        metadata: { status: record.status, date: record.date, isNew },
+        occurredAt: record.submittedAt ?? record.updatedAt ?? record.createdAt,
+      });
+    }
+
     return record;
   },
 
@@ -259,7 +324,7 @@ export const planningService = {
     const db = getDb();
     const scopeId = planningScope(currentUser);
 
-    const siteTotals = await fetchSiteTotals(scopeId);
+    const siteTotals = await fetchSiteTotals(await resolveCustomerProjectScope(currentUser));
     if (!siteTotals.length) return [];
     const siteIds = siteTotals.map((row) => row.siteId).filter((id): id is string => Boolean(id));
 
@@ -290,7 +355,7 @@ export const planningService = {
     const db = getDb();
     const scopeId = planningScope(currentUser);
 
-    const siteTotals = await fetchSiteTotals(scopeId);
+    const siteTotals = await fetchSiteTotals(await resolveCustomerProjectScope(currentUser));
     if (!siteTotals.length) return [];
     const siteIds = siteTotals.map((row) => row.siteId).filter((id): id is string => Boolean(id));
 
@@ -319,12 +384,12 @@ export const planningService = {
 
   async listSiteCustomers(siteId: string, currentUser: AuthTokenPayload): Promise<SiteCustomerRow[]> {
     const db = getDb();
-    const scopeId = planningScope(currentUser);
+    const projectScopeId = await resolveCustomerProjectScope(currentUser);
 
     const conditions = [
       eq(customers.siteId, siteId),
       isNotNull(customers.projectId),
-      scopeId ? eq(customers.supervisorId, scopeId) : undefined,
+      projectScopeId ? eq(customers.projectId, projectScopeId) : undefined,
     ].filter((condition): condition is NonNullable<typeof condition> => Boolean(condition));
 
     const rows = await db

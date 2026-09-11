@@ -5,10 +5,13 @@ import {
   createCustomerBodySchema,
   createCustomerDocumentBodySchema,
   createCustomerNoteBodySchema,
+  createCustomerWithPipeRecordsBodySchema,
+  customerFilterOptionsQuerySchema,
   customerListQuerySchema,
   saveCustomerColumnsBodySchema,
   setSectionCompletionBodySchema,
   updateCustomerBodySchema,
+  updateCustomerWithPipeRecordsBodySchema,
   upsertLmcPipeRecordBodySchema,
 } from "./customers.schema";
 import { bulkDeleteBodySchema, bulkRemarkBodySchema, bulkUpdateBodySchema } from "./customers-bulk.schema";
@@ -25,6 +28,16 @@ export const customersRoutes = new Elysia({ prefix: "/customers" })
     "/columns",
     ({ currentUser, set }) => customersController.getColumns({ currentUser, set }),
     { requireAuth: true },
+  )
+  .get(
+    "/filter-options",
+    ({ query, set }) => customersController.filterOptions({ query, set }),
+    { query: customerFilterOptionsQuerySchema, requireAuth: true },
+  )
+  .get(
+    "/ids",
+    ({ query, set }) => customersController.listIds({ query, set }),
+    { query: customerListQuerySchema, requireAuth: true },
   )
   .put(
     "/columns",
@@ -44,6 +57,14 @@ export const customersRoutes = new Elysia({ prefix: "/customers" })
       requireRole: ["super_admin", "admin"],
     },
   )
+  .post(
+    "/with-pipe-records",
+    ({ body, currentUser, set }) => customersController.createWithPipeRecords({ body, currentUser, set }),
+    {
+      body: createCustomerWithPipeRecordsBodySchema,
+      requireRole: ["super_admin", "admin"],
+    },
+  )
   .get(
     "/:id",
     ({ params, set }) => customersController.get({ params, set }),
@@ -56,6 +77,16 @@ export const customersRoutes = new Elysia({ prefix: "/customers" })
     {
       params: t.Object({ id: t.String() }),
       body: updateCustomerBodySchema,
+      requireRole: ["super_admin", "admin", "supervisor"],
+    },
+  )
+  .patch(
+    "/:id/with-pipe-records",
+    ({ params, body, currentUser, set }) =>
+      customersController.updateWithPipeRecords({ params, body, currentUser, set }),
+    {
+      params: t.Object({ id: t.String() }),
+      body: updateCustomerWithPipeRecordsBodySchema,
       requireRole: ["super_admin", "admin", "supervisor"],
     },
   )

@@ -2,7 +2,6 @@ import type { AuthTokenPayload } from "@types";
 import type { SetContext } from "@modules/auth/auth.helpers";
 import { errorMessage, ok, paginated, statusFromError } from "@utils";
 import { staffService } from "./staff.service";
-import { staffDeletionService } from "./staff-deletion.service";
 import type { CreateStaffBody, StaffListQuery, UpdateStaffBody } from "./staff.types";
 
 export const staffController = {
@@ -67,33 +66,8 @@ export const staffController = {
     }
   },
 
-  async delete({ params, set }: { params: { id: string }; set: SetContext }) {
-    try {
-      await staffService.delete(params.id);
-      return ok(null, "Staff account deactivated");
-    } catch (error) {
-      set.status = statusFromError(error);
-      return { success: false, message: errorMessage(error, "Unable to deactivate staff record") };
-    }
-  },
-
-  async deleteImpact({ params, set }: { params: { id: string }; set: SetContext }) {
-    try {
-      const impact = await staffDeletionService.getDeleteImpact(params.id);
-      return ok(impact);
-    } catch (error) {
-      set.status = statusFromError(error);
-      return { success: false, message: errorMessage(error, "Unable to compute delete impact") };
-    }
-  },
-
-  async bulkDelete({ body, set }: { body: { ids: string[] }; set: SetContext }) {
-    try {
-      const result = await staffService.bulkDelete(body.ids);
-      return ok(result, `${result.count} staff record${result.count === 1 ? "" : "s"} deleted`);
-    } catch (error) {
-      set.status = statusFromError(error);
-      return { success: false, message: errorMessage(error, "Unable to delete staff records") };
-    }
-  },
+  // No delete/deleteImpact/bulkDelete here anymore - deleting a staff-linked
+  // supervisor goes through the canonical user hard-delete endpoints
+  // (usersController.delete/getDeleteImpact/bulkDelete), keyed by
+  // staff.userId. See remove-staff-block brief §8.
 };

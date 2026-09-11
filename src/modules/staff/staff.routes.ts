@@ -1,20 +1,18 @@
 import { Elysia, t } from "elysia";
 import { auth } from "@plugins";
-import { bulkDeleteByIdsBodySchema } from "@utils";
 import { staffController } from "./staff.controller";
 import { createStaffBodySchema, staffListQuerySchema, updateStaffBodySchema } from "./staff.schema";
 
+// No DELETE /:id, GET /:id/delete-impact, or POST /bulk/delete here anymore -
+// deleting a staff-linked supervisor goes through the canonical user
+// hard-delete endpoints (/users/:id, /users/:id/delete-impact,
+// /users/bulk/delete), keyed by staff.userId. See remove-staff-block brief §8.
 export const staffRoutes = new Elysia({ prefix: "/staff" })
   .use(auth)
   .get("/", ({ query, set }) => staffController.list({ query, set }), {
     query: staffListQuerySchema,
     requireRole: ["super_admin", "admin"],
   })
-  .post(
-    "/bulk/delete",
-    ({ body, set }) => staffController.bulkDelete({ body, set }),
-    { body: bulkDeleteByIdsBodySchema, requireRole: ["super_admin", "admin"] },
-  )
   .post(
     "/",
     ({ body, currentUser, set }) => staffController.create({ body, currentUser, set }),
@@ -33,14 +31,4 @@ export const staffRoutes = new Elysia({ prefix: "/staff" })
       body: updateStaffBodySchema,
       requireRole: ["super_admin", "admin"],
     },
-  )
-  .get(
-    "/:id/delete-impact",
-    ({ params, set }) => staffController.deleteImpact({ params, set }),
-    { params: t.Object({ id: t.String() }), requireRole: ["super_admin", "admin"] },
-  )
-  .delete(
-    "/:id",
-    ({ params, set }) => staffController.delete({ params, set }),
-    { params: t.Object({ id: t.String() }), requireRole: ["super_admin", "admin"] },
   );

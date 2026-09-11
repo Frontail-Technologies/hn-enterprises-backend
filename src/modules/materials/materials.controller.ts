@@ -9,6 +9,7 @@ import type {
   CorrectMaterialTransactionBody,
   CreateMaterialBody,
   CreateMaterialTransactionBody,
+  InventoryOverviewQuery,
   MaterialListQuery,
   MaterialTransactionListQuery,
   PlumberBalanceQuery,
@@ -33,6 +34,18 @@ async function mergeUploadedEvidence(
   return [...(existing ?? []), ...uploaded];
 }
 
+export const inventoryController = {
+  async getOverview({ query, set }: { query: InventoryOverviewQuery; set: SetContext }) {
+    try {
+      const overview = await materialsService.getInventoryOverview(query);
+      return ok(overview);
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to fetch inventory overview") };
+    }
+  },
+};
+
 export const materialsController = {
   async list({ query, set }: { query: MaterialListQuery; set: SetContext }) {
     try {
@@ -51,6 +64,35 @@ export const materialsController = {
     } catch (error) {
       set.status = statusFromError(error);
       return { success: false, message: errorMessage(error, "Unable to fetch material") };
+    }
+  },
+
+  async getOverview({ params, set }: { params: { id: string }; set: SetContext }) {
+    try {
+      const overview = await materialsService.getOverview(params.id);
+      return ok(overview);
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to fetch material overview") };
+    }
+  },
+
+  async listTransactionsForDetailTab({
+    params,
+    query,
+    set,
+  }: {
+    params: { id: string };
+    query: MaterialTransactionListQuery & { tab?: string };
+    set: SetContext;
+  }) {
+    try {
+      const { tab, ...rest } = query;
+      const { rows, pagination } = await materialsService.listTransactionsForDetailTab(params.id, tab ?? "transactions", rest);
+      return paginated(rows, pagination);
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to list material transactions") };
     }
   },
 
@@ -117,9 +159,19 @@ export const materialsController = {
     }
   },
 
-  async listTransactions({ query, set }: { query: MaterialTransactionListQuery; set: SetContext }) {
+  async listTransactions({
+    query,
+    set,
+  }: {
+    query: Omit<MaterialTransactionListQuery, "types"> & { types?: string };
+    set: SetContext;
+  }) {
     try {
-      const { rows, pagination } = await materialsService.listTransactions(query);
+      const { types, ...rest } = query;
+      const parsedTypes = types
+        ? (types.split(",").map((value) => value.trim()) as MaterialTransactionListQuery["types"])
+        : undefined;
+      const { rows, pagination } = await materialsService.listTransactions({ ...rest, types: parsedTypes });
       return paginated(rows, pagination);
     } catch (error) {
       set.status = statusFromError(error);
@@ -156,6 +208,26 @@ export const materialsController = {
     } catch (error) {
       set.status = statusFromError(error);
       return { success: false, message: errorMessage(error, "Unable to compute plumber balances") };
+    }
+  },
+
+  async totalIssueSummary({ query, set }: { query: InventoryOverviewQuery; set: SetContext }) {
+    try {
+      const rows = await materialsService.totalIssueSummary(query);
+      return ok(rows);
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to compute total issue summary") };
+    }
+  },
+
+  async projectUsageSummary({ query, set }: { query: { projectId?: string }; set: SetContext }) {
+    try {
+      const rows = await materialsService.projectUsageSummary(query.projectId ?? "");
+      return ok(rows);
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to compute project material usage") };
     }
   },
 

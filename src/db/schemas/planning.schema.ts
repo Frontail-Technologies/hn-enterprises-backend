@@ -56,9 +56,9 @@ export const sitePlans = pgTable(
       .notNull()
       .references(() => projectSites.id, { onDelete: "restrict" }),
     date: date("date", { mode: "string" }).notNull(),
-    supervisorId: uuid("supervisor_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+    supervisorId: uuid("supervisor_id").references(() => users.id, { onDelete: "set null" }),
+    /** Immutable snapshot, populated at write time - survives a hard-deleted supervisor so historical plans stay attributable. */
+    supervisorName: text("supervisor_name"),
     tasks: jsonb("tasks").$type<PlanTaskPayload[]>().notNull().default([]),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -90,9 +90,9 @@ export const dprRecords = pgTable(
       .notNull()
       .references(() => projectSites.id, { onDelete: "restrict" }),
     date: date("date", { mode: "string" }).notNull(),
-    supervisorId: uuid("supervisor_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+    supervisorId: uuid("supervisor_id").references(() => users.id, { onDelete: "set null" }),
+    /** Immutable snapshot, populated at write time - survives a hard-deleted supervisor so historical DPRs stay attributable. */
+    supervisorName: text("supervisor_name"),
     status: dprStatusEnum("status").notNull().default("draft"),
     remarks: text("remarks"),
     tasks: jsonb("tasks").$type<DprTaskPayload[]>().notNull().default([]),

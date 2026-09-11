@@ -1,17 +1,28 @@
 import { Elysia, t } from "elysia";
 import { auth } from "@plugins";
-import { materialsController, materialsImportController } from "./materials.controller";
+import { inventoryController, materialsController, materialsImportController } from "./materials.controller";
 import {
   correctMaterialTransactionBodySchema,
   createMaterialBodySchema,
   createMaterialTransactionBodySchema,
+  inventoryOverviewQuerySchema,
+  materialDetailTransactionListQuerySchema,
   materialListQuerySchema,
   materialTransactionListQuerySchema,
   plumberBalanceQuerySchema,
+  projectUsageQuerySchema,
   reverseMaterialTransactionBodySchema,
   stockBalanceQuerySchema,
   updateMaterialBodySchema,
 } from "./materials.schema";
+
+export const inventoryRoutes = new Elysia({ prefix: "/inventory" })
+  .use(auth)
+  .get(
+    "/overview",
+    ({ query, set }) => inventoryController.getOverview({ query, set }),
+    { query: inventoryOverviewQuerySchema, requireAuth: true },
+  );
 
 export const materialsRoutes = new Elysia({ prefix: "/materials" })
   .use(auth)
@@ -78,6 +89,16 @@ export const materialsRoutes = new Elysia({ prefix: "/materials" })
     { query: plumberBalanceQuerySchema, requireAuth: true },
   )
   .get(
+    "/total-issue",
+    ({ query, set }) => materialsController.totalIssueSummary({ query, set }),
+    { query: inventoryOverviewQuerySchema, requireAuth: true },
+  )
+  .get(
+    "/project-usage",
+    ({ query, set }) => materialsController.projectUsageSummary({ query, set }),
+    { query: projectUsageQuerySchema, requireAuth: true },
+  )
+  .get(
     "/stock-balances",
     ({ query, set }) => materialsController.stockBalances({ query, set }),
     { query: stockBalanceQuerySchema, requireAuth: true },
@@ -118,6 +139,20 @@ export const materialsRoutes = new Elysia({ prefix: "/materials" })
     "/:id/delete-impact",
     ({ params, set }) => materialsController.deleteImpact({ params, set }),
     { params: t.Object({ id: t.String() }), requireRole: ["super_admin", "admin"] },
+  )
+  .get(
+    "/:id/overview",
+    ({ params, set }) => materialsController.getOverview({ params, set }),
+    { params: t.Object({ id: t.String() }), requireAuth: true },
+  )
+  .get(
+    "/:id/transactions",
+    ({ params, query, set }) => materialsController.listTransactionsForDetailTab({ params, query, set }),
+    {
+      params: t.Object({ id: t.String() }),
+      query: materialDetailTransactionListQuerySchema,
+      requireAuth: true,
+    },
   )
   .delete(
     "/:id",

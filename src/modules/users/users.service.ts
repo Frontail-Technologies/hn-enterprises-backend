@@ -190,6 +190,7 @@ export const usersService = {
 
     const resolvedIds = existing.map((row) => row.id);
     await db.transaction(async (tx) => {
+      // Same canonical per-user steps as usersDeletionService.execute() (safe-hard-delete brief §11) - bulk delete must never skip snapshot/FK/assignment handling.
       for (const id of resolvedIds) {
         const impact = await usersDeletionService.getDeleteImpactWithHandle(tx, id);
         if (!impact.canDelete) {
@@ -197,6 +198,7 @@ export const usersService = {
             `Some selected users cannot be deleted: "${impact.entity.label}" ${impact.blockers.map((b) => b.reason).join(" ")} Please deactivate them instead.`,
           );
         }
+        await usersDeletionService.clearActiveSiteAssignments(tx, id);
       }
       await tx.delete(users).where(inArray(users.id, resolvedIds));
     });

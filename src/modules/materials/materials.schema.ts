@@ -28,6 +28,10 @@ export const materialTransactionListQuerySchema = t.Object({
   limit: t.Optional(t.String()),
   materialId: t.Optional(t.String()),
   type: t.Optional(transactionTypeSchema),
+  // Comma-separated set of types (e.g. "consumption,pbg_consumption") for
+  // InventoryPage's Consumption Log tab, which merges two domain types into
+  // one query instead of fetching each separately and merging client-side.
+  types: t.Optional(t.String()),
   source: t.Optional(materialSourceSchema),
   plumberId: t.Optional(t.String()),
   siteId: t.Optional(t.String()),
@@ -66,6 +70,29 @@ export const createMaterialTransactionBodySchema = t.Object({
   files: t.Optional(t.Files()),
 });
 
+export const inventoryOverviewQuerySchema = t.Object({
+  source: t.Optional(materialSourceSchema),
+  projectId: t.Optional(t.String()),
+  plumberId: t.Optional(t.String()),
+  from: t.Optional(t.String()),
+  to: t.Optional(t.String()),
+});
+
+const inventoryDetailTabSchema = t.Union([
+  t.Literal("purchase"),
+  t.Literal("storeIssue"),
+  t.Literal("consumption"),
+  t.Literal("transactions"),
+]);
+
+export const materialDetailTransactionListQuerySchema = t.Object({
+  page: t.Optional(t.String()),
+  limit: t.Optional(t.String()),
+  tab: t.Optional(inventoryDetailTabSchema),
+  from: t.Optional(t.String()),
+  to: t.Optional(t.String()),
+});
+
 export const plumberBalanceQuerySchema = t.Object({
   plumberId: t.Optional(t.String()),
   materialId: t.Optional(t.String()),
@@ -76,6 +103,10 @@ export const plumberBalanceQuerySchema = t.Object({
 export const stockBalanceQuerySchema = t.Object({
   materialId: t.Optional(t.String()),
   source: t.Optional(materialSourceSchema),
+  projectId: t.Optional(t.String()),
+});
+
+export const projectUsageQuerySchema = t.Object({
   projectId: t.Optional(t.String()),
 });
 

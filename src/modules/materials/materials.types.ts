@@ -30,6 +30,7 @@ export type MaterialTransactionListQuery = {
   limit?: number | string;
   materialId?: string;
   type?: MaterialTransactionType;
+  types?: MaterialTransactionType[];
   source?: MaterialSource;
   plumberId?: string;
   siteId?: string;
@@ -66,6 +67,31 @@ export type CreateMaterialTransactionBody = {
   evidence?: Record<string, unknown>[];
   remarks?: string;
   files?: File[];
+};
+
+/**
+ * Filters shared with the InventoryPage transaction tabs (InventoryFilterBar's
+ * source/project/plumber/month) - the overview's counts must reflect the
+ * exact same filter context the tab grids themselves use, or the badges
+ * would silently disagree with what's on screen.
+ */
+export type InventoryOverviewQuery = {
+  source?: MaterialSource;
+  projectId?: string;
+  plumberId?: string;
+  from?: string;
+  to?: string;
+};
+
+export type InventoryOverview = {
+  stockCount: number;
+  purchaseCount: number;
+  pbgIssueCount: number;
+  pbgConsumptionCount: number;
+  storeIssueCount: number;
+  totalIssueCount: number;
+  plumberBalanceCount: number;
+  plumberConsumptionCount: number;
 };
 
 export type PlumberBalanceQuery = {

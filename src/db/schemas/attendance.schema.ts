@@ -22,9 +22,9 @@ export const attendance = pgTable(
   "attendance",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    userId: uuid("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+    userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
+    /** Immutable snapshot, populated at write time - survives a hard-deleted user so historical attendance stays attributable. */
+    userName: text("user_name"),
     date: date("date", { mode: "string" }).notNull(),
     status: attendanceStatusEnum("status").notNull().default("present"),
     checkInAt: timestamp("check_in_at", { withTimezone: true }),
@@ -33,6 +33,7 @@ export const attendance = pgTable(
     checkOutLocation: jsonb("check_out_location").$type<AttendanceLocationPayload>(),
     remarks: text("remarks"),
     markedBy: uuid("marked_by").references(() => users.id, { onDelete: "set null" }),
+    markedByName: text("marked_by_name"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

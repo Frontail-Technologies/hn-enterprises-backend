@@ -100,8 +100,22 @@ export const materialTransactions = pgTable(
   (table) => ({
     materialIdx: index("material_transactions_material_idx").on(table.materialId),
     typeIdx: index("material_transactions_type_idx").on(table.type),
+    // Every InventoryDetail tab query filters by exactly this pair
+    // (materialId + a type or type set) - see materials.service.ts's
+    // listTransactionsForDetailTab/buildTransactionListWhere.
+    materialTypeIdx: index("material_transactions_material_type_idx").on(table.materialId, table.type),
     sourceIdx: index("material_transactions_source_idx").on(table.source),
     projectIdx: index("material_transactions_project_idx").on(table.projectId),
+    // InventoryPage's transaction tabs (purchase/pbgIssue/pbgConsumption/
+    // storeIssue/consumption log) all filter by exactly this combination -
+    // a domain type (or type set), optionally scoped to a project, ordered/
+    // range-filtered by date. See materials.service.ts's
+    // getInventoryOverview/buildTransactionListWhere.
+    projectTypeDateIdx: index("material_transactions_project_type_date_idx").on(
+      table.projectId,
+      table.type,
+      table.transactionDate,
+    ),
     plumberIdx: index("material_transactions_plumber_idx").on(table.plumberId),
     supervisorIdx: index("material_transactions_supervisor_idx").on(table.supervisorId),
     siteIdx: index("material_transactions_site_idx").on(table.siteId),

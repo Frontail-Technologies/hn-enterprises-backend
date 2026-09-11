@@ -1,0 +1,11 @@
+-- Additive, non-destructive: InventoryPage's transaction tabs (purchase,
+-- pbgIssue, pbgConsumption, storeIssue, consumption log) all filter by
+-- project + a domain type (or type set) + a transaction-date range/sort.
+-- See materials.service.ts's getInventoryOverview/buildTransactionListWhere.
+--
+-- Hand-authored rather than `drizzle-kit generate`-produced - see
+-- MIGRATION_JOURNAL_NOTE.md in this folder for why `generate` can't run
+-- cleanly here yet and how this file was actually applied (`drizzle-kit
+-- push`, which diffs the live DB directly and doesn't depend on the
+-- journal).
+CREATE INDEX IF NOT EXISTS "material_transactions_project_type_date_idx" ON "material_transactions" ("project_id","type","transaction_date");

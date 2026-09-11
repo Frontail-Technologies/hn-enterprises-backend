@@ -1,6 +1,6 @@
-import { and, count, eq, gte, ilike, inArray, isNotNull, isNull, lte, sql } from "drizzle-orm";
+import { and, count, countDistinct, eq, getTableColumns, gte, ilike, inArray, isNotNull, isNull, lte, sql } from "drizzle-orm";
 import { getDb } from "@db";
-import { customers, materialTransactions, materials, projectSites, users } from "@db/schema";
+import { customers, materialTransactions, materials, plumbers, projects, projectSites, users } from "@db/schema";
 import { normalizeKey } from "@modules/master-import/master-import.mapper";
 import { auditService } from "@services";
 import {
@@ -15,6 +15,8 @@ import type {
   CorrectMaterialTransactionBody,
   CreateMaterialBody,
   CreateMaterialTransactionBody,
+  InventoryOverview,
+  InventoryOverviewQuery,
   MaterialListQuery,
   MaterialSource,
   MaterialTransactionListQuery,
@@ -25,6 +27,33 @@ import type {
 } from "./materials.types";
 
 const STORE_AFFECTING_TYPES = new Set<MaterialTransactionType>(["purchase", "pbg_issue", "issue", "return"]);
+
+/**
+ * Domain grouping for the InventoryDetail tabs/stat cards - mirrors the
+ * frontend's filterPurchases/filterStoreIssues/filterConsumption/
+ * filterReturns exactly (inventory-detail.mapper.ts), so the overview
+ * summary and the tab-scoped transaction lists always agree with each
+ * other. Not a rename of the underlying transaction types.
+ */
+const RECEIVED_TYPES: MaterialTransactionType[] = ["purchase", "pbg_issue"];
+const ISSUED_TYPES: MaterialTransactionType[] = ["issue"];
+const CONSUMED_TYPES: MaterialTransactionType[] = ["consumption", "pbg_consumption"];
+const RETURNED_TYPES: MaterialTransactionType[] = ["return"];
+
+const INVENTORY_DETAIL_TAB_TYPES: Record<string, MaterialTransactionType[] | undefined> = {
+  purchase: RECEIVED_TYPES,
+  storeIssue: ISSUED_TYPES,
+  consumption: CONSUMED_TYPES,
+  transactions: undefined, // "All" / Transaction History - unfiltered by type
+};
+
+/**
+ * InventoryPage's OWN 8 tabs - a different grouping from InventoryDetail's
+ * (e.g. "purchase" here is the single `purchase` type only, NOT combined
+ * with pbg_issue like InventoryDetail's "purchase" tab). Mirrors
+ * InventoryPage.tsx's existing TAB_TO_TRANSACTION_TYPE exactly.
+ */
+const INVENTORY_PAGE_CONSUMPTION_LOG_TYPES: MaterialTransactionType[] = ["consumption", "pbg_consumption"];
 
 const IMPLIED_SOURCE: Partial<Record<MaterialTransactionType, MaterialSource>> = {
   purchase: "purchase",
@@ -52,6 +81,11 @@ function projectFilterCondition(projectId: string | undefined) {
 function buildTransactionListWhere(query: MaterialTransactionListQuery) {
   const conditions = [
     query.materialId ? eq(materialTransactions.materialId, query.materialId) : undefined,
+    // `types` (plural) scopes to a SET of domain types in one request - e.g.
+    // the Purchase tab is "purchase" + "pbg_issue" together. Additive to the
+    // existing singular `type` filter so callers that only ever use `type`
+    // (InventoryPage today) are unaffected.
+    query.types?.length ? inArray(materialTransactions.type, query.types) : undefined,
     query.type ? eq(materialTransactions.type, query.type) : undefined,
     query.plumberId ? eq(materialTransactions.plumberId, query.plumberId) : undefined,
     query.source ? eq(materialTransactions.source, query.source) : undefined,
@@ -167,6 +201,57 @@ export const materialsService = {
     return withStatus(material);
   },
 
+  /**
+   * Single initial request for InventoryDetail (R7): material + all 5 stat
+   * totals computed with conditional SUM over the material's full
+   * transaction history, so the numbers stay correct no matter how many
+   * transactions exist (the old client-side reduce() over a 200-row-capped
+   * fetch silently under-counted once a material passed 200 transactions).
+   */
+  async getOverview(id: string) {
+    const material = await getMaterialOrThrow(id);
+    const db = getDb();
+
+    const sumWhenTypeIn = (types: MaterialTransactionType[]) =>
+      sql<string>`coalesce(sum(case when ${inArray(materialTransactions.type, types)} then ${materialTransactions.quantity} else 0 end), 0)`;
+
+    const [totals] = await db
+      .select({
+        receivedQty: sumWhenTypeIn(RECEIVED_TYPES),
+        issuedQty: sumWhenTypeIn(ISSUED_TYPES),
+        consumedQty: sumWhenTypeIn(CONSUMED_TYPES),
+        returnedQty: sumWhenTypeIn(RETURNED_TYPES),
+      })
+      .from(materialTransactions)
+      .where(eq(materialTransactions.materialId, id));
+
+    // Reuses the existing, already-correct plumber-balance aggregation
+    // rather than re-deriving that grouping logic in raw SQL here.
+    const plumberBalanceRows = await materialsService.plumberBalances({ materialId: id });
+
+    return {
+      material: withStatus(material),
+      summary: {
+        availableQty: Number(material.currentBalance),
+        receivedQty: Number(totals?.receivedQty ?? 0),
+        issuedQty: Number(totals?.issuedQty ?? 0),
+        consumedQty: Number(totals?.consumedQty ?? 0),
+        returnedQty: Number(totals?.returnedQty ?? 0),
+        plumberBalanceCount: plumberBalanceRows.length,
+      },
+    };
+  },
+
+  /**
+   * Tab-scoped transaction fetch for InventoryDetail (R3): the tab ids here
+   * match InventoryDetailPage's own DetailTab union exactly. "plumberLedger"
+   * is deliberately not handled - that tab uses plumberBalances(), not this.
+   */
+  async listTransactionsForDetailTab(id: string, tab: string, query: MaterialTransactionListQuery) {
+    const types = INVENTORY_DETAIL_TAB_TYPES[tab];
+    return materialsService.listTransactions({ ...query, materialId: id, types, type: undefined });
+  },
+
   async create(input: CreateMaterialBody, userId: string) {
     const db = getDb();
     const [material] = await db
@@ -231,10 +316,27 @@ export const materialsService = {
     const { page, limit, offset } = parsePagination(query);
     const where = buildTransactionListWhere(query);
 
+    // Relational display labels are joined once here, server-side, so no
+    // consumer needs to load the full plumbers/projects/customers/materials
+    // lists just to resolve an id -> name for these rows. materialName
+    // matters for InventoryPage's transaction tabs, which span multiple
+    // materials (InventoryDetail already knows its one material directly).
+    const selection = {
+      ...getTableColumns(materialTransactions),
+      plumberName: plumbers.name,
+      projectName: projects.name,
+      customerName: customers.customerName,
+      materialName: materials.name,
+    };
+
     const [rows, [{ value: total }]] = await Promise.all([
       db
-        .select()
+        .select(selection)
         .from(materialTransactions)
+        .leftJoin(plumbers, eq(materialTransactions.plumberId, plumbers.id))
+        .leftJoin(projects, eq(materialTransactions.projectId, projects.id))
+        .leftJoin(customers, eq(materialTransactions.customerId, customers.id))
+        .leftJoin(materials, eq(materialTransactions.materialId, materials.id))
         .where(where)
         .limit(limit)
         .offset(offset)
@@ -438,9 +540,41 @@ export const materialsService = {
       grouped.set(key, entry);
     }
 
-    return Array.from(grouped.values()).map((entry) => ({
+    const balances = Array.from(grouped.values()).map((entry) => ({
       ...entry,
       balance: entry.issued - entry.consumed - entry.returned + entry.adjusted,
+    }));
+
+    // Join plumber/project/material names once, in batched lookups, rather
+    // than requiring the caller to load the entire plumbers/projects/
+    // materials lists to resolve them (InventoryPage's Plumber Balance tab
+    // isn't scoped to one material, so it needs materialName too).
+    const plumberIds = Array.from(new Set(balances.map((row) => row.plumberId)));
+    const projectIds = Array.from(
+      new Set(balances.map((row) => row.projectId).filter((id): id is string => Boolean(id))),
+    );
+    const materialIds = Array.from(new Set(balances.map((row) => row.materialId)));
+
+    const [plumberRows, projectRows, materialRows] = await Promise.all([
+      plumberIds.length
+        ? db.select({ id: plumbers.id, name: plumbers.name }).from(plumbers).where(inArray(plumbers.id, plumberIds))
+        : Promise.resolve([]),
+      projectIds.length
+        ? db.select({ id: projects.id, name: projects.name }).from(projects).where(inArray(projects.id, projectIds))
+        : Promise.resolve([]),
+      materialIds.length
+        ? db.select({ id: materials.id, name: materials.name }).from(materials).where(inArray(materials.id, materialIds))
+        : Promise.resolve([]),
+    ]);
+    const plumberNameById = new Map(plumberRows.map((row) => [row.id, row.name]));
+    const projectNameById = new Map(projectRows.map((row) => [row.id, row.name]));
+    const materialNameById = new Map(materialRows.map((row) => [row.id, row.name]));
+
+    return balances.map((row) => ({
+      ...row,
+      plumberName: plumberNameById.get(row.plumberId) ?? "",
+      projectName: row.projectId ? (projectNameById.get(row.projectId) ?? "") : "",
+      materialName: materialNameById.get(row.materialId) ?? "",
     }));
   },
 
@@ -463,6 +597,143 @@ export const materialsService = {
       .groupBy(materialTransactions.materialId);
 
     return rows.map((row) => ({ materialId: row.materialId, balance: Number(row.balance) }));
+  },
+
+  /**
+   * InventoryPage's "Total Issue" tab (R11) - one row PER MATERIAL, not a
+   * transaction list, so it's computed with GROUP BY + SUM/COUNT/MAX
+   * server-side rather than loading every "issue" transaction and the full
+   * materials list to group/join them client-side. Sort matches the old
+   * client-side totalIssueRows() exactly (highest issued qty first).
+   */
+  async totalIssueSummary(query: InventoryOverviewQuery) {
+    const db = getDb();
+    const where = buildTransactionListWhere({ ...query, types: ISSUED_TYPES });
+
+    const rows = await db
+      .select({
+        materialId: materialTransactions.materialId,
+        materialName: materials.name,
+        unit: materials.unit,
+        totalIssued: sql<string>`coalesce(sum(${materialTransactions.quantity}), 0)`,
+        transactionCount: count(),
+        lastIssueDate: sql<string>`max(${materialTransactions.transactionDate})`,
+      })
+      .from(materialTransactions)
+      .innerJoin(materials, eq(materialTransactions.materialId, materials.id))
+      .where(where)
+      .groupBy(materialTransactions.materialId, materials.name, materials.unit)
+      .orderBy(sql`sum(${materialTransactions.quantity}) desc`);
+
+    return rows.map((row) => ({
+      materialId: row.materialId,
+      materialName: row.materialName,
+      unit: row.unit,
+      totalIssued: Number(row.totalIssued),
+      transactionCount: row.transactionCount,
+      lastIssueDate: row.lastIssueDate,
+    }));
+  },
+
+  /**
+   * ProjectDetail → Materials tab "Materials Used on This Project" summary -
+   * one row PER MATERIAL for the whole project (issued/consumed/returned),
+   * computed with GROUP BY + conditional SUM server-side. Replaces folding a
+   * capped transaction page client-side, which produced wrong totals once a
+   * project had more than ~100 movements.
+   */
+  async projectUsageSummary(projectId: string) {
+    const db = getDb();
+    const sumWhen = (types: MaterialTransactionType[]) =>
+      sql<string>`coalesce(sum(case when ${inArray(materialTransactions.type, types)} then ${materialTransactions.quantity} else 0 end), 0)`;
+
+    const rows = await db
+      .select({
+        materialId: materialTransactions.materialId,
+        materialName: materials.name,
+        unit: materials.unit,
+        issued: sumWhen(["issue", "pbg_issue"]),
+        consumed: sumWhen(["consumption", "pbg_consumption"]),
+        returned: sumWhen(["return"]),
+      })
+      .from(materialTransactions)
+      .innerJoin(materials, eq(materialTransactions.materialId, materials.id))
+      .where(projectFilterCondition(projectId))
+      .groupBy(materialTransactions.materialId, materials.name, materials.unit)
+      .orderBy(materials.name);
+
+    return rows.map((row) => ({
+      id: row.materialId,
+      materialId: row.materialId,
+      name: row.materialName,
+      unit: row.unit,
+      issued: Number(row.issued),
+      consumed: Number(row.consumed),
+      returned: Number(row.returned),
+    }));
+  },
+
+  /**
+   * InventoryPage's tab-count badges (R3) - DB COUNT/GROUP BY per domain
+   * type, honoring the same source/project/plumber/date filters the tab
+   * grids themselves use, so a badge never disagrees with what's on
+   * screen. Never returns the underlying transaction rows.
+   */
+  async getInventoryOverview(query: InventoryOverviewQuery): Promise<InventoryOverview> {
+    const db = getDb();
+
+    // Only the storeIssue/plumberConsumption/plumberBalance tabs ever
+    // filtered by plumberId in the original per-tab queries - purchase/
+    // pbgIssue/pbgConsumption/totalIssue never took a plumberId param, so
+    // their counts must not silently start reflecting it just because the
+    // overview computes everything in one request.
+    const { plumberId, ...queryWithoutPlumber } = query;
+    const countByTypes = (types: MaterialTransactionType[], includePlumberFilter: boolean) => {
+      const where = buildTransactionListWhere({
+        ...(includePlumberFilter ? query : queryWithoutPlumber),
+        types,
+      });
+      return db.select({ value: count() }).from(materialTransactions).where(where);
+    };
+
+    const [
+      [{ value: stockCount }],
+      [{ value: purchaseCount }],
+      [{ value: pbgIssueCount }],
+      [{ value: pbgConsumptionCount }],
+      [{ value: storeIssueCount }],
+      [{ value: totalIssueCount }],
+      [{ value: plumberConsumptionCount }],
+      plumberBalanceRows,
+    ] = await Promise.all([
+      db.select({ value: count() }).from(materials),
+      countByTypes(["purchase"], false),
+      countByTypes(["pbg_issue"], false),
+      countByTypes(["pbg_consumption"], false),
+      countByTypes(["issue"], true),
+      // "Total Issue" is one row PER MATERIAL (grouped), not a raw
+      // transaction count - matches totalIssueRows() grouping exactly.
+      // Never plumber-filtered, same as the original totalIssueRows().
+      db
+        .select({ value: countDistinct(materialTransactions.materialId) })
+        .from(materialTransactions)
+        .where(buildTransactionListWhere({ ...queryWithoutPlumber, types: ISSUED_TYPES })),
+      countByTypes(INVENTORY_PAGE_CONSUMPTION_LOG_TYPES, true),
+      // Reuses the existing, already-correct plumber-balance grouping
+      // rather than re-deriving that composite-key logic in raw SQL.
+      materialsService.plumberBalances({ source: query.source, projectId: query.projectId, plumberId: query.plumberId }),
+    ]);
+
+    return {
+      stockCount,
+      purchaseCount,
+      pbgIssueCount,
+      pbgConsumptionCount,
+      storeIssueCount,
+      totalIssueCount,
+      plumberBalanceCount: plumberBalanceRows.length,
+      plumberConsumptionCount,
+    };
   },
 
   async reverseTransaction(id: string, reason: string, userId: string) {

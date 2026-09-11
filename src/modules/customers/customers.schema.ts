@@ -23,6 +23,24 @@ export const customerListQuerySchema = t.Object({
   city: t.Optional(t.String()),
   month: t.Optional(t.String()),
   year: t.Optional(t.String()),
+  // Whitelisted sort columns only - never pass arbitrary column names into SQL.
+  sortBy: t.Optional(t.Union([t.Literal("customerName"), t.Literal("trBpNumber"), t.Literal("mobileNumber"), t.Literal("createdAt")])),
+  sortOrder: t.Optional(t.Union([t.Literal("asc"), t.Literal("desc")])),
+  ids: t.Optional(t.String()),
+  columnFilters: t.Optional(t.String()),
+});
+
+export const customerFilterOptionsQuerySchema = t.Object({
+  column: t.String(),
+  search: t.Optional(t.String()),
+  status: t.Optional(customerStatusSchema),
+  projectId: t.Optional(t.String()),
+  siteId: t.Optional(t.String()),
+  statKey: t.Optional(t.String()),
+  city: t.Optional(t.String()),
+  month: t.Optional(t.String()),
+  year: t.Optional(t.String()),
+  columnFilters: t.Optional(t.String()),
 });
 
 const jsonSection = t.Optional(t.Record(t.String(), t.Unknown()));
@@ -52,7 +70,6 @@ const createCustomerFieldsSchema = t.Composite([
     houseType: t.Optional(t.String()),
     scheme: t.Optional(t.String()),
     plumberId: t.String({ minLength: 1 }),
-    supervisorId: t.Optional(t.String()),
     giReportNumber: t.Optional(t.String()),
     gcReportNumber: t.Optional(t.String()),
     conversionReportNumber: t.Optional(t.String()),
@@ -84,6 +101,16 @@ export const upsertLmcPipeRecordBodySchema = t.Object({
   remarks: t.Optional(t.String()),
   evidence: t.Optional(t.Array(t.Record(t.String(), t.Unknown()))),
   files: t.Optional(t.Files()),
+});
+
+export const createCustomerWithPipeRecordsBodySchema = t.Object({
+  ...createCustomerBodySchema.properties,
+  pipeRecords: t.Optional(t.Array(upsertLmcPipeRecordBodySchema)),
+});
+
+export const updateCustomerWithPipeRecordsBodySchema = t.Object({
+  ...updateCustomerBodySchema.properties,
+  pipeRecords: t.Optional(t.Array(upsertLmcPipeRecordBodySchema)),
 });
 
 export const setSectionCompletionBodySchema = t.Object({

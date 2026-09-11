@@ -15,6 +15,10 @@ export const billsRoutes = new Elysia({ prefix: "/bills" })
     query: billListQuerySchema,
     requireAuth: true,
   })
+  .get("/summary", ({ query, set }) => billsController.summary({ query, set }), {
+    query: billListQuerySchema,
+    requireAuth: true,
+  })
   .post(
     "/",
     ({ body, currentUser, set }) => billsController.create({ body, currentUser, set }),

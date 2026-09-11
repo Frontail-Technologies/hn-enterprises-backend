@@ -36,9 +36,9 @@ export const workProgressUpdates = pgTable(
     customerId: uuid("customer_id")
       .notNull()
       .references(() => customers.id, { onDelete: "cascade" }),
-    supervisorId: uuid("supervisor_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+    supervisorId: uuid("supervisor_id").references(() => users.id, { onDelete: "set null" }),
+    /** Immutable snapshot, populated at write time - survives a hard-deleted supervisor so historical work progress stays attributable. */
+    supervisorName: text("supervisor_name"),
     stage: workStageEnum("stage").notNull(),
     status: workProgressStatusEnum("status").notNull(),
     nextRequiredAction: text("next_required_action"),

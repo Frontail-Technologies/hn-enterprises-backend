@@ -7,6 +7,9 @@ export const auditLogs = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
+    /** Immutable actor snapshot, captured at write time - survives a hard-deleted user so audit history stays readable. See auditService.log(). */
+    userName: text("user_name"),
+    userRole: text("user_role"),
     module: text("module").notNull(),
     action: text("action").notNull(),
     recordId: text("record_id"),

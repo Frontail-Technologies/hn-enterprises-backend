@@ -13,6 +13,8 @@ export type PaymentListQuery = {
   siteId?: string;
   plumberId?: string;
   projectId?: string;
+  /** Filters to payments whose linked customer is in this city - avoids the client loading every customer to city-scope. */
+  city?: string;
   from?: string;
   to?: string;
   paidTo?: string;
@@ -29,10 +31,11 @@ export type CreatePaymentBody = {
   category: PaymentCategory;
   plumberId?: string;
   paidTo?: string;
-  siteId?: string;
   address?: string;
   customerId?: string;
   projectId?: string;
+  /** Admin-only "create on behalf of" - see payments.service.ts's create(). */
+  supervisorId?: string;
   amount: number;
   paymentDate: string;
   mode: PaymentMode;

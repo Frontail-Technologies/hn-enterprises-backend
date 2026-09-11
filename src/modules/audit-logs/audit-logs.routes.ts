@@ -8,4 +8,7 @@ export const auditLogsRoutes = new Elysia({ prefix: "/audit-logs" })
   .get("/", ({ query, set }) => auditLogsController.list({ query, set }), {
     query: auditLogListQuerySchema,
     requireRole: ["super_admin"],
+  })
+  .get("/modules", ({ set }) => auditLogsController.modules({ set }), {
+    requireRole: ["super_admin"],
   });

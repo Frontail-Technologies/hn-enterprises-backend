@@ -141,7 +141,7 @@ export const paymentsImportService = {
           status: "draft",
           purpose: row.purpose || null,
           remarks: row.remarks || null,
-          submittedBy: user.id,
+          createdById: user.id,
         });
         insertedCount += 1;
       } catch (error) {

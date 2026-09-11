@@ -17,14 +17,19 @@ async function getProjectSitesRaw(projectId: string): Promise<ProjectSiteRow[]> 
 async function getSupervisors(projectId: string, sites: ProjectSiteRow[]) {
   const db = getDb();
 
-  const [customerAgg, lastActivityRows] = await Promise.all([
+  // Customers are not permanently owned by one supervisor (R1) - the
+  // project's supervisor roster comes from staff.assignedProjectId (the
+  // canonical, project-level assignment), not customer.supervisorId.
+  const [assignedStaff, totalCustomersRow, lastActivityRows] = await Promise.all([
     db
-      .select({ supervisorId: customers.supervisorId, customerCount: count() })
+      .select({ userId: staff.userId })
+      .from(staff)
+      .innerJoin(users, eq(staff.userId, users.id))
+      .where(and(eq(staff.assignedProjectId, projectId), eq(users.role, "supervisor"), eq(users.status, "active"))),
+    db
+      .select({ value: count() })
       .from(customers)
-      .where(
-        and(eq(customers.projectId, projectId), isNotNull(customers.supervisorId), ne(customers.status, "archived")),
-      )
-      .groupBy(customers.supervisorId),
+      .where(and(eq(customers.projectId, projectId), ne(customers.status, "archived"))),
     db
       .select({
         supervisorId: workProgressUpdates.supervisorId,
@@ -37,10 +42,8 @@ async function getSupervisors(projectId: string, sites: ProjectSiteRow[]) {
   ]);
 
   const siteSupervisorIds = sites.map((site) => site.supervisorId).filter((id): id is string => Boolean(id));
-  const customerSupervisorIds = customerAgg
-    .map((row) => row.supervisorId)
-    .filter((id): id is string => Boolean(id));
-  const distinctIds = Array.from(new Set([...siteSupervisorIds, ...customerSupervisorIds]));
+  const assignedSupervisorIds = assignedStaff.map((row) => row.userId);
+  const distinctIds = Array.from(new Set([...siteSupervisorIds, ...assignedSupervisorIds]));
   if (!distinctIds.length) return [];
 
   const supervisorUsers = await db
@@ -48,7 +51,9 @@ async function getSupervisors(projectId: string, sites: ProjectSiteRow[]) {
     .from(users)
     .where(and(inArray(users.id, distinctIds), eq(users.status, "active")));
 
-  const customerCountById = new Map(customerAgg.map((row) => [row.supervisorId as string, row.customerCount]));
+  // Not attributable per-supervisor any more (a customer belongs to the
+  // project, not one owner) - this is the project's total for context.
+  const projectCustomerCount = totalCustomersRow[0]?.value ?? 0;
   const lastActivityById = new Map(lastActivityRows.map((row) => [row.supervisorId as string, row.lastActivityAt]));
   const sitesBySupervisor = new Map<string, SiteRef[]>();
   for (const site of sites) {
@@ -64,7 +69,7 @@ async function getSupervisors(projectId: string, sites: ProjectSiteRow[]) {
       name: user.name,
       role: "Supervisor" as const,
       sites: sitesBySupervisor.get(user.id) ?? [],
-      customerCount: customerCountById.get(user.id) ?? 0,
+      customerCount: projectCustomerCount,
       lastActivityAt: lastActivityById.get(user.id) ?? null,
     }))
     .sort((a, b) => b.customerCount - a.customerCount || a.name.localeCompare(b.name));

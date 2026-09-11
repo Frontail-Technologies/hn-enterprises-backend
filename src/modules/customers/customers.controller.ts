@@ -15,9 +15,12 @@ import type {
   CreateCustomerBody,
   CreateCustomerDocumentBody,
   CreateCustomerNoteBody,
+  CreateCustomerWithPipeRecordsBody,
+  CustomerFilterOptionsQuery,
   CustomerJsonSections,
   CustomerListQuery,
   UpdateCustomerBody,
+  UpdateCustomerWithPipeRecordsBody,
   UpsertLmcPipeRecordBody,
 } from "./customers.types";
 
@@ -74,6 +77,21 @@ async function applyUploadedFilesToSection<T extends CustomerJsonSections & { fi
   return rest;
 }
 
+async function resolvePipeRecordsEvidence(
+  pipeRecords: UpsertLmcPipeRecordBody[] | undefined,
+  uploadedBy: string,
+  recordId: string | undefined,
+) {
+  if (!pipeRecords?.length) return [];
+
+  return Promise.all(
+    pipeRecords.map(async ({ files, ...rest }) => ({
+      ...rest,
+      evidence: await mergeUploadedEvidence(rest.evidence, files, { recordId, uploadedBy }),
+    })),
+  );
+}
+
 async function resolveDocumentFile(
   body: CreateCustomerDocumentBody,
   context: { recordId?: string; uploadedBy: string },
@@ -93,6 +111,26 @@ export const customersController = {
     } catch (error) {
       set.status = statusFromError(error);
       return { success: false, message: errorMessage(error, "Unable to list customers") };
+    }
+  },
+
+  async filterOptions({ query, set }: { query: CustomerFilterOptionsQuery; set: SetContext }) {
+    try {
+      const values = await customersService.filterOptions(query);
+      return ok(values);
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to load filter options") };
+    }
+  },
+
+  async listIds({ query, set }: { query: CustomerListQuery; set: SetContext }) {
+    try {
+      const result = await customersService.listIds(query);
+      return ok(result);
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to list matching customer ids") };
     }
   },
 
@@ -184,6 +222,58 @@ export const customersController = {
       if (!currentUser) throw new Error("Authentication required");
       const patch = await applyUploadedFilesToSection(body, currentUser.id, params.id);
       const customer = await customersService.update(params.id, patch, currentUser);
+      return ok(customer, "Customer updated");
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to update customer") };
+    }
+  },
+
+  async createWithPipeRecords({
+    body,
+    currentUser,
+    set,
+  }: {
+    body: CreateCustomerWithPipeRecordsBody;
+    currentUser: AuthTokenPayload | null;
+    set: SetContext;
+  }) {
+    try {
+      if (!currentUser) throw new Error("Authentication required");
+      const { pipeRecords, ...customerBody } = body;
+      const patch = await applyUploadedFilesToSection(customerBody, currentUser.id);
+      const resolvedPipeRecords = await resolvePipeRecordsEvidence(pipeRecords, currentUser.id, undefined);
+      const customer = await customersService.createWithPipeRecords(patch, resolvedPipeRecords, currentUser.id);
+      set.status = 201;
+      return ok(customer, "Customer created");
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to create customer") };
+    }
+  },
+
+  async updateWithPipeRecords({
+    params,
+    body,
+    currentUser,
+    set,
+  }: {
+    params: { id: string };
+    body: UpdateCustomerWithPipeRecordsBody;
+    currentUser: AuthTokenPayload | null;
+    set: SetContext;
+  }) {
+    try {
+      if (!currentUser) throw new Error("Authentication required");
+      const { pipeRecords, ...customerBody } = body;
+      const patch = await applyUploadedFilesToSection(customerBody, currentUser.id, params.id);
+      const resolvedPipeRecords = await resolvePipeRecordsEvidence(pipeRecords, currentUser.id, params.id);
+      const customer = await customersService.updateWithPipeRecords(
+        params.id,
+        patch,
+        resolvedPipeRecords,
+        currentUser,
+      );
       return ok(customer, "Customer updated");
     } catch (error) {
       set.status = statusFromError(error);

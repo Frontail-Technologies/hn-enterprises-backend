@@ -80,4 +80,23 @@ export const complaintsController = {
       return { success: false, message: errorMessage(error, "Unable to delete complaint") };
     }
   },
+
+  async push({
+    params,
+    currentUser,
+    set,
+  }: {
+    params: { id: string };
+    currentUser: AuthTokenPayload | null;
+    set: SetContext;
+  }) {
+    try {
+      if (!currentUser) throw new Error("Authentication required");
+      const result = await complaintsService.push(params.id, currentUser);
+      return ok(result, result.message);
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to send complaint notification") };
+    }
+  },
 };
