@@ -3,6 +3,7 @@ import { backgroundJobService } from "./background-job.service";
 import { cloudinaryUploadProvider } from "./upload/cloudinary-upload.provider";
 import { fileOptimizerService } from "./upload/file-optimizer.service";
 import { localUploadProvider } from "./upload/local-upload.provider";
+import { r2UploadProvider } from "./upload/r2-upload.provider";
 import { s3UploadProvider } from "./upload/s3-upload.provider";
 import { uploadValidatorService } from "./upload/upload-validator.service";
 import type { StoredFile, UploadContext, UploadDriver, UploadProvider } from "./upload/upload.types";
@@ -11,14 +12,15 @@ const providers: Record<UploadDriver, UploadProvider> = {
   local: localUploadProvider,
   cloudinary: cloudinaryUploadProvider,
   s3: s3UploadProvider,
+  r2: r2UploadProvider,
 };
 
 function getUploadDriver(): UploadDriver {
-  if (UPLOAD_DRIVER === "cloudinary" || UPLOAD_DRIVER === "s3" || UPLOAD_DRIVER === "local") {
+  if (UPLOAD_DRIVER === "cloudinary" || UPLOAD_DRIVER === "s3" || UPLOAD_DRIVER === "r2" || UPLOAD_DRIVER === "local") {
     return UPLOAD_DRIVER;
   }
 
-  throw new Error(`Unsupported UPLOAD_DRIVER "${UPLOAD_DRIVER}". Use local, cloudinary or s3.`);
+  throw new Error(`Unsupported UPLOAD_DRIVER "${UPLOAD_DRIVER}". Use local, cloudinary, s3 or r2.`);
 }
 
 function optimizeInBackground(

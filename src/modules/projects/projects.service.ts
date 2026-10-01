@@ -1,9 +1,9 @@
 import { and, count, eq, ilike, inArray, or } from "drizzle-orm";
 import { getDb } from "@db";
-import { projectDocuments, projectSites, projects, users } from "@db/schema";
+import { bills, customers, dprRecords, projectDocuments, projects, projectSites, sitePlans, users } from "@db/schema";
 import { normalizeKey } from "@modules/master-import/master-import.mapper";
 import { auditService } from "@services";
-import { buildPaginationMeta, cleanObject, isForeignKeyViolation, parsePagination, toEntityInUseError, toSearchPattern } from "@utils";
+import { buildPaginationMeta, cleanObject, parsePagination, toSearchPattern } from "@utils";
 import { projectsDeletionService } from "./projects-deletion.service";
 import type {
   CreateProjectBody,
@@ -185,27 +185,34 @@ export const projectsService = {
 
     const resolvedIds = existing.map((row) => row.id);
 
-    try {
-      await db.transaction(async (tx) => {
-        await tx.delete(projects).where(inArray(projects.id, resolvedIds));
-      });
-    } catch (error) {
-      if (isForeignKeyViolation(error)) {
-        throw toEntityInUseError(
-          error,
-          "Some selected projects have associated records (e.g. customers, bills, or sites) and cannot be deleted. Please resolve them first.",
-        );
-      }
-      throw error;
-    }
+    // Same cascade as the single-project delete flow (projectsDeletionService.execute) -
+    // a bare `DELETE` here hits the same FK restrictions that service already handles - but
+    // batched with `inArray` across all selected projects in one transaction instead of
+    // looping execute() per project, which was correct but far slower for multiple selections.
+    const totalAffected = await db.transaction(async (tx) => {
+      const [sitePlanCount, dprCount, billCount, customerCount] = await Promise.all([
+        tx.select({ value: count() }).from(sitePlans).where(inArray(sitePlans.projectId, resolvedIds)),
+        tx.select({ value: count() }).from(dprRecords).where(inArray(dprRecords.projectId, resolvedIds)),
+        tx.select({ value: count() }).from(bills).where(inArray(bills.projectId, resolvedIds)),
+        tx.select({ value: count() }).from(customers).where(inArray(customers.projectId, resolvedIds)),
+      ]);
+
+      await tx.delete(sitePlans).where(inArray(sitePlans.projectId, resolvedIds));
+      await tx.delete(dprRecords).where(inArray(dprRecords.projectId, resolvedIds));
+      await tx.delete(bills).where(inArray(bills.projectId, resolvedIds));
+      await tx.delete(customers).where(inArray(customers.projectId, resolvedIds));
+      await tx.delete(projects).where(inArray(projects.id, resolvedIds));
+
+      return (sitePlanCount[0]?.value ?? 0) + (dprCount[0]?.value ?? 0) + (billCount[0]?.value ?? 0) + (customerCount[0]?.value ?? 0);
+    });
 
     await auditService.log({
       userId,
       module: "Projects",
-      action: "Bulk Deleted Projects",
+      action: "Bulk Deleted Projects (cascade)",
       recordId: `${resolvedIds.length} projects`,
-      description: `Bulk deleted ${resolvedIds.length} project${resolvedIds.length === 1 ? "" : "s"}: ${existing.map((row) => row.name).join(", ")}`,
-      metadata: { count: resolvedIds.length, projectIds: resolvedIds },
+      description: `Bulk deleted ${resolvedIds.length} project${resolvedIds.length === 1 ? "" : "s"} and ${totalAffected} related record${totalAffected === 1 ? "" : "s"}: ${existing.map((row) => row.name).join(", ")}`,
+      metadata: { count: resolvedIds.length, projectIds: resolvedIds, totalAffected },
     });
 
     return { count: resolvedIds.length };

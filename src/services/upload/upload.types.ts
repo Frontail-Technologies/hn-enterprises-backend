@@ -1,4 +1,4 @@
-export type UploadDriver = "local" | "cloudinary" | "s3";
+export type UploadDriver = "local" | "cloudinary" | "s3" | "r2";
 
 export type UploadContext = {
   module: string;

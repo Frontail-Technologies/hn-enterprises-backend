@@ -22,6 +22,13 @@ export const AWS_S3_ENDPOINT = process.env.AWS_S3_ENDPOINT;
 export const AWS_S3_PUBLIC_URL = process.env.AWS_S3_PUBLIC_URL;
 export const AWS_S3_FORCE_PATH_STYLE = process.env.AWS_S3_FORCE_PATH_STYLE === "true";
 
+export const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID;
+export const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID;
+export const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY;
+export const R2_BUCKET = process.env.R2_BUCKET;
+export const R2_ENDPOINT = process.env.R2_ENDPOINT;
+export const R2_PUBLIC_URL = process.env.R2_PUBLIC_URL;
+
 export const UPLOAD_OPTIMIZATION_ENABLED = process.env.UPLOAD_OPTIMIZATION_ENABLED !== "false";
 export const UPLOAD_IMAGE_MAX_WIDTH = Number(process.env.UPLOAD_IMAGE_MAX_WIDTH || 1600);
 export const UPLOAD_IMAGE_MAX_HEIGHT = Number(process.env.UPLOAD_IMAGE_MAX_HEIGHT || 1600);

@@ -177,7 +177,7 @@ function projectDependencies(
     {
       key: "bills",
       label: "Bills",
-      action: "block",
+      action: "delete",
       count: async (db) =>
         scalarCount(
           countOf(db).from(bills).where(eq(bills.projectId, projectId)),
@@ -188,24 +188,20 @@ function projectDependencies(
           .from(bills)
           .where(eq(bills.projectId, projectId))
           .limit(5),
-      blockReason: (n) =>
-        `${n} bill${n === 1 ? "" : "s"} exist for this project. Billing/financial records are never deleted automatically.`,
     },
     {
       key: "sitePlans",
       label: "Site Plans",
-      action: "block",
+      action: "delete",
       count: async (db) =>
         scalarCount(
           countOf(db).from(sitePlans).where(eq(sitePlans.projectId, projectId)),
         ),
-      blockReason: (n) =>
-        `${n} site plan${n === 1 ? "" : "s"} exist for this project's daily scheduling history.`,
     },
     {
       key: "dprRecords",
       label: "DPR Records",
-      action: "block",
+      action: "delete",
       count: async (db) =>
         scalarCount(
           countOf(db)
@@ -224,8 +220,6 @@ function projectDependencies(
             .where(eq(dprRecords.projectId, projectId))
             .limit(5)
         ).map((row) => ({ id: row.id, label: `${row.date} (${row.status})` })),
-      blockReason: (n) =>
-        `${n} DPR record${n === 1 ? "" : "s"} exist - daily progress reports are operational history and are never deleted automatically.`,
     },
     {
       key: "payments",
@@ -317,6 +311,16 @@ export const projectsDeletionService = {
         );
       }
 
+      // sitePlans/dprRecords restrict-reference projectId, customerId and siteId, and bills
+      // restrict-references projectId - all must go before customers/projects or the FK
+      // constraints reject the delete. Everything else (projectSites, projectDocuments,
+      // customerDocuments, customerNotes, customerLmcPipeRecords, complaints,
+      // workProgressUpdates, billPayments) cascades automatically via the schema's own
+      // ON DELETE CASCADE; payments/materialTransactions/auditLogs/staff are ON DELETE SET
+      // NULL (detach), so they're left alone here.
+      await tx.delete(sitePlans).where(eq(sitePlans.projectId, projectId));
+      await tx.delete(dprRecords).where(eq(dprRecords.projectId, projectId));
+      await tx.delete(bills).where(eq(bills.projectId, projectId));
       await tx.delete(customers).where(eq(customers.projectId, projectId));
       await tx.delete(projects).where(eq(projects.id, projectId));
 
