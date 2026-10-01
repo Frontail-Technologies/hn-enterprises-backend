@@ -1,4 +1,5 @@
 import nodemailer, { type Transporter } from "nodemailer";
+import { Resend } from "resend";
 import {
   EMAIL_FROM,
   EMAIL_PROVIDER,
@@ -18,29 +19,30 @@ type SendEmailInput = {
   text: string;
 };
 
-async function sendWithResend(input: SendEmailInput) {
+let resendClient: Resend | null = null;
+
+function getResendClient() {
+  if (resendClient) return resendClient;
+
   if (!RESEND_API_KEY) {
     throw new Error("RESEND_API_KEY is required for resend email provider");
   }
 
-  const response = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${RESEND_API_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      from: EMAIL_FROM,
-      to: [input.to],
-      subject: input.subject,
-      html: input.html,
-      text: input.text,
-    }),
+  resendClient = new Resend(RESEND_API_KEY);
+  return resendClient;
+}
+
+async function sendWithResend(input: SendEmailInput) {
+  const { error } = await getResendClient().emails.send({
+    from: EMAIL_FROM,
+    to: [input.to],
+    subject: input.subject,
+    html: input.html,
+    text: input.text,
   });
 
-  if (!response.ok) {
-    const message = await response.text().catch(() => "Unknown email provider error");
-    throw new Error(`Unable to send email: ${message}`);
+  if (error) {
+    throw new Error(`Unable to send email: ${error.message}`);
   }
 }
 
