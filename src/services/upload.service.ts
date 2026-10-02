@@ -1,5 +1,4 @@
 import { UPLOAD_DRIVER, UPLOAD_KEEP_ORIGINAL, UPLOAD_OPTIMIZATION_ENABLED } from "@constants";
-import { backgroundJobService } from "./background-job.service";
 import { cloudinaryUploadProvider } from "./upload/cloudinary-upload.provider";
 import { fileOptimizerService } from "./upload/file-optimizer.service";
 import { localUploadProvider } from "./upload/local-upload.provider";
@@ -23,65 +22,46 @@ function getUploadDriver(): UploadDriver {
   throw new Error(`Unsupported UPLOAD_DRIVER "${UPLOAD_DRIVER}". Use local, cloudinary, s3 or r2.`);
 }
 
-function optimizeInBackground(
-  storedFile: StoredFile,
-  originalFile: File,
-  context: UploadContext,
-  driver: UploadDriver,
-) {
-  backgroundJobService.enqueue(`optimize-upload:${storedFile.storageKey}`, async () => {
-    const optimizedFile = await fileOptimizerService.optimize(originalFile);
-
-    if (!optimizedFile.optimized) {
-      console.info("[upload:optimization-skipped]", {
-        storageKey: storedFile.storageKey,
-        reason: optimizedFile.reason,
-      });
-      return;
-    }
-
-    const optimizedStoredFile = await providers[driver].store(optimizedFile.file, {
-      ...context,
-      recordId: context.recordId ?? storedFile.storageKey,
-    });
-
-    if (!UPLOAD_KEEP_ORIGINAL) {
-      await providers[driver].remove?.(storedFile.storageKey);
-    }
-
-    console.info("[upload:optimized]", {
-      originalStorageKey: storedFile.storageKey,
-      optimizedStorageKey: optimizedStoredFile.storageKey,
-      originalSize: optimizedFile.originalSize,
-      optimizedSize: optimizedFile.optimizedSize,
-      compressionRatio: Number(
-        (optimizedFile.optimizedSize / Math.max(optimizedFile.originalSize, 1)).toFixed(3),
-      ),
-    });
-
-    // Phase tables will update uploaded-file metadata here once file records exist.
-  });
-}
-
 export const uploadService = {
   async store(file: File, context: UploadContext): Promise<StoredFile> {
     uploadValidatorService.validate(file);
 
     const driver = getUploadDriver();
-    const storedFile = await providers[driver].store(file, context);
+    const canOptimize = UPLOAD_OPTIMIZATION_ENABLED && fileOptimizerService.canOptimize(file);
+    // Optimize before the (one and only) store call, rather than uploading the original
+    // and optimizing afterward - a prior version stored the optimized file separately in
+    // the background with no step that ever pointed the saved record at it, so every
+    // upload silently kept serving the original, uncompressed file forever.
+    const optimizedResult = canOptimize ? await fileOptimizerService.optimize(file) : null;
 
-    if (UPLOAD_OPTIMIZATION_ENABLED && fileOptimizerService.canOptimize(file)) {
-      optimizeInBackground(storedFile, file, context, driver);
+    if (optimizedResult && !optimizedResult.optimized) {
+      console.info("[upload:optimization-skipped]", { fileName: file.name, reason: optimizedResult.reason });
+    }
+
+    const fileToStore = optimizedResult?.optimized ? optimizedResult.file : file;
+    const storedFile = await providers[driver].store(fileToStore, context);
+
+    if (optimizedResult?.optimized && UPLOAD_KEEP_ORIGINAL) {
+      // Archival copy only - never referenced/served, so its own storage failing shouldn't fail the upload.
+      await providers[driver]
+        .store(file, { ...context, recordId: context.recordId ?? storedFile.storageKey })
+        .catch((error) => console.error("[upload:keep-original-failed]", { storageKey: storedFile.storageKey, error }));
+    }
+
+    if (optimizedResult?.optimized) {
+      console.info("[upload:optimized]", {
+        storageKey: storedFile.storageKey,
+        originalSize: optimizedResult.originalSize,
+        optimizedSize: optimizedResult.optimizedSize,
+        compressionRatio: Number((optimizedResult.optimizedSize / Math.max(optimizedResult.originalSize, 1)).toFixed(3)),
+      });
     }
 
     return {
       ...storedFile,
-      optimized: false,
+      optimized: Boolean(optimizedResult?.optimized),
       originalSize: file.size,
-      metadata: {
-        ...storedFile.metadata,
-        optimizationStatus: fileOptimizerService.canOptimize(file) ? "queued" : "not_applicable",
-      },
+      ...(optimizedResult?.optimized ? { optimizedSize: optimizedResult.optimizedSize } : {}),
     };
   },
 
