@@ -398,8 +398,19 @@ export const masterImportService = {
         confirmedBy: user.id,
         confirmedAt: new Date(),
         updatedAt: new Date(),
+        // Fold the confirm-time outcome into the batch's own summary before the
+        // row-level data is deleted below, so what happened stays auditable at
+        // the (lightweight) batch level even once the raw/normalized per-row
+        // JSON is gone.
+        summary: { ...batch.summary, projectsCreated, sitesCreated, customersCreated, rowsRejected, failed },
       })
       .where(eq(importBatches.id, batchId));
+
+    // The row data has already been copied into projects/projectSites/customers (or
+    // rejected, with the reason captured in the summary above) - keep the batch as a
+    // lightweight audit record, but there's no reason to keep every row's full raw/
+    // normalized JSON blob around indefinitely once confirm has actually run.
+    await db.delete(importRows).where(eq(importRows.batchId, batchId));
 
     return {
       batchId,
