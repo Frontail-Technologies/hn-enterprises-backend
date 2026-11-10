@@ -1,6 +1,6 @@
 import { and, count, eq, gte, ne, sql } from "drizzle-orm";
 import { getDb } from "@db";
-import { dprRecords, projects, staff, users } from "@db/schema";
+import { dprRecords, projects, projectSites, staff, users } from "@db/schema";
 import { projectPaymentCondition } from "@modules/payments/payments.service";
 import { dashboardStatsService } from "@modules/stats/dashboard-stats.service";
 
@@ -115,11 +115,17 @@ async function getTeamCounts(projectId: string) {
 
   const [[supervisorRow], [plumberRow], [staffCount]] = await Promise.all([
     db.execute<{ value: string }>(sql`
-      SELECT COUNT(DISTINCT supervisor_id) as value FROM (
-        SELECT supervisor_id FROM project_sites WHERE project_id = ${projectId} AND supervisor_id IS NOT NULL
+      SELECT COUNT(DISTINCT distinct_supervisors.supervisor_id) as value FROM (
+        SELECT ${projectSites.supervisorId} as supervisor_id FROM ${projectSites}
+        WHERE ${projectSites.projectId} = ${projectId} AND ${projectSites.supervisorId} IS NOT NULL
         UNION
-        SELECT supervisor_id FROM customers WHERE project_id = ${projectId} AND supervisor_id IS NOT NULL AND status != 'archived'
+        SELECT ${staff.userId} as supervisor_id FROM ${staff}
+        INNER JOIN ${users} ON ${staff.userId} = ${users.id}
+        WHERE ${staff.assignedProjectId} = ${projectId}
+          AND ${users.role} = 'supervisor' AND ${users.status} = 'active'
       ) distinct_supervisors
+      INNER JOIN ${users} ON ${users.id} = distinct_supervisors.supervisor_id
+      WHERE ${users.status} = 'active'
     `),
     db.execute<{ value: string }>(sql`
       SELECT COUNT(DISTINCT plumber_id) as value

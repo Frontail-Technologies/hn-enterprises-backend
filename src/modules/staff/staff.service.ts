@@ -40,6 +40,7 @@ const staffSelection = {
     username: users.username,
     email: users.email,
     mobile: users.mobile,
+    avatarUrl: users.avatarUrl,
     role: users.role,
     status: users.status,
     lastLoginAt: users.lastLoginAt,
@@ -175,12 +176,16 @@ export const staffService = {
 
     if (input.user) {
       if (input.user.role) assertCanAssignRole(actorRole, input.user.role);
-      const userPatch = cleanObject({
-        name: input.user.name,
-        mobile: input.user.mobile,
-        role: input.user.role,
-        status: input.user.status,
-      });
+      const userPatch = {
+        ...cleanObject({
+          name: input.user.name,
+          mobile: input.user.mobile,
+          role: input.user.role,
+          status: input.user.status,
+        }),
+        // cleanObject drops "" and null, so the photo is handled explicitly: "" removes it.
+        ...(input.user.avatarUrl !== undefined ? { avatarUrl: input.user.avatarUrl || null } : {}),
+      };
       if (Object.keys(userPatch).length) {
         await db.update(users).set({ ...userPatch, updatedAt: new Date() }).where(eq(users.id, existing.userId));
       }

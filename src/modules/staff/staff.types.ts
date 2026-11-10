@@ -45,6 +45,8 @@ export type CreateStaffBody = {
 export type UpdateStaffUserInput = {
   name?: string;
   mobile?: string;
+  /** Profile photo URL; "" removes it. */
+  avatarUrl?: string;
   role?: UserRole;
   status?: UserStatus;
 };

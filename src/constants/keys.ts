@@ -68,6 +68,10 @@ export const SMTP_SECURE = process.env.SMTP_SECURE === "true";
 export const SMTP_USER = process.env.SMTP_USER;
 export const SMTP_PASSWORD = process.env.SMTP_PASSWORD;
 export const PASSWORD_RESET_OTP_EXPIRY_MINUTES = Number(process.env.PASSWORD_RESET_OTP_EXPIRY_MINUTES || 10);
+/** Admin-panel sign-in lifetime (days without use before re-login). Sliding: each refresh restarts it. */
+export const ADMIN_SESSION_DAYS = Number(process.env.ADMIN_SESSION_DAYS || 30);
+/** Everyone else (supervisors etc., mostly the mobile app). */
+export const DEFAULT_SESSION_DAYS = Number(process.env.DEFAULT_SESSION_DAYS || 7);
 export const PASSWORD_RESET_OTP_MAX_ATTEMPTS = Number(process.env.PASSWORD_RESET_OTP_MAX_ATTEMPTS || 5);
 
 export const EXPO_ACCESS_TOKEN = process.env.EXPO_ACCESS_TOKEN;

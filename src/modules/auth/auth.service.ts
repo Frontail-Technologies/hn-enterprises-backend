@@ -1,3 +1,4 @@
+import { sessionDaysForRole } from "@constants";
 import { and, desc, eq, gt, isNull, or } from "drizzle-orm";
 import { randomInt, randomUUID } from "node:crypto";
 import {
@@ -39,6 +40,7 @@ function publicUser(user: UserRecord) {
     username: user.username,
     email: user.email,
     mobile: user.mobile,
+    avatarUrl: user.avatarUrl,
     role: user.role,
     status: user.status,
     lastLoginAt: user.lastLoginAt,
@@ -114,11 +116,11 @@ async function getActiveUserBySession(userId: string, sessionId: string) {
   };
 }
 
-async function createRefreshToken(userId: string, sessionId: string, meta?: RequestMeta) {
+async function createRefreshToken(userId: string, sessionId: string, meta?: RequestMeta, role?: string | null) {
   const db = getDb();
   const token = generateSecureToken();
   const tokenHash = hashToken(token);
-  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+  const expiresAt = new Date(Date.now() + sessionDaysForRole(role) * 24 * 60 * 60 * 1000);
 
   await db.insert(refreshTokens).values({
     userId,
@@ -219,8 +221,8 @@ export const authService = {
     return getActiveUserBySession(userId, sessionId);
   },
 
-  async createRefreshToken(userId: string, sessionId: string, meta?: RequestMeta) {
-    return createRefreshToken(userId, sessionId, meta);
+  async createRefreshToken(userId: string, sessionId: string, meta?: RequestMeta, role?: string | null) {
+    return createRefreshToken(userId, sessionId, meta, role);
   },
 
   async rotateRefreshToken(token: string, meta?: RequestMeta) {
@@ -269,6 +271,7 @@ export const authService = {
       refreshToken.userId,
       refreshToken.sessionId,
       meta,
+      user.role,
     );
 
     return {

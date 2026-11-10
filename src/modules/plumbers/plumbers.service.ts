@@ -48,6 +48,7 @@ export const plumbersService = {
         normalizedName: normalizeKey(input.name),
         type: input.type ?? "individual",
         contactNumber: input.contactNumber || null,
+        avatarUrl: input.avatarUrl || null,
         status: input.status ?? "active",
         remarks: input.remarks || null,
         createdBy: userId,
@@ -63,13 +64,17 @@ export const plumbersService = {
     await getPlumberOrThrow(id);
     const db = getDb();
 
-    const patch = cleanObject({
-      name: input.name,
-      type: input.type,
-      contactNumber: input.contactNumber,
-      status: input.status,
-      remarks: input.remarks,
-    });
+    const patch = {
+      ...cleanObject({
+        name: input.name,
+        type: input.type,
+        contactNumber: input.contactNumber,
+        status: input.status,
+        remarks: input.remarks,
+      }),
+      // cleanObject drops "" and null, so the photo is handled explicitly: "" removes it.
+      ...(input.avatarUrl !== undefined ? { avatarUrl: input.avatarUrl || null } : {}),
+    };
 
     const [plumber] = await db
       .update(plumbers)

@@ -24,6 +24,8 @@ export type CreateUserBody = {
 export type UpdateUserBody = {
   name?: string;
   mobile?: string;
+  /** Profile photo URL; "" removes it. */
+  avatarUrl?: string;
   role?: UserRole;
   status?: UserStatus;
 };

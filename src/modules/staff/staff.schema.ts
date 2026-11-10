@@ -56,6 +56,8 @@ export const updateStaffBodySchema = t.Composite([
       t.Object({
         name: t.Optional(t.String({ minLength: 1 })),
         mobile: t.Optional(t.String()),
+        /** Profile photo URL from /uploads; "" removes it. */
+        avatarUrl: t.Optional(t.String()),
         role: t.Optional(userRoleSchema),
         status: t.Optional(userStatusSchema),
       }),

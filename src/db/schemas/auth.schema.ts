@@ -28,6 +28,8 @@ export const users = pgTable(
     username: text("username").notNull(),
     email: text("email").notNull(),
     mobile: text("mobile"),
+    /** Profile photo URL (set by admins from the admin panel). */
+    avatarUrl: text("avatar_url"),
     passwordHash: text("password_hash").notNull(),
     role: userRoleEnum("role").notNull().default("viewer"),
     status: userStatusEnum("status").notNull().default("active"),

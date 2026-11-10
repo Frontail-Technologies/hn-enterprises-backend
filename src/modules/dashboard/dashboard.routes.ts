@@ -12,4 +12,13 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
         set,
       }),
     { requireAuth: true },
+  )
+  .get(
+    "/charts",
+    ({ query, set }) =>
+      dashboardController.getCharts({
+        query: query as { projectId?: string; period?: string; month?: string; year?: string },
+        set,
+      }),
+    { requireAuth: true },
   );

@@ -3,6 +3,7 @@ import { getDb } from "@db";
 import {
   attendance,
   auditLogs,
+  billPayments,
   bills,
   customers,
   dprRecords,
@@ -481,6 +482,9 @@ async function getRecentActivity(): Promise<DashboardActivityItem[]> {
     db
       .select({ id: auditLogs.id, module: auditLogs.module, action: auditLogs.action, createdAt: auditLogs.createdAt })
       .from(auditLogs)
+      // Sign-ins and password events are frequent and drown out operational
+      // activity on the dashboard; they stay in Audit Logs / Recent Activity.
+      .where(ne(auditLogs.module, "auth"))
       .orderBy(desc(auditLogs.createdAt))
       .limit(6),
   ]);
@@ -517,7 +521,144 @@ async function getRecentActivity(): Promise<DashboardActivityItem[]> {
     .slice(0, 6);
 }
 
+
+// ---------------------------------------------------------------------------
+// Charts (GET /dashboard/charts) — same project/period filters as the overview.
+// ---------------------------------------------------------------------------
+
+const DAY_MS = 86_400_000;
+const STAGE_KEYS = ["survey", "workable", "plumbing_gi", "gc", "commissioning", "conversion"] as const;
+
+type ChartBucketUnit = "day" | "month";
+
+const pad2 = (value: number) => String(value).padStart(2, "0");
+const dayBucket = (date: Date) => `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+const monthBucket = (date: Date) => `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-01`;
+
+function bucketKeys(from: Date, to: Date, unit: ChartBucketUnit) {
+  const keys: string[] = [];
+  const cursor = new Date(from.getFullYear(), from.getMonth(), unit === "day" ? from.getDate() : 1);
+  while (cursor <= to) {
+    keys.push(unit === "day" ? dayBucket(cursor) : monthBucket(cursor));
+    if (unit === "day") cursor.setDate(cursor.getDate() + 1);
+    else cursor.setMonth(cursor.getMonth() + 1);
+  }
+  return keys;
+}
+
+/** Customers through each field stage — all-time, same definitions as project health. */
+async function getPipeline(projectId: string | undefined) {
+  const counts = await dashboardStatsService.getAdminCounts(projectId);
+  return {
+    total: counts["total-customers"] ?? 0,
+    stages: [
+      { key: "survey", label: "Survey", done: counts["survey-done"] ?? 0 },
+      { key: "gi", label: "GI", done: counts["gi-done"] ?? 0 },
+      { key: "gc", label: "GC", done: counts["gc-done"] ?? 0 },
+      { key: "conversion", label: "Conversion", done: counts["conversion-done"] ?? 0 },
+      { key: "jmr", label: "JMR", done: counts["jmr-done"] ?? 0 },
+    ],
+  };
+}
+
+/** Field updates per day (periods up to 62 days) or per month, split by stage, gaps filled with zeros. */
+async function getFieldTrend(projectId: string | undefined, range: { from: Date; to: Date }) {
+  const db = getDb();
+  const unit: ChartBucketUnit = range.to.getTime() - range.from.getTime() <= 62 * DAY_MS ? "day" : "month";
+  const rows = await db.execute<{ bucket: string; stage: string; n: number }>(sql`
+    SELECT to_char(date_trunc(${unit}::text, w.created_at AT TIME ZONE 'Asia/Kolkata'), 'YYYY-MM-DD') AS bucket, w.stage::text AS stage, COUNT(*)::int AS n
+    FROM work_progress_updates w
+    JOIN customers c ON c.id = w.customer_id
+    WHERE w.created_at >= ${range.from.toISOString()}::timestamptz AND w.created_at <= ${range.to.toISOString()}::timestamptz
+      ${projectId ? sql`AND c.project_id = ${projectId}` : sql``}
+    GROUP BY 1, 2
+  `);
+  const byBucket = new Map<string, Record<string, number>>();
+  for (const row of rows) {
+    const entry = byBucket.get(row.bucket) ?? {};
+    entry[row.stage] = Number(row.n);
+    byBucket.set(row.bucket, entry);
+  }
+  return {
+    unit,
+    stages: STAGE_KEYS,
+    points: bucketKeys(range.from, range.to, unit).map((bucket) => {
+      const byStage = byBucket.get(bucket) ?? {};
+      return { bucket, total: Object.values(byStage).reduce((total, n) => total + n, 0), byStage };
+    }),
+  };
+}
+
+/** Approved expenses per category within the period. */
+async function getExpensesByCategory(projectId: string | undefined, range: { from: Date; to: Date }) {
+  const db = getDb();
+  const rows = await db
+    .select({ category: payments.category, amount: sum(payments.amount) })
+    .from(payments)
+    .where(
+      and(
+        eq(payments.status, "approved"),
+        gte(payments.paymentDate, range.from),
+        lte(payments.paymentDate, range.to),
+        projectId ? projectPaymentCondition(projectId) : undefined,
+      ),
+    )
+    .groupBy(payments.category);
+  return rows
+    .map((row) => ({ category: row.category, amount: Number(row.amount ?? 0) }))
+    .filter((row) => row.amount > 0)
+    .sort((a, b) => b.amount - a.amount);
+}
+
+/** Per month of `year`: billed (bill total + tax, by bill date) vs collected (bill payments, by payment date). */
+async function getBillingByMonth(projectId: string | undefined, year: number) {
+  const db = getDb();
+  const from = new Date(year, 0, 1);
+  const to = new Date(year, 11, 31, 23, 59, 59);
+  const [billedRows, collectedRows] = await Promise.all([
+    db.execute<{ m: number; amount: string }>(sql`
+      SELECT EXTRACT(MONTH FROM b.bill_date AT TIME ZONE 'Asia/Kolkata')::int AS m, SUM(b.total_amount + b.tax) AS amount
+      FROM bills b
+      WHERE b.bill_date >= ${from.toISOString()}::timestamptz AND b.bill_date <= ${to.toISOString()}::timestamptz
+        ${projectId ? sql`AND b.project_id = ${projectId}` : sql``}
+      GROUP BY 1
+    `),
+    db.execute<{ m: number; amount: string }>(sql`
+      SELECT EXTRACT(MONTH FROM bp.payment_date AT TIME ZONE 'Asia/Kolkata')::int AS m, SUM(bp.amount) AS amount
+      FROM ${billPayments} bp
+      JOIN bills b ON b.id = bp.bill_id
+      WHERE bp.payment_date >= ${from.toISOString()}::timestamptz AND bp.payment_date <= ${to.toISOString()}::timestamptz
+        ${projectId ? sql`AND b.project_id = ${projectId}` : sql``}
+      GROUP BY 1
+    `),
+  ]);
+  const billed = new Map(billedRows.map((row) => [Number(row.m), Number(row.amount ?? 0)]));
+  const collected = new Map(collectedRows.map((row) => [Number(row.m), Number(row.amount ?? 0)]));
+  return {
+    year,
+    months: Array.from({ length: 12 }, (_, index) => ({
+      month: index + 1,
+      billed: billed.get(index + 1) ?? 0,
+      collected: collected.get(index + 1) ?? 0,
+    })),
+  };
+}
+
 export const dashboardService = {
+  async getCharts(query: DashboardOverviewQuery) {
+    const projectId = query.projectId && query.projectId !== "all" ? query.projectId : undefined;
+    const range = getPeriodRange(query.period, query.month, query.year);
+    // Billing is always shown per month for one year: the selected year, else the period's year.
+    const year = query.year && (query.period === "custom-month" || query.period === "custom-year") ? query.year : range.from.getFullYear();
+    const [pipeline, fieldTrend, expensesByCategory, billing] = await Promise.all([
+      getPipeline(projectId),
+      getFieldTrend(projectId, range),
+      getExpensesByCategory(projectId, range),
+      getBillingByMonth(projectId, year),
+    ]);
+    return { period: { from: range.from.toISOString(), to: range.to.toISOString() }, pipeline, fieldTrend, expensesByCategory, billing };
+  },
+
   async getOverview(query: DashboardOverviewQuery) {
     const projectId = query.projectId && query.projectId !== "all" ? query.projectId : undefined;
     const range = getPeriodRange(query.period, query.month, query.year);

@@ -16,6 +16,8 @@ export const createPlumberBodySchema = t.Object({
   name: t.String({ minLength: 1 }),
   type: t.Optional(plumberTypeSchema),
   contactNumber: t.Optional(t.String()),
+  /** Profile photo URL from /uploads; "" removes it. */
+  avatarUrl: t.Optional(t.String()),
   status: t.Optional(plumberStatusSchema),
   remarks: t.Optional(t.String()),
 });

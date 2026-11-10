@@ -19,3 +19,4 @@ export * from "./schemas/work-progress.schema";
 export * from "./schemas/complaint.schema";
 export * from "./schemas/user-preferences.schema";
 export * from "./schemas/activity-event.schema";
+export * from "./schemas/report-template.schema";

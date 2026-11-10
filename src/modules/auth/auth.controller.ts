@@ -1,4 +1,4 @@
-import { COOKIE_CONFIGS } from "@constants";
+import { COOKIE_CONFIGS, refreshCookieFor } from "@constants";
 import { checkRateLimit } from "@utils";
 import { authService } from "./auth.service";
 import {
@@ -72,6 +72,7 @@ export const authController = {
         result.user.id,
         result.payload.sessionId,
         meta,
+        result.user.role,
       );
 
       cookieSlot(cookie, "accessToken").set({
@@ -81,7 +82,7 @@ export const authController = {
 
       cookieSlot(cookie, "refreshToken").set({
         value: refreshToken,
-        ...COOKIE_CONFIGS.refreshToken,
+        ...refreshCookieFor(result.user.role),
       });
 
       return {
@@ -149,7 +150,7 @@ export const authController = {
 
       cookieSlot(cookie, "refreshToken").set({
         value: result.refreshToken,
-        ...COOKIE_CONFIGS.refreshToken,
+        ...refreshCookieFor(result.user.role),
       });
 
       return {

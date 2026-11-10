@@ -47,7 +47,7 @@ async function getSupervisors(projectId: string, sites: ProjectSiteRow[]) {
   if (!distinctIds.length) return [];
 
   const supervisorUsers = await db
-    .select({ id: users.id, name: users.name })
+    .select({ id: users.id, name: users.name, avatarUrl: users.avatarUrl })
     .from(users)
     .where(and(inArray(users.id, distinctIds), eq(users.status, "active")));
 
@@ -67,6 +67,7 @@ async function getSupervisors(projectId: string, sites: ProjectSiteRow[]) {
     .map((user) => ({
       id: user.id,
       name: user.name,
+      avatarUrl: user.avatarUrl,
       role: "Supervisor" as const,
       sites: sitesBySupervisor.get(user.id) ?? [],
       customerCount: projectCustomerCount,
@@ -112,7 +113,7 @@ async function getPlumbers(projectId: string, sites: ProjectSiteRow[]) {
   if (!distinctIds.length) return [];
 
   const plumberRows = await db
-    .select({ id: plumbers.id, name: plumbers.name })
+    .select({ id: plumbers.id, name: plumbers.name, avatarUrl: plumbers.avatarUrl })
     .from(plumbers)
     .where(and(inArray(plumbers.id, distinctIds), eq(plumbers.status, "active")));
 
@@ -133,6 +134,7 @@ async function getPlumbers(projectId: string, sites: ProjectSiteRow[]) {
     .map((plumber) => ({
       id: plumber.id,
       name: plumber.name,
+      avatarUrl: plumber.avatarUrl,
       role: "Plumber" as const,
       sites: sitesByPlumber.get(plumber.id) ?? [],
       customerCount: customerCountById.get(plumber.id) ?? 0,

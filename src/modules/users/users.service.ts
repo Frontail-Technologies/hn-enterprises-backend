@@ -63,6 +63,7 @@ export const usersService = {
           username: users.username,
           email: users.email,
           mobile: users.mobile,
+          avatarUrl: users.avatarUrl,
           role: users.role,
           status: users.status,
           lastLoginAt: users.lastLoginAt,
@@ -81,6 +82,7 @@ export const usersService = {
           username: users.username,
           email: users.email,
           mobile: users.mobile,
+          avatarUrl: users.avatarUrl,
           role: users.role,
           status: users.status,
           lastLoginAt: users.lastLoginAt,
@@ -138,12 +140,16 @@ export const usersService = {
     await getUserOrThrow(id);
     const db = getDb();
 
-    const patch = cleanObject({
-      name: input.name,
-      mobile: input.mobile,
-      role: input.role,
-      status: input.status,
-    });
+    const patch = {
+      ...cleanObject({
+        name: input.name,
+        mobile: input.mobile,
+        role: input.role,
+        status: input.status,
+      }),
+      // cleanObject drops "" and null, so the photo is handled explicitly: "" removes it.
+      ...(input.avatarUrl !== undefined ? { avatarUrl: input.avatarUrl || null } : {}),
+    };
 
     const [user] = await db
       .update(users)

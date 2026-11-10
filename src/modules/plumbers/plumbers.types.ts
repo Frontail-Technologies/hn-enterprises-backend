@@ -15,6 +15,8 @@ export type CreatePlumberBody = {
   name: string;
   type?: PlumberType;
   contactNumber?: string;
+  /** Profile photo URL; "" removes it. */
+  avatarUrl?: string;
   status?: PlumberStatus;
   remarks?: string;
 };

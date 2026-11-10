@@ -13,6 +13,8 @@ export const plumbers = pgTable(
     normalizedName: text("normalized_name").notNull(),
     type: plumberTypeEnum("type").notNull().default("individual"),
     contactNumber: text("contact_number"),
+    /** Profile photo URL (set by admins from the admin panel). */
+    avatarUrl: text("avatar_url"),
     status: plumberStatusEnum("status").notNull().default("active"),
     remarks: text("remarks"),
     createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
