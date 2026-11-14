@@ -18,6 +18,9 @@ const app = new Elysia()
       message: "HN Enterprises API",
     })),
   )
-  .listen({ hostname: HOST, port: PORT });
+  // Bun closes a request after 10 s of silence by default, which surfaced in the
+  // admin as "Failed to fetch" on long imports/exports while the server carried
+  // on working. 255 s is Bun's maximum.
+  .listen({ hostname: HOST, port: PORT, idleTimeout: 255 });
 
 console.log(`HN Enterprises API running at ${app.server?.hostname}:${app.server?.port}`);
