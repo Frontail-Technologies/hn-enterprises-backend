@@ -12,6 +12,7 @@ import {
 } from "@utils";
 import type { UserRole } from "@types";
 import type { CreateStaffBody, StaffListQuery, UpdateStaffBody } from "./staff.types";
+import { forgetAuthUser } from "@plugins";
 
 const staffSelection = {
   id: staff.id,
@@ -188,6 +189,7 @@ export const staffService = {
       };
       if (Object.keys(userPatch).length) {
         await db.update(users).set({ ...userPatch, updatedAt: new Date() }).where(eq(users.id, existing.userId));
+        forgetAuthUser(existing.userId);
       }
     }
 

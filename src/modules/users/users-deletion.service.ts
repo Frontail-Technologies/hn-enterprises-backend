@@ -17,6 +17,7 @@ import { auditService } from "@services";
 import { EntityInUseError } from "@utils";
 import { computeDeleteImpact } from "../deletion/deletion.service";
 import type { DbHandle, DeleteImpactConfig, DeleteImpactResult } from "../deletion/deletion.types";
+import { forgetAuthUser } from "@plugins";
 
 function countOf(db: DbHandle) {
   return db.select({ value: count() });
@@ -180,6 +181,7 @@ export const usersDeletionService = {
 
       await usersDeletionService.clearActiveSiteAssignments(tx, userId);
       await tx.delete(users).where(eq(users.id, userId));
+      forgetAuthUser(userId);
       return { label: impact.entity.label, totalAffected: impact.totalAffected };
     });
 

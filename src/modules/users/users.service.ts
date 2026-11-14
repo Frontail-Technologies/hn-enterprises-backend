@@ -13,6 +13,7 @@ import {
 } from "@utils";
 import { usersDeletionService } from "./users-deletion.service";
 import type { CreateUserBody, ResetPasswordBody, UpdateUserBody, UserListQuery } from "./users.types";
+import { forgetAuthUser } from "@plugins";
 
 type UserRole = (typeof userRoleEnum.enumValues)[number];
 
@@ -158,6 +159,7 @@ export const usersService = {
       .returning();
 
     if (!user) throw new Error("Unable to update user");
+    forgetAuthUser(id);
     return sanitizeUser(user);
   },
 
@@ -208,6 +210,7 @@ export const usersService = {
       }
       await tx.delete(users).where(inArray(users.id, resolvedIds));
     });
+    forgetAuthUser(resolvedIds);
 
     return { count: resolvedIds.length, skippedSelf };
   },

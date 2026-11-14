@@ -7,6 +7,39 @@ import { accessTokenFromRequest } from "@modules/auth/auth.helpers";
 import type { AuthTokenPayload, UserRole } from "@types";
 import { eq } from "drizzle-orm";
 
+/**
+ * Every authenticated request used to look the user up in the database (in
+ * Singapore) just to confirm they are still active. Remember the answer for a
+ * short time instead; any change to a user clears their entry immediately (see
+ * forgetAuthUser), so the TTL only bounds changes made by another server.
+ */
+const USER_STATUS_TTL_MS = 30_000;
+const USER_STATUS_CACHE_MAX = 5_000;
+const userStatusCache = new Map<string, { status: string | null; expiresAt: number }>();
+
+/** Drop cached auth status for these users (call after any users-table change). */
+export function forgetAuthUser(userIds: string | string[]) {
+  for (const id of Array.isArray(userIds) ? userIds : [userIds]) userStatusCache.delete(id);
+}
+
+async function getUserStatus(userId: string): Promise<string | null> {
+  const now = Date.now();
+  const cached = userStatusCache.get(userId);
+  if (cached && cached.expiresAt > now) return cached.status;
+
+  const db = getDb();
+  const [user] = await db
+    .select({ status: users.status })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+
+  if (userStatusCache.size >= USER_STATUS_CACHE_MAX) userStatusCache.clear();
+  const status = user?.status ?? null;
+  userStatusCache.set(userId, { status, expiresAt: now + USER_STATUS_TTL_MS });
+  return status;
+}
+
 function normalizeRoles(roles: UserRole | UserRole[]) {
   return Array.isArray(roles) ? roles : [roles];
 }
@@ -34,21 +67,11 @@ export const auth = (app: Elysia) =>
         };
       }
 
-      const db = getDb();
-      const [user] = await db
-        .select({
-          id: users.id,
-          role: users.role,
-          status: users.status,
-          currentSessionId: users.currentSessionId,
-        })
-        .from(users)
-        .where(eq(users.id, payload.id))
-        .limit(1);
+      const status = await getUserStatus(payload.id);
 
       return {
         currentUser:
-          user?.status === "active"
+          status === "active"
             ? (payload as AuthTokenPayload)
             : null,
       };

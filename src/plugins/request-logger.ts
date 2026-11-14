@@ -39,8 +39,14 @@ export const requestLogger = new Elysia({ name: "request-logger" })
       ip: getClientIp(request),
     });
   })
-  .onAfterHandle(({ request, set }) => {
+  // Global: these hooks were local to this plugin, so they never ran for the
+  // module routes ("[api:done]" never appeared and no timing was recorded).
+  .onAfterHandle({ as: "global" }, ({ request, set }) => {
     const durationMs = Date.now() - (requestStarts.get(request) ?? Date.now());
+    // Server time for this request, shown in the browser's network panel, so
+    // slow server work can be told apart from slow network/hosting.
+    set.headers["Server-Timing"] = `app;dur=${durationMs}`;
+    set.headers["Timing-Allow-Origin"] = "*";
     console.info("[api:done]", {
       method: request.method,
       path: safeUrl(request),
@@ -48,8 +54,10 @@ export const requestLogger = new Elysia({ name: "request-logger" })
       durationMs,
     });
   })
-  .onError(({ request, set, code }) => {
+  .onError({ as: "global" }, ({ request, set, code }) => {
     const durationMs = Date.now() - (requestStarts.get(request) ?? Date.now());
+    set.headers["Server-Timing"] = `app;dur=${durationMs}`;
+    set.headers["Timing-Allow-Origin"] = "*";
     console.error("[api:error]", {
       method: request.method,
       path: safeUrl(request),

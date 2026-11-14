@@ -241,9 +241,13 @@ export const customersService = {
           requestedSortColumn
             ? [sortDirection(requestedSortColumn), orderDesc(fields.id)]
             : [orderDesc(fields.createdAt), orderDesc(fields.id)],
+        // The raw spreadsheet row kept from imports (importedFields /
+        // importedSource) is unused by every client but was sent three times
+        // per customer (customer, project, site) - the bulk of a 100-row page.
+        columns: { importedFields: false },
         with: {
-          project: true,
-          site: true,
+          project: { columns: { importedSource: false } },
+          site: { columns: { importedSource: false } },
           lmcPipeRecords: true,
           documents: true,
         },
