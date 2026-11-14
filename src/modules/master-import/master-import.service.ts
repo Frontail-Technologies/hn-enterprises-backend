@@ -1,4 +1,4 @@
-import { and, eq, ne } from "drizzle-orm";
+import { and, eq, inArray, ne } from "drizzle-orm";
 import { getDb } from "@db";
 import {
   customerLmcPipeRecords,
@@ -28,9 +28,9 @@ import type {
   PersistedImportRow,
 } from "./master-import.types";
 
-type ExistingProject = typeof projects.$inferSelect;
-type ExistingSite = typeof projectSites.$inferSelect;
-type ExistingCustomer = typeof customers.$inferSelect;
+type ExistingProject = Pick<typeof projects.$inferSelect, "id" | "normalizedCode" | "normalizedName" | "normalizedCity">;
+type ExistingSite = Pick<typeof projectSites.$inferSelect, "id" | "projectId" | "normalizedCode" | "normalizedName">;
+type ExistingCustomer = Pick<typeof customers.$inferSelect, "id" | "normalizedTrBpNumber">;
 type Db = ReturnType<typeof getDb>;
 type DbPipeStatus = "not_started" | "in_progress" | "laying_completed" | "testing_pending" | "testing_completed" | "purging_completed" | "not_required" | "on_hold";
 
@@ -250,144 +250,68 @@ export const masterImportService = {
     let customersCreated = 0;
     let rowsRejected = 0;
     const failed: { tempId: string; message: string }[] = [];
-    const projectIdByKey = new Map<string, string>();
-    const siteIdByKey = new Map<string, string>();
 
+    // 1. Split rows: rejected up front (issues / already exists) vs to import.
+    const rejectedIds: string[] = [];
+    const pending: PendingImportRow[] = [];
     for (const storedRow of storedRows) {
       if (storedRow.isRemoved) continue;
-
       const row = storedRow.normalizedData as unknown as NormalizedImportRow;
+      if (row.issues.length || row.existingCustomerId) rejectedIds.push(storedRow.id);
+      else pending.push({ storedRowId: storedRow.id, row, projectId: "", siteId: "" });
+    }
+    rowsRejected += rejectedIds.length;
+    await setImportRowStatus(rejectedIds, "rejected");
 
-      if (row.issues.length || row.existingCustomerId) {
-        rowsRejected += 1;
-        await db
-          .update(importRows)
-          .set({ status: "rejected" })
-          .where(eq(importRows.id, storedRow.id));
-        continue;
-      }
-
+    // 2. Projects and sites: created once each (there are only a handful), then
+    //    shared by every customer row that needs them.
+    const projectIdByKey = new Map<string, string>();
+    const siteIdByKey = new Map<string, string>();
+    const resolved: PendingImportRow[] = [];
+    for (const item of pending) {
+      const { row } = item;
       try {
-        const outcome = await db.transaction(async (tx) => {
-          let projectCreated = false;
-          let siteCreated = false;
+        const projectKey = getProjectKey(row);
+        let projectId = row.matchedProjectId ?? projectIdByKey.get(projectKey);
+        if (!projectId) {
+          projectId = await createImportProject(db, row, user.id);
+          projectsCreated += 1;
+          projectIdByKey.set(projectKey, projectId);
+        }
 
-          const projectKey = getProjectKey(row);
-          let projectId = row.matchedProjectId ?? projectIdByKey.get(projectKey);
+        const siteKey = getSiteKey(projectKey, row);
+        let siteId = row.matchedSiteId ?? siteIdByKey.get(siteKey);
+        if (!siteId) {
+          siteId = await createImportSite(db, projectId, row, user.id);
+          sitesCreated += 1;
+          siteIdByKey.set(siteKey, siteId);
+        }
 
-          if (!projectId) {
-            const [insertedProject] = await tx
-              .insert(projects)
-              .values({
-                name: row.projectName,
-                normalizedName: normalizeKey(row.projectName),
-                code: row.projectCode || null,
-                normalizedCode: row.projectCode ? normalizeKey(row.projectCode) : null,
-                city: row.city || null,
-                normalizedCity: row.city ? normalizeKey(row.city) : null,
-                importedSource: row.rawData,
-                createdBy: user.id,
-                updatedBy: user.id,
-              })
-              .returning({ id: projects.id });
-
-            if (!insertedProject) throw new Error("Unable to create project during import");
-            projectId = insertedProject.id;
-            projectCreated = true;
-            projectIdByKey.set(projectKey, projectId);
-          }
-
-          const siteKey = getSiteKey(projectKey, row);
-          let siteId = row.matchedSiteId ?? siteIdByKey.get(siteKey);
-
-          if (!siteId) {
-            const [insertedSite] = await tx
-              .insert(projectSites)
-              .values({
-                projectId,
-                name: row.siteName,
-                normalizedName: normalizeKey(row.siteName),
-                code: row.siteCode || null,
-                normalizedCode: row.siteCode ? normalizeKey(row.siteCode) : null,
-                city: row.city || null,
-                normalizedCity: row.city ? normalizeKey(row.city) : null,
-                address: row.siteAddress || row.fullAddress || null,
-                supervisorName: row.supervisorName || null,
-                importedSource: row.rawData,
-                createdBy: user.id,
-                updatedBy: user.id,
-              })
-              .returning({ id: projectSites.id });
-
-            if (!insertedSite) throw new Error("Unable to create site during import");
-            siteId = insertedSite.id;
-            siteCreated = true;
-            siteIdByKey.set(siteKey, siteId);
-          }
-
-          const { giMeasurements, progressMilestones } = applyBillingCompletionSync(row, user.id);
-
-          const [insertedCustomer] = await tx
-            .insert(customers)
-            .values({
-              projectId,
-              siteId,
-              trBpNumber: row.trBpNumber,
-              normalizedTrBpNumber: normalizeKey(row.trBpNumber),
-              mobileNumber: row.mobileNumber || null,
-              customerName: row.customerName,
-              normalizedCustomerName: normalizeKey(row.customerName),
-              fullAddress: row.fullAddress || null,
-              city: row.city || null,
-              connectionType: row.connectionType || null,
-              houseType: row.houseType || null,
-              scheme: row.scheme || null,
-              plumberName: row.plumberName || null,
-              giReportNumber: row.giReportNumber || null,
-              gcReportNumber: row.gcReportNumber || null,
-              conversionReportNumber: row.conversionReportNumber || null,
-              status: mapCustomerStatus(row.customerStatus),
-              survey: emptyToNull(row.survey),
-              giMeasurements,
-              valvesRegulators: emptyToNull(row.valvesRegulators),
-              fittingsAccessories: emptyToNull(row.fittingsAccessories),
-              lmcPipelineWork: emptyToNull(row.lmcPipelineWork),
-              mdpeFittings: emptyToNull(row.mdpeFittings),
-              commissioningConversion: emptyToNull(row.commissioningConversion),
-              billingCompletion: emptyToNull(row.billingCompletion),
-              progressMilestones,
-              customFields: emptyToNull(row.customFields),
-              importedFields: row.rawData,
-              createdBy: user.id,
-              updatedBy: user.id,
-            })
-            .returning({ id: customers.id });
-
-          if (!insertedCustomer) throw new Error("Unable to create customer during import");
-
-          await insertPipeRecords(tx, insertedCustomer.id, row.lmcPipeRecords, user.id);
-
-          await tx
-            .update(importRows)
-            .set({ status: "imported", importedCustomerId: insertedCustomer.id })
-            .where(eq(importRows.id, storedRow.id));
-
-          return { projectCreated, siteCreated };
-        });
-
-        if (outcome.projectCreated) projectsCreated += 1;
-        if (outcome.siteCreated) sitesCreated += 1;
-        customersCreated += 1;
+        resolved.push({ ...item, projectId, siteId });
       } catch (error) {
-        failed.push({
-          tempId: storedRow.id,
-          message: error instanceof Error ? error.message : "Unable to import this row",
-        });
-        await db
-          .update(importRows)
-          .set({ status: "rejected" })
-          .where(eq(importRows.id, storedRow.id))
-          .catch(() => undefined);
+        failed.push({ tempId: item.storedRowId, message: error instanceof Error ? error.message : "Unable to import this row" });
+        await setImportRowStatus([item.storedRowId], "rejected").catch(() => undefined);
+      }
+    }
+
+    // 3. Customers in chunks: one transaction and a handful of statements per
+    //    chunk instead of ~6 round trips per customer. If a chunk fails (e.g. one
+    //    bad row), redo just that chunk row by row so only the bad row fails.
+    for (let index = 0; index < resolved.length; index += CONFIRM_CHUNK_SIZE) {
+      const chunk = resolved.slice(index, index + CONFIRM_CHUNK_SIZE);
+      try {
+        await db.transaction((tx) => insertImportCustomers(tx, chunk, user.id));
+        customersCreated += chunk.length;
+      } catch {
+        for (const item of chunk) {
+          try {
+            await db.transaction((tx) => insertImportCustomers(tx, [item], user.id));
+            customersCreated += 1;
+          } catch (error) {
+            failed.push({ tempId: item.storedRowId, message: error instanceof Error ? error.message : "Unable to import this row" });
+            await setImportRowStatus([item.storedRowId], "rejected").catch(() => undefined);
+          }
+        }
       }
     }
 
@@ -424,6 +348,119 @@ export const masterImportService = {
   },
 };
 
+/** Rows per insert/transaction at confirm time (~30 params per customer, well under Postgres' 65k limit). */
+const CONFIRM_CHUNK_SIZE = 200;
+
+type PendingImportRow = { storedRowId: string; row: NormalizedImportRow; projectId: string; siteId: string };
+type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+
+async function setImportRowStatus(ids: string[], status: "imported" | "rejected", executor: Db | Tx = getDb()) {
+  for (let index = 0; index < ids.length; index += 1000) {
+    const slice = ids.slice(index, index + 1000);
+    if (slice.length) await executor.update(importRows).set({ status }).where(inArray(importRows.id, slice));
+  }
+}
+
+async function createImportProject(db: Db, row: NormalizedImportRow, userId: string) {
+  const [inserted] = await db
+    .insert(projects)
+    .values({
+      name: row.projectName,
+      normalizedName: normalizeKey(row.projectName),
+      code: row.projectCode || null,
+      normalizedCode: row.projectCode ? normalizeKey(row.projectCode) : null,
+      city: row.city || null,
+      normalizedCity: row.city ? normalizeKey(row.city) : null,
+      importedSource: row.rawData,
+      createdBy: userId,
+      updatedBy: userId,
+    })
+    .returning({ id: projects.id });
+  if (!inserted) throw new Error("Unable to create project during import");
+  return inserted.id;
+}
+
+async function createImportSite(db: Db, projectId: string, row: NormalizedImportRow, userId: string) {
+  const [inserted] = await db
+    .insert(projectSites)
+    .values({
+      projectId,
+      name: row.siteName,
+      normalizedName: normalizeKey(row.siteName),
+      code: row.siteCode || null,
+      normalizedCode: row.siteCode ? normalizeKey(row.siteCode) : null,
+      city: row.city || null,
+      normalizedCity: row.city ? normalizeKey(row.city) : null,
+      address: row.siteAddress || row.fullAddress || null,
+      supervisorName: row.supervisorName || null,
+      importedSource: row.rawData,
+      createdBy: userId,
+      updatedBy: userId,
+    })
+    .returning({ id: projectSites.id });
+  if (!inserted) throw new Error("Unable to create site during import");
+  return inserted.id;
+}
+
+/** Insert customers (+ their LMC pipe records) for already-resolved rows, in one go. */
+async function insertImportCustomers(tx: Tx, items: PendingImportRow[], userId: string) {
+  const values = items.map(({ row, projectId, siteId }) => {
+    const { giMeasurements, progressMilestones } = applyBillingCompletionSync(row, userId);
+    return {
+      projectId,
+      siteId,
+      trBpNumber: row.trBpNumber,
+      normalizedTrBpNumber: normalizeKey(row.trBpNumber),
+      mobileNumber: row.mobileNumber || null,
+      customerName: row.customerName,
+      normalizedCustomerName: normalizeKey(row.customerName),
+      fullAddress: row.fullAddress || null,
+      city: row.city || null,
+      connectionType: row.connectionType || null,
+      houseType: row.houseType || null,
+      scheme: row.scheme || null,
+      plumberName: row.plumberName || null,
+      giReportNumber: row.giReportNumber || null,
+      gcReportNumber: row.gcReportNumber || null,
+      conversionReportNumber: row.conversionReportNumber || null,
+      status: mapCustomerStatus(row.customerStatus),
+      survey: emptyToNull(row.survey),
+      giMeasurements,
+      valvesRegulators: emptyToNull(row.valvesRegulators),
+      fittingsAccessories: emptyToNull(row.fittingsAccessories),
+      lmcPipelineWork: emptyToNull(row.lmcPipelineWork),
+      mdpeFittings: emptyToNull(row.mdpeFittings),
+      commissioningConversion: emptyToNull(row.commissioningConversion),
+      billingCompletion: emptyToNull(row.billingCompletion),
+      progressMilestones,
+      customFields: emptyToNull(row.customFields),
+      importedFields: row.rawData,
+      createdBy: userId,
+      updatedBy: userId,
+    };
+  });
+
+  const inserted = await tx
+    .insert(customers)
+    .values(values)
+    .returning({ id: customers.id, normalizedTrBpNumber: customers.normalizedTrBpNumber });
+
+  // BR/TR numbers are unique, so map each new customer back to its row by it.
+  const idByTrBp = new Map(inserted.map((entry) => [entry.normalizedTrBpNumber, entry.id]));
+  const pipeValues = items.flatMap(({ row }, index) => {
+    const customerId = idByTrBp.get(values[index]!.normalizedTrBpNumber);
+    if (!customerId) throw new Error("Unable to create customer during import");
+    return buildPipeRecordValues(customerId, row.lmcPipeRecords, userId);
+  });
+
+  if (pipeValues.length) await tx.insert(customerLmcPipeRecords).values(pipeValues);
+  await setImportRowStatus(
+    items.map((item) => item.storedRowId),
+    "imported",
+    tx,
+  );
+}
+
 async function revalidateRow(batchId: string, rowId: string, row: NormalizedImportRow): Promise<NormalizedImportRow> {
   const db = getDb();
 
@@ -455,9 +492,15 @@ async function revalidateRow(batchId: string, rowId: string, row: NormalizedImpo
 async function matchRows(rows: NormalizedImportRow[]) {
   const db = getDb();
   const [existingProjects, existingSites, existingCustomers] = await Promise.all([
-    db.select().from(projects),
-    db.select().from(projectSites),
-    db.select().from(customers),
+    db
+      .select({ id: projects.id, normalizedCode: projects.normalizedCode, normalizedName: projects.normalizedName, normalizedCity: projects.normalizedCity })
+      .from(projects),
+    db
+      .select({ id: projectSites.id, projectId: projectSites.projectId, normalizedCode: projectSites.normalizedCode, normalizedName: projectSites.normalizedName })
+      .from(projectSites),
+    // Only the BR/TR key is needed to spot existing customers - never the full
+    // record (its JSON columns make this the slowest query of the preview).
+    db.select({ id: customers.id, normalizedTrBpNumber: customers.normalizedTrBpNumber }).from(customers),
   ]);
 
   const projectsByCode = new Map<string, ExistingProject>();
@@ -680,8 +723,7 @@ function applyBillingCompletionSync(row: NormalizedImportRow, userId: string) {
   return { giMeasurements: giMeasurementsResult, progressMilestones };
 }
 
-async function insertPipeRecords(
-  tx: Parameters<Parameters<Db["transaction"]>[0]>[0],
+function buildPipeRecordValues(
   customerId: string,
   pipeRecords: NormalizedLmcPipeRecord[],
   userId: string,
@@ -690,10 +732,7 @@ async function insertPipeRecords(
     Object.entries(record).some(([key, value]) => key !== "pipeSize" && normalizeText(value)),
   );
 
-  if (!validPipeRecords.length) return;
-
-  await tx.insert(customerLmcPipeRecords).values(
-    validPipeRecords.map((record) => ({
+  return validPipeRecords.map((record) => ({
       customerId,
       pipeSize: record.pipeSize,
       lengthMetres: record.lengthMetres || null,
@@ -706,8 +745,7 @@ async function insertPipeRecords(
       jointFittingDetails: record.jointFittingDetails || null,
       remarks: record.remarks || null,
       updatedBy: userId,
-    })),
-  );
+  }));
 }
 
 function mapPipeStatus(status?: string): DbPipeStatus {
