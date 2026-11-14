@@ -1,4 +1,4 @@
-import { and, count, eq, ilike, inArray, or } from "drizzle-orm";
+import { and, count, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import { getDb } from "@db";
 import { bills, customers, dprRecords, projectDocuments, projects, projectSites, sitePlans, users } from "@db/schema";
 import { normalizeKey } from "@modules/master-import/master-import.mapper";
@@ -82,6 +82,17 @@ export const projectsService = {
 
   async create(input: CreateProjectBody, userId: string) {
     const db = getDb();
+    // The database's name+city unique index treats an empty city as "unknown",
+    // so two "X" projects without a city were both allowed. Check explicitly.
+    const normalizedCity = input.city ? normalizeKey(input.city) : null;
+    const [duplicate] = await db
+      .select({ id: projects.id })
+      .from(projects)
+      .where(and(eq(projects.normalizedName, normalizeKey(input.name)), sql`${projects.normalizedCity} IS NOT DISTINCT FROM ${normalizedCity}`))
+      .limit(1);
+    if (duplicate) {
+      throw new Error(`A project named "${input.name}"${input.city ? ` in ${input.city}` : ""} already exists`);
+    }
     const [project] = await db
       .insert(projects)
       .values({

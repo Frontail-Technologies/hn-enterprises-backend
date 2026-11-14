@@ -1,4 +1,4 @@
-import { and, eq, inArray, ne } from "drizzle-orm";
+import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import { getDb } from "@db";
 import {
   customerLmcPipeRecords,
@@ -240,6 +240,40 @@ export const masterImportService = {
       throw new Error("Only previewed import batches can be confirmed");
     }
 
+    // Claim the batch in one atomic step. Before this, a retry or second click
+    // while a slow import was still running started a second copy of the same
+    // import (the batch was only marked confirmed at the very end), which is
+    // how duplicate projects/sites were created.
+    const [claimed] = await db
+      .update(importBatches)
+      .set({ status: "confirmed", confirmedBy: user.id, confirmedAt: new Date(), updatedAt: new Date() })
+      .where(and(eq(importBatches.id, batchId), eq(importBatches.status, "previewed")))
+      .returning({ id: importBatches.id });
+    if (!claimed) {
+      throw new Error("This import is already running or has finished. Refresh the Customers list to see the result.");
+    }
+
+    try {
+      return await runConfirmedImport(batchId, batch, user);
+    } catch (error) {
+      // Unexpected failure before the import finished: let it be retried.
+      await db
+        .update(importBatches)
+        .set({ status: "previewed", confirmedBy: null, confirmedAt: null, updatedAt: new Date() })
+        .where(eq(importBatches.id, batchId))
+        .catch(() => undefined);
+      throw error;
+    }
+  },
+};
+
+async function runConfirmedImport(
+  batchId: string,
+  batch: typeof importBatches.$inferSelect,
+  user: { id: string; role: string },
+): Promise<ConfirmImportResult> {
+    const db = getDb();
+
     const storedRows = await db
       .select()
       .from(importRows)
@@ -274,16 +308,18 @@ export const masterImportService = {
         const projectKey = getProjectKey(row);
         let projectId = row.matchedProjectId ?? projectIdByKey.get(projectKey);
         if (!projectId) {
-          projectId = await createImportProject(db, row, user.id);
-          projectsCreated += 1;
+          const project = await findOrCreateImportProject(db, row, user.id);
+          projectId = project.id;
+          if (project.created) projectsCreated += 1;
           projectIdByKey.set(projectKey, projectId);
         }
 
         const siteKey = getSiteKey(projectKey, row);
         let siteId = row.matchedSiteId ?? siteIdByKey.get(siteKey);
         if (!siteId) {
-          siteId = await createImportSite(db, projectId, row, user.id);
-          sitesCreated += 1;
+          const site = await findOrCreateImportSite(db, projectId, row, user.id);
+          siteId = site.id;
+          if (site.created) sitesCreated += 1;
           siteIdByKey.set(siteKey, siteId);
         }
 
@@ -318,9 +354,6 @@ export const masterImportService = {
     await db
       .update(importBatches)
       .set({
-        status: "confirmed",
-        confirmedBy: user.id,
-        confirmedAt: new Date(),
         updatedAt: new Date(),
         // Fold the confirm-time outcome into the batch's own summary before the
         // row-level data is deleted below, so what happened stays auditable at
@@ -345,8 +378,7 @@ export const masterImportService = {
       imported: customersCreated,
       failed,
     };
-  },
-};
+}
 
 /** Rows per insert/transaction at confirm time (~30 params per customer, well under Postgres' 65k limit). */
 const CONFIRM_CHUNK_SIZE = 200;
@@ -359,6 +391,43 @@ async function setImportRowStatus(ids: string[], status: "imported" | "rejected"
     const slice = ids.slice(index, index + 1000);
     if (slice.length) await executor.update(importRows).set({ status }).where(inArray(importRows.id, slice));
   }
+}
+
+/**
+ * Reuse an existing project when one already matches (by code, else by name +
+ * city, where an empty city matches an empty city) - checked against the live
+ * database, not the possibly stale preview.
+ */
+async function findOrCreateImportProject(db: Db, row: NormalizedImportRow, userId: string) {
+  const normalizedCity = row.city ? normalizeKey(row.city) : null;
+  const [existing] = await db
+    .select({ id: projects.id })
+    .from(projects)
+    .where(
+      row.projectCode
+        ? eq(projects.normalizedCode, normalizeKey(row.projectCode))
+        : and(eq(projects.normalizedName, normalizeKey(row.projectName)), sql`${projects.normalizedCity} IS NOT DISTINCT FROM ${normalizedCity}`),
+    )
+    .limit(1);
+  if (existing) return { id: existing.id, created: false };
+  return { id: await createImportProject(db, row, userId), created: true };
+}
+
+async function findOrCreateImportSite(db: Db, projectId: string, row: NormalizedImportRow, userId: string) {
+  const [existing] = await db
+    .select({ id: projectSites.id })
+    .from(projectSites)
+    .where(
+      and(
+        eq(projectSites.projectId, projectId),
+        row.siteCode
+          ? eq(projectSites.normalizedCode, normalizeKey(row.siteCode))
+          : eq(projectSites.normalizedName, normalizeKey(row.siteName)),
+      ),
+    )
+    .limit(1);
+  if (existing) return { id: existing.id, created: false };
+  return { id: await createImportSite(db, projectId, row, userId), created: true };
 }
 
 async function createImportProject(db: Db, row: NormalizedImportRow, userId: string) {
