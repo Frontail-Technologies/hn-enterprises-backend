@@ -47,6 +47,15 @@ async function getSiteOrThrow(projectId: string, siteId: string) {
   return site;
 }
 
+/** Next automatic project code: one more than the highest existing PRJ-####. */
+export async function nextProjectCode() {
+  const db = getDb();
+  const [row] = await db.execute<{ highest: number | null }>(
+    sql`SELECT max(substring(code from '^PRJ-([0-9]+)$')::int) AS highest FROM projects`,
+  );
+  return `PRJ-${String((row?.highest ?? 0) + 1).padStart(4, "0")}`;
+}
+
 export const projectsService = {
   async list(query: ProjectListQuery) {
     const db = getDb();
@@ -94,13 +103,23 @@ export const projectsService = {
         `A project named "${input.name}" already exists${duplicate.city ? ` (city: ${duplicate.city})` : ""}. Open and edit that project instead of creating another.`,
       );
     }
+
+    // Every project gets a code: the one typed in, or the next PRJ-#### number.
+    // Customer import sheets use it to send each row to the right project.
+    const code = input.code?.trim() || (await nextProjectCode());
+    const [codeOwner] = await db
+      .select({ name: projects.name })
+      .from(projects)
+      .where(eq(projects.normalizedCode, normalizeKey(code)))
+      .limit(1);
+    if (codeOwner) throw new Error(`Project code "${code}" is already used by "${codeOwner.name}". Use another code or leave it empty.`);
     const [project] = await db
       .insert(projects)
       .values({
         name: input.name,
         normalizedName: normalizeKey(input.name),
-        code: input.code || null,
-        normalizedCode: input.code ? normalizeKey(input.code) : null,
+        code,
+        normalizedCode: normalizeKey(code),
         city: input.city || null,
         normalizedCity: input.city ? normalizeKey(input.city) : null,
         client: input.client || null,
