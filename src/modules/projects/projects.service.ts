@@ -91,16 +91,23 @@ export const projectsService = {
 
   async create(input: CreateProjectBody, userId: string) {
     const db = getDb();
-    // One project per name. Matching on name + city let a city typo
-    // ("GUWAHAI" vs "GUWAHATI") create a second copy of the same project.
+    // Same name AND same contractor = the same project entered twice. The same
+    // work order can run with different contractors as separate projects, and a
+    // city typo must not make a real duplicate look new, so city is not compared.
+    const contractorKey = normalizeKey(input.contractor ?? "");
     const [duplicate] = await db
-      .select({ id: projects.id, city: projects.city })
+      .select({ id: projects.id, city: projects.city, code: projects.code })
       .from(projects)
-      .where(eq(projects.normalizedName, normalizeKey(input.name)))
+      .where(
+        and(
+          eq(projects.normalizedName, normalizeKey(input.name)),
+          sql`lower(btrim(coalesce(${projects.contractor}, ''))) = ${contractorKey}`,
+        ),
+      )
       .limit(1);
     if (duplicate) {
       throw new Error(
-        `A project named "${input.name}" already exists${duplicate.city ? ` (city: ${duplicate.city})` : ""}. Open and edit that project instead of creating another.`,
+        `A project named "${input.name}" with this contractor already exists${duplicate.code ? ` (${duplicate.code})` : ""}. Open and edit that project instead of creating another.`,
       );
     }
 

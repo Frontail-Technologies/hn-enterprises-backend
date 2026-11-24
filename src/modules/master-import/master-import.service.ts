@@ -430,6 +430,9 @@ async function findOrCreateImportProject(db: Db, row: NormalizedImportRow, userI
       .where(eq(projects.normalizedName, normalizeKey(row.projectName)))
       .limit(2);
     if (sameName.length === 1) return { id: sameName[0]!.id, created: false };
+    if (sameName.length > 1) {
+      throw new Error(`More than one project is named "${row.projectName}" - add the Project Code to this row`);
+    }
   }
   return { id: await createImportProject(db, row, userId), created: true };
 }
@@ -654,7 +657,7 @@ async function revalidateRow(batchId: string, rowId: string, row: NormalizedImpo
   return matched ?? row;
 }
 
-async function matchRows(rows: NormalizedImportRow[]) {
+export async function matchRows(rows: NormalizedImportRow[]) {
   const db = getDb();
   const [existingProjects, existingSites, existingCustomers] = await Promise.all([
     db
@@ -702,6 +705,13 @@ async function matchRows(rows: NormalizedImportRow[]) {
       : (projectsByNameCity.get(`${normalizeKey(row.projectName)}::${normalizeKey(row.city)}`) ??
         // Sheet city missing or spelled differently: the one project with that name.
         (sameName?.length === 1 ? sameName[0] : undefined));
+
+    // Several projects share this name (e.g. same work, different contractors):
+    // never guess, and never create yet another one - ask for the code.
+    if (!project && !row.projectCode && (sameName?.length ?? 0) > 1) {
+      const message = `More than one project is named "${row.projectName}" - add a Project Code column (e.g. ${sameName!.map((p) => p.normalizedCode?.toUpperCase()).filter(Boolean).join(" / ") || "PRJ-0001"})`;
+      if (!row.issues.includes(message)) row.issues.push(message);
+    }
 
     if (!project && row.projectCode) {
       const message = `No project has code "${row.projectCode}" - a new project will be created`;
