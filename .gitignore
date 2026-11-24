@@ -5,3 +5,6 @@ node_modules
 dist
 /uploads
 *.tsbuildinfo
+
+# Desktop app update files (installers), copied here on the server
+/desktop-updates
