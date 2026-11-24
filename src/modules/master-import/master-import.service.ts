@@ -956,7 +956,9 @@ function mapPipeStatus(status?: string): DbPipeStatus {
 
 function parseDate(value?: string) {
   if (!value) return null;
-  const direct = new Date(value);
+  // Day-first (05-11-2026 = 5 Nov) before JavaScript's own parser, which reads it as 11 May.
+  const dayFirst = value.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})$/);
+  const direct = dayFirst ? new Date(Number.NaN) : new Date(value);
   if (!Number.isNaN(direct.getTime())) return direct;
 
   const match = value.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})$/);

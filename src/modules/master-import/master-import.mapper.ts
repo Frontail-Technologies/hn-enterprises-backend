@@ -487,8 +487,26 @@ function createEmptyNormalizedRow(row: RawSheetRow): NormalizedImportRow {
   };
 }
 
+/**
+ * Sheets from India write dates day-first (05-11-2026 = 5 November). JavaScript
+ * would read that as 11 May, so date columns are rewritten to yyyy-mm-dd here.
+ * Anything that isn't a clear d-m-y date is left as typed.
+ */
+export function normalizeDayFirstDate(text: string) {
+  const match = text.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2}|\d{4})$/);
+  if (!match) return text;
+  const [, day, month, rawYear] = match;
+  const year = rawYear!.length === 2 ? `20${rawYear}` : rawYear!;
+  const d = Number(day), m = Number(month);
+  if (m < 1 || m > 12 || d < 1 || d > 31) return text;
+  const date = new Date(Date.UTC(Number(year), m - 1, d));
+  if (date.getUTCMonth() !== m - 1) return text; // e.g. 31-02-2026
+  return `${year}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
+
 function setMappedValue(row: NormalizedImportRow, target: FieldTarget, value: SheetCellValue) {
-  const normalizedValue = normalizeFieldValue(value);
+  const isDateField = /date/i.test(target.split(".").pop() ?? "");
+  const normalizedValue = isDateField ? normalizeDayFirstDate(normalizeFieldValue(value)) : normalizeFieldValue(value);
 
   if (!target.includes(".")) {
     row[target as keyof Pick<
