@@ -14,6 +14,7 @@ import {
   updateCustomerWithPipeRecordsBodySchema,
   upsertLmcPipeRecordBodySchema,
 } from "./customers.schema";
+import { replaceTempIdsBodySchema } from "./customers.schema";
 import { bulkDeleteBodySchema, bulkRemarkBodySchema, bulkUpdateBodySchema } from "./customers-bulk.schema";
 
 export const customersRoutes = new Elysia({ prefix: "/customers" })
@@ -33,6 +34,12 @@ export const customersRoutes = new Elysia({ prefix: "/customers" })
     "/filter-options",
     ({ query, set }) => customersController.filterOptions({ query, set }),
     { query: customerFilterOptionsQuerySchema, requireAuth: true },
+  )
+  // Replace import-assigned TEMP-... IDs with real BR/TR numbers (check, then apply).
+  .post(
+    "/temp-ids/replace",
+    ({ body, currentUser, set }) => customersController.replaceTempIds({ body, currentUser, set }),
+    { body: replaceTempIdsBodySchema, requireRole: ["super_admin", "admin"] },
   )
   .get(
     "/ids",

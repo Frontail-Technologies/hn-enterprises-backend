@@ -29,6 +29,8 @@ export type CustomerListQuery = {
   ids?: string;
   /** JSON-encoded Record<whitelisted column key, string[]> - server-side Excel column filters. Unsupported keys are ignored. */
   columnFilters?: string;
+  /** "true": only customers still on an import-assigned temporary ID (TEMP-...). */
+  tempIds?: string;
 };
 
 export type CustomerFilterOptionsQuery = {

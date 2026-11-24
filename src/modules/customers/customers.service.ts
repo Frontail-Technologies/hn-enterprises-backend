@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, ilike, inArray, or } from "drizzle-orm";
+import { and, asc, count, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import { getDb } from "@db";
 import { complaints, customerDocuments, customerLmcPipeRecords, customerNotes, customers, plumbers, users, workProgressUpdates } from "@db/schema";
 import { normalizeKey } from "@modules/master-import/master-import.mapper";
@@ -170,7 +170,7 @@ export function getStatKeyCondition(statKey: string) {
 
 type CustomerScopeQuery = Pick<
   CustomerListQuery,
-  "ids" | "projectId" | "siteId" | "status" | "city" | "search" | "statKey" | "month" | "year" | "columnFilters"
+  "ids" | "projectId" | "siteId" | "status" | "city" | "search" | "statKey" | "month" | "year" | "columnFilters" | "tempIds"
 >;
 
 /**
@@ -198,6 +198,7 @@ function buildCustomerScopeConditions(query: CustomerScopeQuery, options: { excl
           ilike(customers.mobileNumber, searchPattern),
         )
       : undefined,
+    query.tempIds === "true" ? sql`${customers.normalizedTrBpNumber} LIKE 'temp-%'` : undefined,
     query.statKey ? getStatKeyCondition(query.statKey) : undefined,
     query.statKey
       ? customerStatDateCondition(query.statKey, Number(query.month) || undefined, Number(query.year) || undefined)

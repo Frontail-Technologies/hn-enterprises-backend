@@ -28,6 +28,12 @@ export const customerListQuerySchema = t.Object({
   sortOrder: t.Optional(t.Union([t.Literal("asc"), t.Literal("desc")])),
   ids: t.Optional(t.String()),
   columnFilters: t.Optional(t.String()),
+  tempIds: t.Optional(t.String()),
+});
+
+export const replaceTempIdsBodySchema = t.Object({
+  rows: t.Array(t.Object({ tempId: t.String({ maxLength: 120 }), trBpNumber: t.String({ maxLength: 120 }) }), { maxItems: 5000 }),
+  apply: t.Boolean(),
 });
 
 export const customerFilterOptionsQuerySchema = t.Object({

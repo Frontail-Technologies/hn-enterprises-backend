@@ -3,6 +3,7 @@ import type { SetContext } from "@modules/auth/auth.helpers";
 import { auditService, uploadService } from "@services";
 import { errorCode, errorMessage, ok, paginated, statusFromError } from "@utils";
 import { customersService } from "./customers.service";
+import { replaceTempIds, type TempIdReplacementInput } from "./customers-temp-ids.service";
 import { customersDeletionService } from "./customers-deletion.service";
 import { customersBulkService, type CustomerBulkChanges, type CustomerBulkSelection } from "./customers-bulk.service";
 import {
@@ -104,6 +105,38 @@ async function resolveDocumentFile(
 }
 
 export const customersController = {
+  async replaceTempIds({
+    body,
+    currentUser,
+    set,
+  }: {
+    body: { rows: TempIdReplacementInput[]; apply: boolean };
+    currentUser: AuthTokenPayload | null;
+    set: SetContext;
+  }) {
+    try {
+      if (!currentUser) throw new Error("Authentication required");
+      const result = await replaceTempIds(body.rows, body.apply, currentUser.id);
+      if (body.apply && result.summary.updated) {
+        await auditService.log({
+          userId: currentUser.id,
+          module: "customers",
+          action: "temp_ids_replaced",
+          recordId: undefined,
+          description: `Replaced ${result.summary.updated} temporary IDs with BR/TR numbers: ${result.results
+            .filter((row) => row.status === "updated")
+            .map((row) => row.message)
+            .join(", ")
+            .slice(0, 1500)}`,
+        });
+      }
+      return ok(result, body.apply ? `${result.summary.updated} customers updated` : "Checked");
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to replace temporary IDs") };
+    }
+  },
+
   async list({ query, set }: { query: CustomerListQuery; set: SetContext }) {
     try {
       const { rows, pagination } = await customersService.list(query);
