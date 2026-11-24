@@ -19,7 +19,58 @@ async function getCustomerHealth(projectId: string) {
     gcBillDone: counts["gc-bill-done"],
     conversionBillDone: counts["conversion-bill-done"],
     connectionRemark: counts["connection-remark"],
+    /** Every field stage count (dashboard stat keys), for the Work tab. */
+    stages: FIELD_STAGE_KEYS.reduce<Record<string, number>>((all, key) => ({ ...all, [key]: Number(counts[key] ?? 0) }), {}),
   };
+}
+
+/** Field stages shown on the project Work tab (same keys as the dashboard stat pages). */
+const FIELD_STAGE_KEYS = [
+  "survey-done",
+  "laying-done",
+  "flushing-testing-done",
+  "pre-commissioning-done",
+  "gi-done",
+  "gc-done",
+  "valve-chamber-done",
+  "route-marker-done",
+  "pole-marker-done",
+  "commissioning",
+  "conversion-done",
+  "jmr-done",
+] as const;
+
+/** Per site: customers, key stages and metres laid (Work tab). */
+async function getSiteProgress(projectId: string) {
+  const db = getDb();
+  const sites = await db.execute<{ id: string; name: string; customers: number; lmcMetres: string; giMetres: string }>(sql`
+    SELECT ps.id, ps.name,
+           (SELECT count(*)::int FROM customers c WHERE c.site_id = ps.id) AS customers,
+           (SELECT coalesce(sum(r.length_metres), 0) FROM customer_lmc_pipe_records r JOIN customers c ON c.id = r.customer_id WHERE c.site_id = ps.id) AS "lmcMetres",
+           (SELECT ${giMetres("totalGiPipeHalfInch")} + ${giMetres("giPipeThreeQuarterInch")} + ${giMetres("giPipeOneInch")} + ${giMetres("giPipeOneAndHalfInch")} + ${giMetres("giPipeTwoInch")}
+              FROM customers c WHERE c.site_id = ps.id) AS "giMetres"
+    FROM project_sites ps
+    WHERE ps.project_id = ${projectId}
+    ORDER BY ps.name
+    LIMIT 60
+  `);
+  const stageCounts = await Promise.all(
+    sites.map((site) => dashboardStatsService.getAdminCounts(projectId, undefined, { siteId: site.id })),
+  );
+  return sites.map((site, index) => {
+    const counts = stageCounts[index] ?? {};
+    return {
+      id: site.id,
+      name: site.name,
+      customers: site.customers,
+      surveyDone: Number(counts["survey-done"] ?? 0),
+      giDone: Number(counts["gi-done"] ?? 0),
+      gcDone: Number(counts["gc-done"] ?? 0),
+      conversionDone: Number(counts["conversion-done"] ?? 0),
+      lmcMetres: Number(site.lmcMetres),
+      giMetres: Number(site.giMetres),
+    };
+  });
 }
 
 async function getSites(projectId: string) {
@@ -204,7 +255,7 @@ export const projectsSummaryService = {
     const [project] = await db.select().from(projects).where(eq(projects.id, projectId)).limit(1);
     if (!project) throw new Error("Project not found");
 
-    const [customers, sites, dpr, expenses, lowStockAlerts, team, work] = await Promise.all([
+    const [customers, sites, dpr, expenses, lowStockAlerts, team, work, siteProgress] = await Promise.all([
       getCustomerHealth(projectId),
       getSites(projectId),
       getDprCounts(projectId),
@@ -212,6 +263,7 @@ export const projectsSummaryService = {
       getLowStockAlertCount(projectId),
       getTeamCounts(projectId),
       getWorkTotals(projectId),
+      getSiteProgress(projectId),
     ]);
 
     return {
@@ -222,7 +274,7 @@ export const projectsSummaryService = {
       expenses,
       materials: { lowStockAlerts },
       team,
-      work,
+      work: { ...work, bySite: siteProgress },
     };
   },
 };
