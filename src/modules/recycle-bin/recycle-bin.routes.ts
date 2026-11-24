@@ -39,6 +39,24 @@ export const recycleBinRoutes = new Elysia({ prefix: "/recycle-bin" })
       }, "Restored"),
     { params: idParams, requireRole: ADMINS },
   )
+  // Registered before "/:id": empties the whole bin.
+  .delete(
+    "/",
+    ({ currentUser, set }) =>
+      run(set, "Unable to empty the recycle bin", async () => {
+        const result = await recycleBinService.purgeAll();
+        if (result.count) {
+          await auditService.log({
+            userId: (currentUser as AuthTokenPayload).id,
+            module: "Customers",
+            action: "Emptied Recycle Bin",
+            description: `Permanently deleted ${result.count} item${result.count === 1 ? "" : "s"} from the recycle bin`,
+          });
+        }
+        return result;
+      }, "Recycle bin emptied"),
+    { requireRole: ADMINS },
+  )
   .delete(
     "/:id",
     ({ params, currentUser, set }) =>

@@ -127,6 +127,13 @@ export const recycleBinService = {
 
   restore: (recordId: string) => getDb().transaction((tx) => restoreWith(tx, recordId)),
 
+  /** Empty the whole bin for good. */
+  async purgeAll(): Promise<{ count: number }> {
+    const db = getDb();
+    const rows = await db.execute<{ id: string }>(sql`DELETE FROM deleted_records RETURNING id`);
+    return { count: rows.length };
+  },
+
   /** Remove an item from the bin for good. */
   async purge(recordId: string): Promise<{ label: string }> {
     const db = getDb();
