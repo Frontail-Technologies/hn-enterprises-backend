@@ -57,10 +57,12 @@ export const masterImportService = {
     const targetProject = options.projectId ? await getTargetProject(options.projectId) : null;
     const rawRows = await readSheetRows(file);
     const definitions = await loadActiveCustomFieldDefinitions();
-    const mapped = mapRows(rawRows).map((row) => ({
-      ...row,
-      customFields: resolveCustomFieldKeys(row.customFields, definitions),
-    }));
+    // One random code per upload keeps temporary IDs unique across imports.
+    const tempTag = crypto.randomUUID().slice(0, 6).toUpperCase();
+    const mapped = mapRows(rawRows).map((row) => {
+      assignTempIdIfMissing(row, tempTag);
+      return { ...row, customFields: resolveCustomFieldKeys(row.customFields, definitions) };
+    });
     if (targetProject) for (const row of mapped) assignToProject(row, targetProject);
     const rows = await matchRows(mapped);
     const summary = buildSummary(file.name, rows);
@@ -545,6 +547,19 @@ async function insertImportCustomers(tx: Tx, items: PendingImportRow[], userId: 
   );
 }
 
+/** Customers with no BR/TR number in the sheet get a clearly marked temporary ID. */
+export const TEMP_ID_PREFIX = "TEMP-";
+const MISSING_TR_BP_ISSUE = "BP/TR number is required";
+
+export function assignTempIdIfMissing(row: NormalizedImportRow, tag: string) {
+  if (normalizeText(row.trBpNumber)) return;
+  row.trBpNumber = `${TEMP_ID_PREFIX}${tag}-${String(row.rowNumber).padStart(4, "0")}`;
+  row.issues = row.issues.filter((issue) => issue !== MISSING_TR_BP_ISSUE);
+  row.warnings.push(
+    `No BR/TR number in the sheet - temporary ID ${row.trBpNumber} assigned. Edit the customer later to enter the real number.`,
+  );
+}
+
 type TargetProject = { id: string; name: string; code: string | null; city: string | null };
 
 async function getTargetProject(projectId: string): Promise<TargetProject> {
@@ -576,6 +591,7 @@ async function revalidateRow(batchId: string, rowId: string, row: NormalizedImpo
 
   consolidateAddress(row);
   applyBaseValidation(row);
+  assignTempIdIfMissing(row, batchId.slice(0, 6).toUpperCase());
 
   const trBpKey = normalizeKey(row.trBpNumber);
   if (trBpKey) {
