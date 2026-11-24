@@ -82,16 +82,17 @@ export const projectsService = {
 
   async create(input: CreateProjectBody, userId: string) {
     const db = getDb();
-    // The database's name+city unique index treats an empty city as "unknown",
-    // so two "X" projects without a city were both allowed. Check explicitly.
-    const normalizedCity = input.city ? normalizeKey(input.city) : null;
+    // One project per name. Matching on name + city let a city typo
+    // ("GUWAHAI" vs "GUWAHATI") create a second copy of the same project.
     const [duplicate] = await db
-      .select({ id: projects.id })
+      .select({ id: projects.id, city: projects.city })
       .from(projects)
-      .where(and(eq(projects.normalizedName, normalizeKey(input.name)), sql`${projects.normalizedCity} IS NOT DISTINCT FROM ${normalizedCity}`))
+      .where(eq(projects.normalizedName, normalizeKey(input.name)))
       .limit(1);
     if (duplicate) {
-      throw new Error(`A project named "${input.name}"${input.city ? ` in ${input.city}` : ""} already exists`);
+      throw new Error(
+        `A project named "${input.name}" already exists${duplicate.city ? ` (city: ${duplicate.city})` : ""}. Open and edit that project instead of creating another.`,
+      );
     }
     const [project] = await db
       .insert(projects)

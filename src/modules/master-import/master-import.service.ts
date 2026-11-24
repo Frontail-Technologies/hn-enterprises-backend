@@ -410,6 +410,17 @@ async function findOrCreateImportProject(db: Db, row: NormalizedImportRow, userI
     )
     .limit(1);
   if (existing) return { id: existing.id, created: false };
+
+  // No exact name+city match (e.g. the sheet has no city column, or spells it
+  // differently): reuse the project with that name when there is exactly one.
+  if (!row.projectCode) {
+    const sameName = await db
+      .select({ id: projects.id })
+      .from(projects)
+      .where(eq(projects.normalizedName, normalizeKey(row.projectName)))
+      .limit(2);
+    if (sameName.length === 1) return { id: sameName[0]!.id, created: false };
+  }
   return { id: await createImportProject(db, row, userId), created: true };
 }
 
@@ -574,6 +585,7 @@ async function matchRows(rows: NormalizedImportRow[]) {
 
   const projectsByCode = new Map<string, ExistingProject>();
   const projectsByNameCity = new Map<string, ExistingProject>();
+  const projectsByName = new Map<string, ExistingProject[]>();
   const sitesByProjectCode = new Map<string, ExistingSite>();
   const sitesByProjectName = new Map<string, ExistingSite>();
   const customersByTrBp = new Map<string, ExistingCustomer>();
@@ -581,6 +593,7 @@ async function matchRows(rows: NormalizedImportRow[]) {
   for (const project of existingProjects) {
     if (project.normalizedCode) projectsByCode.set(project.normalizedCode, project);
     projectsByNameCity.set(`${project.normalizedName}::${project.normalizedCity ?? ""}`, project);
+    projectsByName.set(project.normalizedName, [...(projectsByName.get(project.normalizedName) ?? []), project]);
   }
 
   for (const site of existingSites) {
@@ -593,9 +606,12 @@ async function matchRows(rows: NormalizedImportRow[]) {
   }
 
   return rows.map((row) => {
+    const sameName = projectsByName.get(normalizeKey(row.projectName));
     const project = row.projectCode
       ? projectsByCode.get(normalizeKey(row.projectCode))
-      : projectsByNameCity.get(`${normalizeKey(row.projectName)}::${normalizeKey(row.city)}`);
+      : (projectsByNameCity.get(`${normalizeKey(row.projectName)}::${normalizeKey(row.city)}`) ??
+        // Sheet city missing or spelled differently: the one project with that name.
+        (sameName?.length === 1 ? sameName[0] : undefined));
 
     if (project) {
       row.matchedProjectId = project.id;

@@ -94,6 +94,58 @@ async function getExpenseTotal(projectId: string) {
   return { total: Number(row?.total ?? 0) };
 }
 
+/** First number in a free-text measurement ("12.5", "12.5 m", "12 mtr"); 0 when none. */
+const giMetres = (key: string) =>
+  sql.raw(`COALESCE(SUM(NULLIF(substring(COALESCE(c.gi_measurements->>'${key}', '') from '[0-9]+[.]?[0-9]*'), '')::numeric), 0)`);
+
+/** Work done and billed on the project: LMC metres by pipe size, GI metres, bill amounts. */
+async function getWorkTotals(projectId: string) {
+  const db = getDb();
+  const [lmcRows, [gi], [billing]] = await Promise.all([
+    db.execute<{ pipeSize: string; metres: string; customers: number }>(sql`
+      SELECT r.pipe_size AS "pipeSize", COALESCE(SUM(r.length_metres), 0) AS metres, COUNT(DISTINCT r.customer_id)::int AS customers
+      FROM customer_lmc_pipe_records r
+      JOIN customers c ON c.id = r.customer_id
+      WHERE c.project_id = ${projectId}
+      GROUP BY r.pipe_size
+      ORDER BY r.pipe_size
+    `),
+    db.execute<{ halfInch: string; threeQuarterInch: string; oneInch: string; oneAndHalfInch: string; twoInch: string }>(sql`
+      SELECT ${giMetres("totalGiPipeHalfInch")} AS "halfInch",
+             ${giMetres("giPipeThreeQuarterInch")} AS "threeQuarterInch",
+             ${giMetres("giPipeOneInch")} AS "oneInch",
+             ${giMetres("giPipeOneAndHalfInch")} AS "oneAndHalfInch",
+             ${giMetres("giPipeTwoInch")} AS "twoInch"
+      FROM customers c
+      WHERE c.project_id = ${projectId}
+    `),
+    db.execute<{ bills: number; billed: string; paid: string }>(sql`
+      SELECT COUNT(*)::int AS bills,
+             COALESCE(SUM(total_amount), 0) AS billed,
+             COALESCE(SUM(paid_amount), 0) AS paid
+      FROM bills
+      WHERE project_id = ${projectId} AND status <> 'draft'
+    `),
+  ]);
+
+  const giSizes = {
+    halfInch: Number(gi?.halfInch ?? 0),
+    threeQuarterInch: Number(gi?.threeQuarterInch ?? 0),
+    oneInch: Number(gi?.oneInch ?? 0),
+    oneAndHalfInch: Number(gi?.oneAndHalfInch ?? 0),
+    twoInch: Number(gi?.twoInch ?? 0),
+  };
+  const lmc = lmcRows.map((row) => ({ pipeSize: row.pipeSize, metres: Number(row.metres), customers: row.customers }));
+  const billed = Number(billing?.billed ?? 0);
+  const paid = Number(billing?.paid ?? 0);
+
+  return {
+    lmc: { bySize: lmc, totalMetres: lmc.reduce((sum, row) => sum + row.metres, 0) },
+    gi: { ...giSizes, totalMetres: Object.values(giSizes).reduce((sum, value) => sum + value, 0) },
+    billing: { bills: billing?.bills ?? 0, billed, paid, outstanding: Math.max(billed - paid, 0) },
+  };
+}
+
 async function getLowStockAlertCount(projectId: string) {
   const db = getDb();
   const [row] = await db.execute<{ value: string }>(sql`
@@ -152,13 +204,14 @@ export const projectsSummaryService = {
     const [project] = await db.select().from(projects).where(eq(projects.id, projectId)).limit(1);
     if (!project) throw new Error("Project not found");
 
-    const [customers, sites, dpr, expenses, lowStockAlerts, team] = await Promise.all([
+    const [customers, sites, dpr, expenses, lowStockAlerts, team, work] = await Promise.all([
       getCustomerHealth(projectId),
       getSites(projectId),
       getDprCounts(projectId),
       getExpenseTotal(projectId),
       getLowStockAlertCount(projectId),
       getTeamCounts(projectId),
+      getWorkTotals(projectId),
     ]);
 
     return {
@@ -169,6 +222,7 @@ export const projectsSummaryService = {
       expenses,
       materials: { lowStockAlerts },
       team,
+      work,
     };
   },
 };
