@@ -39,6 +39,8 @@ export type NormalizedImportRow = {
   customFields: Record<string, unknown>;
   issues: string[];
   warnings: string[];
+  /** Set when importing from a project page: every edit/revalidation keeps this project. */
+  targetProjectId?: string;
   matchedProjectId?: string;
   matchedSiteId?: string;
   existingCustomerId?: string;

@@ -51,15 +51,17 @@ async function loadActiveCustomFieldDefinitions() {
 }
 
 export const masterImportService = {
-  async preview(file: File, user: { id: string; role: string }) {
+  async preview(file: File, user: { id: string; role: string }, options: { projectId?: string } = {}) {
     assertAdmin(user.role);
 
+    const targetProject = options.projectId ? await getTargetProject(options.projectId) : null;
     const rawRows = await readSheetRows(file);
     const definitions = await loadActiveCustomFieldDefinitions();
     const mapped = mapRows(rawRows).map((row) => ({
       ...row,
       customFields: resolveCustomFieldKeys(row.customFields, definitions),
     }));
+    if (targetProject) for (const row of mapped) assignToProject(row, targetProject);
     const rows = await matchRows(mapped);
     const summary = buildSummary(file.name, rows);
 
@@ -169,7 +171,9 @@ export const masterImportService = {
     const merged: NormalizedImportRow = {
       ...(existing.normalizedData as unknown as NormalizedImportRow),
       ...edits,
-      matchedProjectId: undefined,
+      // Keep the project chosen on the project page; otherwise re-match freely.
+      matchedProjectId: (existing.normalizedData as unknown as NormalizedImportRow).targetProjectId,
+      targetProjectId: (existing.normalizedData as unknown as NormalizedImportRow).targetProjectId,
       matchedSiteId: undefined,
       existingCustomerId: undefined,
       issues: [],
@@ -541,6 +545,32 @@ async function insertImportCustomers(tx: Tx, items: PendingImportRow[], userId: 
   );
 }
 
+type TargetProject = { id: string; name: string; code: string | null; city: string | null };
+
+async function getTargetProject(projectId: string): Promise<TargetProject> {
+  const db = getDb();
+  const [project] = await db
+    .select({ id: projects.id, name: projects.name, code: projects.code, city: projects.city })
+    .from(projects)
+    .where(eq(projects.id, projectId))
+    .limit(1);
+  if (!project) throw new Error("Project not found");
+  return project;
+}
+
+/** Point a sheet row at the chosen project, noting when the sheet named another one. */
+function assignToProject(row: NormalizedImportRow, project: TargetProject) {
+  const sheetCode = normalizeKey(row.projectCode);
+  if (sheetCode && sheetCode !== normalizeKey(project.code ?? "")) {
+    row.warnings.push(`Sheet project code "${row.projectCode}" ignored - importing into ${project.name}`);
+  }
+  row.projectName = project.name;
+  row.projectCode = project.code ?? "";
+  row.city = row.city || project.city || "";
+  row.matchedProjectId = project.id;
+  row.targetProjectId = project.id;
+}
+
 async function revalidateRow(batchId: string, rowId: string, row: NormalizedImportRow): Promise<NormalizedImportRow> {
   const db = getDb();
 
@@ -586,6 +616,7 @@ async function matchRows(rows: NormalizedImportRow[]) {
   const projectsByCode = new Map<string, ExistingProject>();
   const projectsByNameCity = new Map<string, ExistingProject>();
   const projectsByName = new Map<string, ExistingProject[]>();
+  const projectsById = new Map<string, ExistingProject>();
   const sitesByProjectCode = new Map<string, ExistingSite>();
   const sitesByProjectName = new Map<string, ExistingSite>();
   const customersByTrBp = new Map<string, ExistingCustomer>();
@@ -594,6 +625,7 @@ async function matchRows(rows: NormalizedImportRow[]) {
     if (project.normalizedCode) projectsByCode.set(project.normalizedCode, project);
     projectsByNameCity.set(`${project.normalizedName}::${project.normalizedCity ?? ""}`, project);
     projectsByName.set(project.normalizedName, [...(projectsByName.get(project.normalizedName) ?? []), project]);
+    projectsById.set(project.id, project);
   }
 
   for (const site of existingSites) {
@@ -607,11 +639,19 @@ async function matchRows(rows: NormalizedImportRow[]) {
 
   return rows.map((row) => {
     const sameName = projectsByName.get(normalizeKey(row.projectName));
-    const project = row.projectCode
+    // Imported from a project page: that project, whatever the sheet says.
+    const project = row.matchedProjectId
+      ? projectsById.get(row.matchedProjectId)
+      : row.projectCode
       ? projectsByCode.get(normalizeKey(row.projectCode))
       : (projectsByNameCity.get(`${normalizeKey(row.projectName)}::${normalizeKey(row.city)}`) ??
         // Sheet city missing or spelled differently: the one project with that name.
         (sameName?.length === 1 ? sameName[0] : undefined));
+
+    if (!project && row.projectCode) {
+      const message = `No project has code "${row.projectCode}" - a new project will be created`;
+      if (!row.warnings.includes(message)) row.warnings.push(message);
+    }
 
     if (project) {
       row.matchedProjectId = project.id;

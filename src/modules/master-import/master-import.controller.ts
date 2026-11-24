@@ -27,7 +27,10 @@ export const masterImportController = {
       if (!currentUser) throw new Error("Authentication required");
 
       const file = getUploadFile(body);
-      const data = await masterImportService.preview(file, currentUser);
+      // Optional: import every row into this project (from the project page).
+      const rawProjectId = body && typeof body === "object" ? (body as Record<string, unknown>).projectId : undefined;
+      const projectId = typeof rawProjectId === "string" && rawProjectId.trim() ? rawProjectId.trim() : undefined;
+      const data = await masterImportService.preview(file, currentUser, { projectId });
 
       return {
         success: true,
