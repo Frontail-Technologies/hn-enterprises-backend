@@ -6,8 +6,10 @@ import {
   customFieldDefinitions,
   importBatches,
   importRows,
+  plumbers,
   projectSites,
   projects,
+  users,
 } from "@db/schema";
 import {
   applyBaseValidation,
@@ -336,18 +338,20 @@ async function runConfirmedImport(
       }
     }
 
+    const links = await loadPeopleLinks();
+
     // 3. Customers in chunks: one transaction and a handful of statements per
     //    chunk instead of ~6 round trips per customer. If a chunk fails (e.g. one
     //    bad row), redo just that chunk row by row so only the bad row fails.
     for (let index = 0; index < resolved.length; index += CONFIRM_CHUNK_SIZE) {
       const chunk = resolved.slice(index, index + CONFIRM_CHUNK_SIZE);
       try {
-        await db.transaction((tx) => insertImportCustomers(tx, chunk, user.id));
+        await db.transaction((tx) => insertImportCustomers(tx, chunk, user.id, links));
         customersCreated += chunk.length;
       } catch {
         for (const item of chunk) {
           try {
-            await db.transaction((tx) => insertImportCustomers(tx, [item], user.id));
+            await db.transaction((tx) => insertImportCustomers(tx, [item], user.id, links));
             customersCreated += 1;
           } catch (error) {
             failed.push({ tempId: item.storedRowId, message: error instanceof Error ? error.message : "Unable to import this row" });
@@ -479,6 +483,7 @@ async function createImportSite(db: Db, projectId: string, row: NormalizedImport
       normalizedCity: row.city ? normalizeKey(row.city) : null,
       address: row.siteAddress || row.fullAddress || null,
       supervisorName: row.supervisorName || null,
+      supervisorId: (row.supervisorName && (await loadPeopleLinksCached()).supervisorIdByName.get(normalizeKey(row.supervisorName))) || null,
       importedSource: row.rawData,
       createdBy: userId,
       updatedBy: userId,
@@ -489,7 +494,40 @@ async function createImportSite(db: Db, projectId: string, row: NormalizedImport
 }
 
 /** Insert customers (+ their LMC pipe records) for already-resolved rows, in one go. */
-async function insertImportCustomers(tx: Tx, items: PendingImportRow[], userId: string) {
+type PeopleLinks = { plumberIdByName: Map<string, string>; supervisorIdByName: Map<string, string> };
+
+/**
+ * Saved plumbers / supervisors by normalised name, so a name typed in the
+ * sheet links to the real record (team lists, plumber pages). Supervisor
+ * names are only used when exactly one active supervisor has that name.
+ */
+let peopleLinksCache: { at: number; links: Promise<PeopleLinks> } | null = null;
+/** Sites are created one at a time; reuse one lookup for a few seconds. */
+function loadPeopleLinksCached() {
+  if (!peopleLinksCache || Date.now() - peopleLinksCache.at > 10_000) {
+    peopleLinksCache = { at: Date.now(), links: loadPeopleLinks() };
+  }
+  return peopleLinksCache.links;
+}
+
+async function loadPeopleLinks(): Promise<PeopleLinks> {
+  const db = getDb();
+  const [plumberRows, supervisorRows] = await Promise.all([
+    db.select({ id: plumbers.id, normalizedName: plumbers.normalizedName }).from(plumbers).where(eq(plumbers.status, "active")),
+    db.select({ id: users.id, name: users.name }).from(users).where(and(eq(users.role, "supervisor"), eq(users.status, "active"))),
+  ]);
+  const supervisorIdByName = new Map<string, string>();
+  const ambiguous = new Set<string>();
+  for (const row of supervisorRows) {
+    const key = normalizeKey(row.name);
+    if (supervisorIdByName.has(key)) ambiguous.add(key);
+    supervisorIdByName.set(key, row.id);
+  }
+  for (const key of ambiguous) supervisorIdByName.delete(key);
+  return { plumberIdByName: new Map(plumberRows.map((row) => [row.normalizedName, row.id])), supervisorIdByName };
+}
+
+async function insertImportCustomers(tx: Tx, items: PendingImportRow[], userId: string, links?: PeopleLinks) {
   const values = items.map(({ row, projectId, siteId }) => {
     const { giMeasurements, progressMilestones } = applyBillingCompletionSync(row, userId);
     return {
@@ -506,6 +544,7 @@ async function insertImportCustomers(tx: Tx, items: PendingImportRow[], userId: 
       houseType: row.houseType || null,
       scheme: row.scheme || null,
       plumberName: row.plumberName || null,
+      plumberId: (row.plumberName && links?.plumberIdByName.get(normalizeKey(row.plumberName))) || null,
       giReportNumber: row.giReportNumber || null,
       gcReportNumber: row.gcReportNumber || null,
       conversionReportNumber: row.conversionReportNumber || null,

@@ -69,6 +69,7 @@ async function getSupervisors(projectId: string, sites: ProjectSiteRow[]) {
       name: user.name,
       avatarUrl: user.avatarUrl,
       role: "Supervisor" as const,
+      linked: true,
       sites: sitesBySupervisor.get(user.id) ?? [],
       customerCount: projectCustomerCount,
       lastActivityAt: lastActivityById.get(user.id) ?? null,
@@ -136,6 +137,7 @@ async function getPlumbers(projectId: string, sites: ProjectSiteRow[]) {
       name: plumber.name,
       avatarUrl: plumber.avatarUrl,
       role: "Plumber" as const,
+      linked: true,
       sites: sitesByPlumber.get(plumber.id) ?? [],
       customerCount: customerCountById.get(plumber.id) ?? 0,
       lastActivityAt: lastActivityById.get(plumber.id) ?? null,
@@ -158,15 +160,74 @@ async function getStaffRoster(projectId: string) {
     .orderBy(users.name);
 }
 
+/**
+ * People known only by the name typed in a sheet (customer "Plumber" column,
+ * site "Supervisor" column) and not linked to a saved plumber/user record.
+ * Without these, imported projects showed no plumbers at all.
+ */
+async function getNameOnlyPlumbers(projectId: string, sites: ProjectSiteRow[]) {
+  const db = getDb();
+  const rows = await db.execute<{ name: string; customerCount: number; siteIds: string[] | null }>(sql`
+    SELECT min(trim(plumber_name)) AS name, count(*)::int AS "customerCount",
+           array_remove(array_agg(DISTINCT site_id), NULL)::text[] AS "siteIds"
+    FROM customers
+    WHERE project_id = ${projectId} AND plumber_id IS NULL AND status != 'archived'
+      AND coalesce(trim(plumber_name), '') <> ''
+    GROUP BY lower(trim(plumber_name))
+  `);
+  const siteNameById = new Map(sites.map((site) => [site.id, site.name]));
+  return rows.map((row) => ({
+    id: `name:${row.name.toLowerCase()}`,
+    name: row.name,
+    avatarUrl: null,
+    role: "Plumber" as const,
+    linked: false,
+    sites: (row.siteIds ?? []).flatMap((id) => (siteNameById.has(id) ? [{ id, name: siteNameById.get(id)! }] : [])),
+    customerCount: row.customerCount,
+    lastActivityAt: null,
+  }));
+}
+
+async function getNameOnlySupervisors(projectId: string) {
+  const db = getDb();
+  const rows = await db
+    .select({ id: projectSites.id, name: projectSites.name, supervisorName: projectSites.supervisorName })
+    .from(projectSites)
+    .where(and(eq(projectSites.projectId, projectId), sql`${projectSites.supervisorId} IS NULL`, sql`coalesce(trim(${projectSites.supervisorName}), '') <> ''`));
+  const byName = new Map<string, { name: string; sites: SiteRef[] }>();
+  for (const row of rows) {
+    const name = (row.supervisorName ?? "").trim();
+    const entry = byName.get(name.toLowerCase()) ?? { name, sites: [] };
+    entry.sites.push({ id: row.id, name: row.name });
+    byName.set(name.toLowerCase(), entry);
+  }
+  return Array.from(byName.entries()).map(([key, entry]) => ({
+    id: `name:${key}`,
+    name: entry.name,
+    avatarUrl: null,
+    role: "Supervisor" as const,
+    linked: false,
+    sites: entry.sites,
+    customerCount: 0,
+    lastActivityAt: null,
+  }));
+}
+
 export const projectsTeamService = {
   async getTeam(projectId: string) {
     const sites = await getProjectSitesRaw(projectId);
-    const [supervisors, plumbersList, staffRoster] = await Promise.all([
+    const [supervisors, plumbersList, staffRoster, nameOnlyPlumbers, nameOnlySupervisors] = await Promise.all([
       getSupervisors(projectId, sites),
       getPlumbers(projectId, sites),
       getStaffRoster(projectId),
+      getNameOnlyPlumbers(projectId, sites),
+      getNameOnlySupervisors(projectId),
     ]);
 
-    return { supervisors, plumbers: plumbersList, staff: staffRoster };
+    return {
+      supervisors: [...supervisors, ...nameOnlySupervisors],
+      plumbers: [...plumbersList, ...nameOnlyPlumbers].sort((a, b) => b.customerCount - a.customerCount || a.name.localeCompare(b.name)),
+      staff: staffRoster,
+    };
   },
 };
