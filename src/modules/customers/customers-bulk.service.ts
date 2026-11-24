@@ -6,6 +6,7 @@ import { auditService, permissionService } from "@services";
 import type { AuthTokenPayload } from "@types";
 import { getStatKeyCondition } from "./customers.service";
 import { assertCustomersDeletable } from "./customers-deletion.service";
+import { snapshotCustomers } from "@modules/recycle-bin/recycle-bin.service";
 
 const MAX_BULK_TARGETS = 20000;
 
@@ -335,6 +336,8 @@ export const customersBulkService = {
     try {
       await db.transaction(async (tx) => {
         await assertCustomersDeletable(tx, ids);
+        // Keep restorable copies for 30 days (recycle bin) before deleting.
+        await snapshotCustomers(tx, ids, currentUser.id);
         await tx.delete(customers).where(inArray(customers.id, ids));
       });
     } catch (error) {

@@ -16,6 +16,7 @@ import { auditService } from "@services";
 import { EntityInUseError } from "@utils";
 import { computeDeleteImpact } from "../deletion/deletion.service";
 import type { DbHandle, DeleteImpactConfig, DeleteImpactDependencyConfig, DeleteImpactResult } from "../deletion/deletion.types";
+import { snapshotCustomers } from "@modules/recycle-bin/recycle-bin.service";
 
 function countOf(db: DbHandle) {
   return db.select({ value: count() });
@@ -128,6 +129,8 @@ export const customersDeletionService = {
         throw new EntityInUseError(`"${impact.entity.label}" cannot be deleted: ${impact.blockers.map((b) => b.reason).join(" ")}`);
       }
 
+      // Keep a restorable copy for 30 days (recycle bin) before deleting.
+      await snapshotCustomers(tx, [customerId], userId);
       await tx.delete(customers).where(eq(customers.id, customerId));
 
       return { label: impact.entity.label, totalAffected: impact.totalAffected };
