@@ -29,6 +29,7 @@ import type {
   NormalizedLmcPipeRecord,
   PersistedImportRow,
 } from "./master-import.types";
+import { nextProjectCode } from "@modules/projects/projects.service";
 
 type ExistingProject = Pick<typeof projects.$inferSelect, "id" | "normalizedCode" | "normalizedName" | "normalizedCity">;
 type ExistingSite = Pick<typeof projectSites.$inferSelect, "id" | "projectId" | "normalizedCode" | "normalizedName">;
@@ -455,13 +456,15 @@ async function findOrCreateImportSite(db: Db, projectId: string, row: Normalized
 }
 
 async function createImportProject(db: Db, row: NormalizedImportRow, userId: string) {
+  // Same rule as creating a project by hand: the sheet's code, else the next PRJ-####.
+  const code = normalizeText(row.projectCode) || (await nextProjectCode());
   const [inserted] = await db
     .insert(projects)
     .values({
       name: row.projectName,
       normalizedName: normalizeKey(row.projectName),
-      code: row.projectCode || null,
-      normalizedCode: row.projectCode ? normalizeKey(row.projectCode) : null,
+      code,
+      normalizedCode: normalizeKey(code),
       city: row.city || null,
       normalizedCity: row.city ? normalizeKey(row.city) : null,
       importedSource: row.rawData,
