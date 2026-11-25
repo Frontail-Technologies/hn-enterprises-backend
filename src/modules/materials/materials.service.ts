@@ -183,6 +183,13 @@ function computeQuantityDelta(
 }
 
 
+/** The one-reversal index turns a double click / second admin into a clear message. */
+function alreadyReversed(error: unknown): never {
+  const code = (error as { code?: string; cause?: { code?: string } })?.code ?? (error as { cause?: { code?: string } })?.cause?.code;
+  if (code === "23505") throw new Error("This transaction has already been reversed or corrected");
+  throw error;
+}
+
 export const materialsService = {
   async list(query: MaterialListQuery) {
     const db = getDb();
@@ -855,7 +862,7 @@ export const materialsService = {
       });
 
       return reversal;
-    });
+    }).catch(alreadyReversed);
   },
 
   async correctTransaction(id: string, input: CorrectMaterialTransactionBody, userId: string) {
@@ -1014,7 +1021,7 @@ export const materialsService = {
       });
 
       return { reversal, corrected };
-    });
+    }).catch(alreadyReversed);
 
     // Corrections are admin-only; a re-pointed plumber/project keeps membership in step.
     if (result.corrected.plumberId && result.corrected.projectId) {

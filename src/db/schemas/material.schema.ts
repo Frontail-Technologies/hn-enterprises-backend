@@ -1,4 +1,4 @@
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import {
   type AnyPgColumn,
   index,
@@ -123,6 +123,10 @@ export const materialTransactions = pgTable(
     paymentIdx: index("material_transactions_payment_idx").on(table.paymentId),
     dateIdx: index("material_transactions_date_idx").on(table.transactionDate),
     relatedTransactionIdx: index("material_transactions_related_idx").on(table.relatedTransactionId),
+    /** A transaction can be reversed (or corrected, which reverses it) only once. */
+    oneReversalIdx: uniqueIndex("material_transactions_one_reversal_idx")
+      .on(table.relatedTransactionId)
+      .where(sql`${table.linkType} = 'reversal'`),
   }),
 );
 

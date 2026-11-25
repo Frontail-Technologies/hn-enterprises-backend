@@ -45,7 +45,7 @@ export const exportsRoutes = new Elysia({ prefix: "/exports" })
     "/inventory/purchases",
     ({ query, set }) => exportsController.inventoryPurchases({ query, set }),
     {
-      query: t.Object({ projectId: t.Optional(t.String()), from: t.Optional(t.String()), to: t.Optional(t.String()) }),
+      query: t.Object({ projectId: t.Optional(t.String()), source: materialSourceQuerySchema, from: t.Optional(t.String()), to: t.Optional(t.String()) }),
       // Supervisors (mobile) never export; keep other projects' data out of reach.
       requireRole: ["super_admin", "admin", "viewer"],
     },
@@ -54,7 +54,7 @@ export const exportsRoutes = new Elysia({ prefix: "/exports" })
     "/inventory/pbg-issues",
     ({ query, set }) => exportsController.inventoryPbgIssues({ query, set }),
     {
-      query: t.Object({ projectId: t.Optional(t.String()), from: t.Optional(t.String()), to: t.Optional(t.String()) }),
+      query: t.Object({ projectId: t.Optional(t.String()), source: materialSourceQuerySchema, from: t.Optional(t.String()), to: t.Optional(t.String()) }),
       // Supervisors (mobile) never export; keep other projects' data out of reach.
       requireRole: ["super_admin", "admin", "viewer"],
     },
@@ -95,6 +95,7 @@ export const exportsRoutes = new Elysia({ prefix: "/exports" })
     {
       query: t.Object({
         projectId: t.Optional(t.String()),
+        source: materialSourceQuerySchema,
         plumberId: t.Optional(t.String()),
         materialId: t.Optional(t.String()),
         from: t.Optional(t.String()),

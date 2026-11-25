@@ -25,12 +25,16 @@ export type InventoryStockExportQuery = {
 
 export type InventoryPurchaseExportQuery = {
   projectId?: string;
+  /** Same Source filter as the on-screen list. */
+  source?: "purchase" | "pbg";
   from?: string;
   to?: string;
 };
 
 export type InventoryPbgIssueExportQuery = {
   projectId?: string;
+  /** Same Source filter as the on-screen list. */
+  source?: "purchase" | "pbg";
   from?: string;
   to?: string;
 };
@@ -53,6 +57,8 @@ export type InventoryConsumptionExportQuery = {
 
 export type InventoryPbgConsumptionExportQuery = {
   projectId?: string;
+  /** Same Source filter as the on-screen list. */
+  source?: "purchase" | "pbg";
   plumberId?: string;
   materialId?: string;
   from?: string;

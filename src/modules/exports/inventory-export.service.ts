@@ -114,6 +114,7 @@ export const inventoryExportService = {
     const rows = await materialsService.listEffectiveTransactions({
       type: "purchase",
       projectId: query.projectId,
+      source: query.source,
       from: query.from,
       to: query.to,
     });
@@ -149,6 +150,7 @@ export const inventoryExportService = {
     const rows = await materialsService.listEffectiveTransactions({
       type: "pbg_issue",
       projectId: query.projectId,
+      source: query.source,
       from: query.from,
       to: query.to,
     });
@@ -284,6 +286,7 @@ export const inventoryExportService = {
     const rows = await materialsService.listEffectiveTransactions({
       type: "pbg_consumption",
       projectId: query.projectId,
+      source: query.source,
       plumberId: query.plumberId,
       materialId: query.materialId,
       from: query.from,
