@@ -1,4 +1,4 @@
-import { and, count, countDistinct, eq, getTableColumns, gte, ilike, inArray, isNotNull, isNull, lte, sql } from "drizzle-orm";
+import { and, count, countDistinct, desc, eq, getTableColumns, gte, ilike, inArray, isNotNull, isNull, lte, sql } from "drizzle-orm";
 import { getDb } from "@db";
 import { customers, materialTransactions, materials, plumbers, projects, projectSites, users } from "@db/schema";
 import { normalizeKey } from "@modules/master-import/master-import.mapper";
@@ -186,7 +186,7 @@ function computeQuantityDelta(
 export const materialsService = {
   async list(query: MaterialListQuery) {
     const db = getDb();
-    const { page, limit, offset } = parsePagination(query);
+    const { page, limit, offset } = parsePagination(query, 1000); // the stock sheet and pickers load the whole catalogue
     const searchPattern = toSearchPattern(query.search);
     const conditions = [
       query.category ? eq(materials.category, query.category) : undefined,
@@ -330,7 +330,7 @@ export const materialsService = {
 
   async listTransactions(query: MaterialTransactionListQuery, scope: ProjectScope = null) {
     const db = getDb();
-    const { page, limit, offset } = parsePagination(query);
+    const { page, limit, offset } = parsePagination(query, 1000);
     const where = buildTransactionListWhere(query, scope);
 
     // Relational display labels are joined once here, server-side, so no
@@ -357,7 +357,7 @@ export const materialsService = {
         .where(where)
         .limit(limit)
         .offset(offset)
-        .orderBy(materialTransactions.transactionDate),
+        .orderBy(desc(materialTransactions.transactionDate), desc(materialTransactions.createdAt), desc(materialTransactions.id)),
       db.select({ value: count() }).from(materialTransactions).where(where),
     ]);
 
@@ -398,6 +398,11 @@ export const materialsService = {
   ) {
     const db = getDb();
     const scoped = isProjectScoped(currentUser);
+
+    if (!(Number(input.quantity) > 0)) throw new Error("Quantity must be greater than 0");
+    if (input.type === "adjustment" && !input.plumberId) {
+      throw new Error("Plumber is required for a balance adjustment");
+    }
 
     // Supervisors may only attach customers/plumbers of their own projects.
     if (scoped) {
@@ -823,7 +828,7 @@ export const materialsService = {
           adjustmentType: original.adjustmentType,
           vehicleNo: original.vehicleNo,
           vehicleQty: original.vehicleQty,
-          transactionDate: new Date(),
+          transactionDate: original.transactionDate,
           evidence: null,
           remarks: original.remarks,
           relatedTransactionId: original.id,
@@ -901,7 +906,7 @@ export const materialsService = {
           adjustmentType: original.adjustmentType,
           vehicleNo: original.vehicleNo,
           vehicleQty: original.vehicleQty,
-          transactionDate: new Date(),
+          transactionDate: original.transactionDate,
           evidence: null,
           remarks: `Reversal for correction: ${input.correctionReason}`,
           relatedTransactionId: original.id,

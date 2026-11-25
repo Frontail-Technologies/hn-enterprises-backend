@@ -44,7 +44,7 @@ export const materialTransactionListQuerySchema = t.Object({
 export const createMaterialTransactionBodySchema = t.Object({
   materialId: t.String({ minLength: 1 }),
   type: transactionTypeSchema,
-  quantity: t.Numeric(),
+  quantity: t.Numeric({ exclusiveMinimum: 0 }),
   transactionDate: t.String({ minLength: 1 }),
   source: t.Optional(materialSourceSchema),
   direction: t.Optional(adjustmentDirectionSchema),
@@ -116,7 +116,7 @@ export const reverseMaterialTransactionBodySchema = t.Object({
 
 export const correctMaterialTransactionBodySchema = t.Object({
   correctionReason: t.String({ minLength: 1 }),
-  quantity: t.Optional(t.Number()),
+  quantity: t.Optional(t.Number({ exclusiveMinimum: 0 })),
   transactionDate: t.Optional(t.String()),
   source: t.Optional(materialSourceSchema),
   direction: t.Optional(adjustmentDirectionSchema),
