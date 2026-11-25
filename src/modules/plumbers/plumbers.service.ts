@@ -38,7 +38,7 @@ export const plumbersService = {
           /** Names of the projects they are currently on. */
           projectNames: sql<string[]>`coalesce((
             SELECT array_agg(p.name ORDER BY p.name) FROM project_members m JOIN projects p ON p.id = m.project_id
-            WHERE m.plumber_id = ${plumbers.id} AND m.removed_at IS NULL
+            WHERE m.plumber_id = "plumbers"."id" AND m.removed_at IS NULL
           ), '{}')`,
         })
         .from(plumbers)

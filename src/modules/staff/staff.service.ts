@@ -25,7 +25,7 @@ const staffSelection = {
   /** Projects a supervisor is currently on (mobile access). */
   projectNames: sql<string[]>`coalesce((
     SELECT array_agg(p.name ORDER BY p.name) FROM project_members m JOIN projects p ON p.id = m.project_id
-    WHERE m.user_id = ${staff.userId} AND m.removed_at IS NULL
+    WHERE m.user_id = "staff"."user_id" AND m.removed_at IS NULL
   ), '{}')`,
   designation: staff.designation,
   /** Resolved from the login account for supervisors, from the staff row otherwise. */
