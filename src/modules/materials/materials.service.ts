@@ -185,6 +185,61 @@ function computeQuantityDelta(
 
 const PLUMBER_PROJECT_TYPES = new Set<MaterialTransactionType>(["return", "adjustment", "consumption"]);
 
+const isAdminUser = (user?: { role?: string } | null) => user?.role === "super_admin" || user?.role === "admin";
+
+const fmtQty = (value: number) => Number(value.toFixed(3)).toString();
+
+/**
+ * Stock limits. Returns a message when the transaction takes out more than
+ * there is, else null:
+ * - store issue: more than the store holds of this material (and source);
+ * - return / consumption / balance "out": more than the plumber holds.
+ * The message starts with "Not enough stock" (the form offers "save anyway").
+ */
+async function checkShortage(
+  tx: Pick<ReturnType<typeof getDb>, "execute">,
+  input: { type: MaterialTransactionType; materialId: string; quantity: number | string; plumberId?: string; direction?: string },
+  source: string | null,
+  unit: string | null,
+): Promise<string | null> {
+  const quantity = Number(input.quantity);
+  const unitLabel = unit ? ` ${unit}` : "";
+  if (input.type === "issue") {
+    const [row] = await tx.execute<{ available: string }>(sql`
+      SELECT coalesce(sum(quantity_delta), 0) AS available FROM material_transactions
+      WHERE material_id = ${input.materialId}::uuid
+        AND type::text IN ('purchase', 'pbg_issue', 'issue', 'return')
+        AND (${source}::text IS NULL OR source::text = ${source}::text)
+    `);
+    const available = Number(row?.available ?? 0);
+    if (quantity > available) {
+      return `Not enough stock: cannot issue ${fmtQty(quantity)}${unitLabel}, only ${fmtQty(Math.max(available, 0))}${unitLabel} in the store.`;
+    }
+    return null;
+  }
+  const takesFromPlumber =
+    input.type === "return" || input.type === "consumption" || input.type === "pbg_consumption" || (input.type === "adjustment" && input.direction === "out");
+  if (!takesFromPlumber || !input.plumberId) return null;
+  const bySource = input.type === "return" || input.type === "adjustment" ? source : null;
+  const [row] = await tx.execute<{ held: string }>(sql`
+    SELECT coalesce(sum(CASE type
+      WHEN 'issue' THEN quantity
+      WHEN 'return' THEN -quantity
+      WHEN 'consumption' THEN -quantity
+      WHEN 'pbg_consumption' THEN -quantity
+      WHEN 'adjustment' THEN quantity_delta
+      ELSE 0 END), 0) AS held
+    FROM material_transactions
+    WHERE plumber_id = ${input.plumberId}::uuid AND material_id = ${input.materialId}::uuid
+      AND (${bySource}::text IS NULL OR source::text = ${bySource}::text)
+  `);
+  const held = Number(row?.held ?? 0);
+  if (quantity > held) {
+    return `Not enough stock: cannot record ${fmtQty(quantity)}${unitLabel}, this plumber only holds ${fmtQty(Math.max(held, 0))}${unitLabel}.`;
+  }
+  return null;
+}
+
 /**
  * The project a plumber holds a material for: the only project where their
  * balance of it is above zero, else the only project they are a member of.
@@ -513,6 +568,13 @@ export const materialsService = {
       // of the supervisor's projects - an unassigned transaction is not.
       if (scoped) await assertProjectAccess(currentUser, projectId);
 
+      const shortage = await checkShortage(tx, input, source, material.unit);
+      const overridden = Boolean(shortage) && input.allowShortage === "true" && isAdminUser(currentUser) && Boolean(input.shortageReason?.trim());
+      if (shortage && !overridden) throw new Error(shortage);
+      const remarks = overridden
+        ? [input.remarks?.trim(), `Saved with short stock: ${input.shortageReason!.trim()}`].filter(Boolean).join(" | ")
+        : input.remarks || null;
+
       const quantityDelta = computeQuantityDelta(input.type, input.quantity, input.direction);
 
       const [transaction] = await tx
@@ -545,7 +607,7 @@ export const materialsService = {
             input.vehicleQty != null ? String(input.vehicleQty) : null,
           transactionDate: new Date(input.transactionDate),
           evidence: input.evidence,
-          remarks: input.remarks || null,
+          remarks,
           createdBy: userId,
         })
         .returning();

@@ -67,6 +67,9 @@ export const createMaterialTransactionBodySchema = t.Object({
   vehicleQty: t.Optional(t.Numeric()),
   evidence: t.Optional(t.Array(t.Record(t.String(), t.Unknown()))),
   remarks: t.Optional(t.String()),
+  /** "true": an admin saves it even though stock / the plumber's balance is short (needs shortageReason). */
+  allowShortage: t.Optional(t.String()),
+  shortageReason: t.Optional(t.String()),
   files: t.Optional(t.Files()),
 });
 

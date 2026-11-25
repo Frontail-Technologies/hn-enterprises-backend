@@ -66,6 +66,8 @@ export type CreateMaterialTransactionBody = {
   vehicleQty?: number;
   evidence?: Record<string, unknown>[];
   remarks?: string;
+  allowShortage?: string;
+  shortageReason?: string;
   files?: File[];
 };
 
