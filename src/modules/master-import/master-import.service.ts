@@ -713,7 +713,13 @@ export async function matchRows(rows: NormalizedImportRow[]) {
       if (!row.issues.includes(message)) row.issues.push(message);
     }
 
-    if (!project && row.projectCode) {
+    // A new project is only created when the sheet names it; never a nameless one.
+    if (!project && !normalizeText(row.projectName)) {
+      const message = row.projectCode
+        ? `No project has code "${row.projectCode}" - check the code (e.g. PRJ-0001)`
+        : "Project Code is missing - add the project's code (e.g. PRJ-0001) or import from the project page";
+      if (!row.issues.includes(message)) row.issues.push(message);
+    } else if (!project && row.projectCode) {
       const message = `No project has code "${row.projectCode}" - a new project will be created`;
       if (!row.warnings.includes(message)) row.warnings.push(message);
     }
