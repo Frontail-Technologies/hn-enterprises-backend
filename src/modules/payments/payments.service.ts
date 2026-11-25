@@ -1,5 +1,5 @@
 import { alias } from "drizzle-orm/pg-core";
-import { and, asc, count, desc, eq, gte, ilike, inArray, lte, or, sql, sum } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, ilike, inArray, isNull, lte, or, sql, sum } from "drizzle-orm";
 import { getDb } from "@db";
 import { customers, payments, paymentCategoryEnum, paymentStatusEnum, projectSites, users } from "@db/schema";
 
@@ -11,6 +11,7 @@ import { expenseTitle } from "@modules/activity/activity.catalog";
 import {
   assertCustomerAccess,
   assertPlumberAccess,
+  accessibleProjectIds,
   assertProjectAccess,
   isProjectScoped,
 } from "@modules/projects/project-access.service";
@@ -37,6 +38,24 @@ function supervisorCategoryCondition(currentUser?: AuthTokenPayload | null) {
  */
 function supervisorOwnershipCondition(currentUser?: AuthTokenPayload | null) {
   return currentUser?.role === "supervisor" ? eq(payments.supervisorId, currentUser.id) : undefined;
+}
+
+/**
+ * A supervisor's expenses of a project they were taken off disappear from
+ * their app (admins still see them). Expenses with no project stay visible
+ * while they are on at least one project; with no project at all, nothing.
+ * `ids` null = not scoped (admins).
+ */
+function supervisorProjectCondition(ids: string[] | null) {
+  if (ids === null) return undefined;
+  if (!ids.length) return sql`false`;
+  return or(isNull(payments.projectId), inArray(payments.projectId, ids));
+}
+
+function canSeePaymentProject(projectId: string | null, ids: string[] | null) {
+  if (ids === null) return true;
+  if (!ids.length) return false;
+  return projectId === null || ids.includes(projectId);
 }
 
 async function assertIsSupervisor(userId: string) {
@@ -70,7 +89,7 @@ function parseCsv(value?: string): string[] {
   return value ? value.split(",").map((item) => item.trim()).filter(Boolean) : [];
 }
 
-function buildListConditions(query: PaymentListQuery, currentUser?: AuthTokenPayload | null) {
+function buildListConditions(query: PaymentListQuery, currentUser?: AuthTokenPayload | null, projectIds: string[] | null = null) {
   const searchPattern = toSearchPattern(query.search);
   const paidTo = parseCsv(query.paidTo);
   const purpose = parseCsv(query.purpose);
@@ -112,6 +131,7 @@ function buildListConditions(query: PaymentListQuery, currentUser?: AuthTokenPay
     status.length ? inArray(payments.status, status) : undefined,
     supervisorCategoryCondition(currentUser),
     supervisorOwnershipCondition(currentUser),
+    supervisorProjectCondition(projectIds),
   ];
 }
 
@@ -142,7 +162,7 @@ export const paymentsService = {
     const db = getDb();
     const { page, limit, offset } = parsePagination(query);
 
-    const conditions = buildListConditions(query, currentUser).filter(
+    const conditions = buildListConditions(query, currentUser, await accessibleProjectIds(currentUser)).filter(
       (condition): condition is NonNullable<typeof condition> => Boolean(condition),
     );
     const where = conditions.length ? and(...conditions) : undefined;
@@ -190,7 +210,7 @@ export const paymentsService = {
 
   async summary(query: PaymentListQuery, currentUser?: AuthTokenPayload | null) {
     const db = getDb();
-    const conditions = buildListConditions(query, currentUser).filter(
+    const conditions = buildListConditions(query, currentUser, await accessibleProjectIds(currentUser)).filter(
       (condition): condition is NonNullable<typeof condition> => Boolean(condition),
     );
     const where = conditions.length ? and(...conditions) : undefined;
@@ -293,6 +313,7 @@ export const paymentsService = {
           sql`${valueColumn} is not null`,
           supervisorCategoryCondition(currentUser),
           supervisorOwnershipCondition(currentUser),
+          supervisorProjectCondition(await accessibleProjectIds(currentUser)),
         ),
       )
       .orderBy(asc(valueColumn))
@@ -308,6 +329,9 @@ export const paymentsService = {
     }
     // Same ownership scope as list(): never another supervisor's expense.
     if (currentUser?.role === "supervisor" && payment.supervisorId !== currentUser.id) {
+      throw new Error("Payment not found");
+    }
+    if (!canSeePaymentProject(payment.projectId, await accessibleProjectIds(currentUser))) {
       throw new Error("Payment not found");
     }
     return payment;
@@ -344,7 +368,13 @@ export const paymentsService = {
 
     // Expenses select Customer, not Site/Project (R14/R16) - project is
     // derived from the customer's own project rather than asked redundantly.
-    const projectId = input.customerId ? await resolveProjectIdForCustomer(input.customerId) : input.projectId || null;
+    let projectId = input.customerId ? await resolveProjectIdForCustomer(input.customerId) : input.projectId || null;
+    // The mobile app has no project field: a supervisor's expense without a
+    // customer goes to their project when they are on exactly one.
+    if (!projectId && currentUser.role === "supervisor") {
+      const ids = await accessibleProjectIds(currentUser);
+      if (ids?.length === 1) projectId = ids[0];
+    }
 
     const db = getDb();
     // Immutable snapshots (safe-hard-delete brief §5) - survive a hard-deleted supervisor/submitter.
@@ -415,6 +445,9 @@ export const paymentsService = {
       }
       if (existing.supervisorId !== currentUser.id) {
         throw new Error("Not authorized to update this expense");
+      }
+      if (!canSeePaymentProject(existing.projectId, await accessibleProjectIds(currentUser))) {
+        throw new Error("Payment not found");
       }
       if (input.category && !SUPERVISOR_VISIBLE_CATEGORIES.includes(input.category)) {
         throw new Error("You do not have permission to record this category of expense");
