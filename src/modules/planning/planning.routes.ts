@@ -14,7 +14,7 @@ export const planningRoutes = new Elysia({ prefix: "/planning" })
   .use(auth)
   .get(
     "/site-plans",
-    ({ query, set }) => planningController.listSitePlans({ query, set }),
+    ({ query, currentUser, set }) => planningController.listSitePlans({ query, currentUser, set }),
     { query: sitePlanListQuerySchema, requireAuth: true },
   )
   .put(
@@ -29,7 +29,7 @@ export const planningRoutes = new Elysia({ prefix: "/planning" })
   )
   .get(
     "/dpr-records",
-    ({ query, set }) => planningController.listDprRecords({ query, set }),
+    ({ query, currentUser, set }) => planningController.listDprRecords({ query, currentUser, set }),
     { query: dprRecordListQuerySchema, requireAuth: true },
   )
   .put(

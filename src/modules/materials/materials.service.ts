@@ -2,7 +2,16 @@ import { and, count, countDistinct, eq, getTableColumns, gte, ilike, inArray, is
 import { getDb } from "@db";
 import { customers, materialTransactions, materials, plumbers, projects, projectSites, users } from "@db/schema";
 import { normalizeKey } from "@modules/master-import/master-import.mapper";
+import {
+  assertCustomerAccess,
+  assertPlumberAccess,
+  assertProjectAccess,
+  ensureProjectMembers,
+  inProjects,
+  isProjectScoped,
+} from "@modules/projects/project-access.service";
 import { auditService } from "@services";
+import type { AuthTokenPayload } from "@types";
 import {
   buildPaginationMeta,
   cleanObject,
@@ -78,8 +87,16 @@ function projectFilterCondition(projectId: string | undefined) {
   return projectId === "unassigned" ? isNull(materialTransactions.projectId) : eq(materialTransactions.projectId, projectId);
 }
 
-function buildTransactionListWhere(query: MaterialTransactionListQuery) {
+/**
+ * `scope` = project ids a supervisor may see (from accessibleProjectIds);
+ * `null`/omitted = unscoped (admins, exports). Unassigned (no project)
+ * transactions are outside every supervisor's scope.
+ */
+type ProjectScope = string[] | null;
+
+function buildTransactionListWhere(query: MaterialTransactionListQuery, scope: ProjectScope = null) {
   const conditions = [
+    inProjects(materialTransactions.projectId, scope),
     query.materialId ? eq(materialTransactions.materialId, query.materialId) : undefined,
     // `types` (plural) scopes to a SET of domain types in one request - e.g.
     // the Purchase tab is "purchase" + "pbg_issue" together. Additive to the
@@ -208,7 +225,7 @@ export const materialsService = {
    * transactions exist (the old client-side reduce() over a 200-row-capped
    * fetch silently under-counted once a material passed 200 transactions).
    */
-  async getOverview(id: string) {
+  async getOverview(id: string, scope: ProjectScope = null) {
     const material = await getMaterialOrThrow(id);
     const db = getDb();
 
@@ -223,11 +240,11 @@ export const materialsService = {
         returnedQty: sumWhenTypeIn(RETURNED_TYPES),
       })
       .from(materialTransactions)
-      .where(eq(materialTransactions.materialId, id));
+      .where(and(eq(materialTransactions.materialId, id), inProjects(materialTransactions.projectId, scope)));
 
     // Reuses the existing, already-correct plumber-balance aggregation
     // rather than re-deriving that grouping logic in raw SQL here.
-    const plumberBalanceRows = await materialsService.plumberBalances({ materialId: id });
+    const plumberBalanceRows = await materialsService.plumberBalances({ materialId: id }, scope);
 
     return {
       material: withStatus(material),
@@ -247,9 +264,9 @@ export const materialsService = {
    * match InventoryDetailPage's own DetailTab union exactly. "plumberLedger"
    * is deliberately not handled - that tab uses plumberBalances(), not this.
    */
-  async listTransactionsForDetailTab(id: string, tab: string, query: MaterialTransactionListQuery) {
+  async listTransactionsForDetailTab(id: string, tab: string, query: MaterialTransactionListQuery, scope: ProjectScope = null) {
     const types = INVENTORY_DETAIL_TAB_TYPES[tab];
-    return materialsService.listTransactions({ ...query, materialId: id, types, type: undefined });
+    return materialsService.listTransactions({ ...query, materialId: id, types, type: undefined }, scope);
   },
 
   async create(input: CreateMaterialBody, userId: string) {
@@ -311,10 +328,10 @@ export const materialsService = {
     return materialsDeletionService.execute(id, userId);
   },
 
-  async listTransactions(query: MaterialTransactionListQuery) {
+  async listTransactions(query: MaterialTransactionListQuery, scope: ProjectScope = null) {
     const db = getDb();
     const { page, limit, offset } = parsePagination(query);
-    const where = buildTransactionListWhere(query);
+    const where = buildTransactionListWhere(query, scope);
 
     // Relational display labels are joined once here, server-side, so no
     // consumer needs to load the full plumbers/projects/customers/materials
@@ -377,10 +394,18 @@ export const materialsService = {
   async createTransaction(
     input: CreateMaterialTransactionBody,
     userId: string,
+    currentUser?: AuthTokenPayload | null,
   ) {
     const db = getDb();
+    const scoped = isProjectScoped(currentUser);
 
-    return db.transaction(async (tx) => {
+    // Supervisors may only attach customers/plumbers of their own projects.
+    if (scoped) {
+      if (input.customerId) await assertCustomerAccess(currentUser, input.customerId);
+      if (input.plumberId) await assertPlumberAccess(currentUser, input.plumberId);
+    }
+
+    const transaction = await db.transaction(async (tx) => {
       const [material] = await tx
         .select()
         .from(materials)
@@ -422,6 +447,10 @@ export const materialsService = {
           .limit(1);
         projectId = customer?.projectId ?? null;
       }
+
+      // The resolved project (explicit, via site or via customer) must be one
+      // of the supervisor's projects - an unassigned transaction is not.
+      if (scoped) await assertProjectAccess(currentUser, projectId);
 
       const quantityDelta = computeQuantityDelta(input.type, input.quantity, input.direction);
 
@@ -474,11 +503,20 @@ export const materialsService = {
 
       return transaction;
     });
+
+    // An admin issuing to a plumber on a project makes them a project member,
+    // so the project's supervisors can then pick them.
+    if (!scoped && transaction.plumberId && transaction.projectId) {
+      await ensureProjectMembers(transaction.projectId, { plumberIds: [transaction.plumberId] }, userId);
+    }
+
+    return transaction;
   },
 
-  async plumberBalances(query: PlumberBalanceQuery) {
+  async plumberBalances(query: PlumberBalanceQuery, scope: ProjectScope = null) {
     const db = getDb();
     const conditions = [
+      inProjects(materialTransactions.projectId, scope),
       isNotNull(materialTransactions.plumberId),
       query.plumberId
         ? eq(materialTransactions.plumberId, query.plumberId)
@@ -578,9 +616,10 @@ export const materialsService = {
     }));
   },
 
-  async stockBalances(query: StockBalanceQuery) {
+  async stockBalances(query: StockBalanceQuery, scope: ProjectScope = null) {
     const db = getDb();
     const conditions = [
+      inProjects(materialTransactions.projectId, scope),
       inArray(materialTransactions.type, Array.from(STORE_AFFECTING_TYPES)),
       query.materialId ? eq(materialTransactions.materialId, query.materialId) : undefined,
       query.source ? eq(materialTransactions.source, query.source) : undefined,
@@ -606,9 +645,9 @@ export const materialsService = {
    * materials list to group/join them client-side. Sort matches the old
    * client-side totalIssueRows() exactly (highest issued qty first).
    */
-  async totalIssueSummary(query: InventoryOverviewQuery) {
+  async totalIssueSummary(query: InventoryOverviewQuery, scope: ProjectScope = null) {
     const db = getDb();
-    const where = buildTransactionListWhere({ ...query, types: ISSUED_TYPES });
+    const where = buildTransactionListWhere({ ...query, types: ISSUED_TYPES }, scope);
 
     const rows = await db
       .select({
@@ -679,7 +718,7 @@ export const materialsService = {
    * grids themselves use, so a badge never disagrees with what's on
    * screen. Never returns the underlying transaction rows.
    */
-  async getInventoryOverview(query: InventoryOverviewQuery): Promise<InventoryOverview> {
+  async getInventoryOverview(query: InventoryOverviewQuery, scope: ProjectScope = null): Promise<InventoryOverview> {
     const db = getDb();
 
     // Only the storeIssue/plumberConsumption/plumberBalance tabs ever
@@ -692,7 +731,7 @@ export const materialsService = {
       const where = buildTransactionListWhere({
         ...(includePlumberFilter ? query : queryWithoutPlumber),
         types,
-      });
+      }, scope);
       return db.select({ value: count() }).from(materialTransactions).where(where);
     };
 
@@ -717,11 +756,11 @@ export const materialsService = {
       db
         .select({ value: countDistinct(materialTransactions.materialId) })
         .from(materialTransactions)
-        .where(buildTransactionListWhere({ ...queryWithoutPlumber, types: ISSUED_TYPES })),
+        .where(buildTransactionListWhere({ ...queryWithoutPlumber, types: ISSUED_TYPES }, scope)),
       countByTypes(INVENTORY_PAGE_CONSUMPTION_LOG_TYPES, true),
       // Reuses the existing, already-correct plumber-balance grouping
       // rather than re-deriving that composite-key logic in raw SQL.
-      materialsService.plumberBalances({ source: query.source, projectId: query.projectId, plumberId: query.plumberId }),
+      materialsService.plumberBalances({ source: query.source, projectId: query.projectId, plumberId: query.plumberId }, scope),
     ]);
 
     return {
@@ -818,7 +857,7 @@ export const materialsService = {
     if (!input.correctionReason?.trim()) throw new Error("A correction reason is required");
     const db = getDb();
 
-    return db.transaction(async (tx) => {
+    const result = await db.transaction(async (tx) => {
       const [original] = await tx
         .select()
         .from(materialTransactions)
@@ -971,5 +1010,12 @@ export const materialsService = {
 
       return { reversal, corrected };
     });
+
+    // Corrections are admin-only; a re-pointed plumber/project keeps membership in step.
+    if (result.corrected.plumberId && result.corrected.projectId) {
+      await ensureProjectMembers(result.corrected.projectId, { plumberIds: [result.corrected.plumberId] }, userId);
+    }
+
+    return result;
   },
 };

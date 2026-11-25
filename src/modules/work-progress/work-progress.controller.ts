@@ -28,18 +28,34 @@ export const workProgressController = {
     }
   },
 
-  async list({ query, set }: { query: WorkProgressListQuery; set: SetContext }) {
+  async list({
+    query,
+    currentUser,
+    set,
+  }: {
+    query: WorkProgressListQuery;
+    currentUser: AuthTokenPayload | null;
+    set: SetContext;
+  }) {
     try {
-      return ok(await workProgressService.list(query));
+      return ok(await workProgressService.list(query, currentUser));
     } catch (error) {
       set.status = statusFromError(error);
       return { success: false, message: errorMessage(error, "Unable to list work progress updates") };
     }
   },
 
-  async listQueue({ query, set }: { query: WorkProgressQueueQuery; set: SetContext }) {
+  async listQueue({
+    query,
+    currentUser,
+    set,
+  }: {
+    query: WorkProgressQueueQuery;
+    currentUser: AuthTokenPayload | null;
+    set: SetContext;
+  }) {
     try {
-      const { rows, pagination } = await workProgressService.listQueue(query);
+      const { rows, pagination } = await workProgressService.listQueue(query, currentUser);
       return paginated(rows, pagination);
     } catch (error) {
       set.status = statusFromError(error);
@@ -47,9 +63,17 @@ export const workProgressController = {
     }
   },
 
-  async queueSummary({ query, set }: { query: WorkProgressQueueQuery; set: SetContext }) {
+  async queueSummary({
+    query,
+    currentUser,
+    set,
+  }: {
+    query: WorkProgressQueueQuery;
+    currentUser: AuthTokenPayload | null;
+    set: SetContext;
+  }) {
     try {
-      return ok(await workProgressService.queueSummary(query));
+      return ok(await workProgressService.queueSummary(query, currentUser));
     } catch (error) {
       set.status = statusFromError(error);
       return { success: false, message: errorMessage(error, "Unable to summarize work progress queue") };

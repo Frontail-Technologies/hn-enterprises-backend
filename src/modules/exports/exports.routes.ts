@@ -28,7 +28,8 @@ export const exportsRoutes = new Elysia({ prefix: "/exports" })
         projectId: t.Optional(t.String()),
         supervisorId: t.Optional(t.String()),
       }),
-      requireAuth: true,
+      // Supervisors (mobile) never export; keep other projects' data out of reach.
+      requireRole: ["super_admin", "admin", "viewer"],
     },
   )
   .get(
@@ -36,7 +37,8 @@ export const exportsRoutes = new Elysia({ prefix: "/exports" })
     ({ query, set }) => exportsController.inventoryStock({ query, set }),
     {
       query: t.Object({ projectId: t.Optional(t.String()), source: materialSourceQuerySchema }),
-      requireAuth: true,
+      // Supervisors (mobile) never export; keep other projects' data out of reach.
+      requireRole: ["super_admin", "admin", "viewer"],
     },
   )
   .get(
@@ -44,7 +46,8 @@ export const exportsRoutes = new Elysia({ prefix: "/exports" })
     ({ query, set }) => exportsController.inventoryPurchases({ query, set }),
     {
       query: t.Object({ projectId: t.Optional(t.String()), from: t.Optional(t.String()), to: t.Optional(t.String()) }),
-      requireAuth: true,
+      // Supervisors (mobile) never export; keep other projects' data out of reach.
+      requireRole: ["super_admin", "admin", "viewer"],
     },
   )
   .get(
@@ -52,7 +55,8 @@ export const exportsRoutes = new Elysia({ prefix: "/exports" })
     ({ query, set }) => exportsController.inventoryPbgIssues({ query, set }),
     {
       query: t.Object({ projectId: t.Optional(t.String()), from: t.Optional(t.String()), to: t.Optional(t.String()) }),
-      requireAuth: true,
+      // Supervisors (mobile) never export; keep other projects' data out of reach.
+      requireRole: ["super_admin", "admin", "viewer"],
     },
   )
   .get(
@@ -66,7 +70,8 @@ export const exportsRoutes = new Elysia({ prefix: "/exports" })
         from: t.Optional(t.String()),
         to: t.Optional(t.String()),
       }),
-      requireAuth: true,
+      // Supervisors (mobile) never export; keep other projects' data out of reach.
+      requireRole: ["super_admin", "admin", "viewer"],
     },
   )
   .get(
@@ -80,7 +85,8 @@ export const exportsRoutes = new Elysia({ prefix: "/exports" })
         from: t.Optional(t.String()),
         to: t.Optional(t.String()),
       }),
-      requireAuth: true,
+      // Supervisors (mobile) never export; keep other projects' data out of reach.
+      requireRole: ["super_admin", "admin", "viewer"],
     },
   )
   .get(
@@ -94,7 +100,8 @@ export const exportsRoutes = new Elysia({ prefix: "/exports" })
         from: t.Optional(t.String()),
         to: t.Optional(t.String()),
       }),
-      requireAuth: true,
+      // Supervisors (mobile) never export; keep other projects' data out of reach.
+      requireRole: ["super_admin", "admin", "viewer"],
     },
   )
   .get(
@@ -107,7 +114,8 @@ export const exportsRoutes = new Elysia({ prefix: "/exports" })
         from: t.Optional(t.String()),
         to: t.Optional(t.String()),
       }),
-      requireAuth: true,
+      // Supervisors (mobile) never export; keep other projects' data out of reach.
+      requireRole: ["super_admin", "admin", "viewer"],
     },
   )
   .get(
@@ -120,7 +128,8 @@ export const exportsRoutes = new Elysia({ prefix: "/exports" })
         plumberId: t.Optional(t.String()),
         materialId: t.Optional(t.String()),
       }),
-      requireAuth: true,
+      // Supervisors (mobile) never export; keep other projects' data out of reach.
+      requireRole: ["super_admin", "admin", "viewer"],
     },
   )
   .get(
@@ -140,7 +149,8 @@ export const exportsRoutes = new Elysia({ prefix: "/exports" })
         search: t.Optional(t.String()),
         statKey: t.Optional(t.String()),
       }),
-      requireAuth: true,
+      // Supervisors (mobile) never export; keep other projects' data out of reach.
+      requireRole: ["super_admin", "admin", "viewer"],
     },
   )
   .get(
@@ -160,7 +170,8 @@ export const exportsRoutes = new Elysia({ prefix: "/exports" })
     ({ query, set }) => exportsController.masterValues({ query, set }),
     {
       query: t.Object({ category: t.String(), search: t.Optional(t.String()) }),
-      requireAuth: true,
+      // Supervisors (mobile) never export; keep other projects' data out of reach.
+      requireRole: ["super_admin", "admin", "viewer"],
     },
   )
   .get(
@@ -168,6 +179,7 @@ export const exportsRoutes = new Elysia({ prefix: "/exports" })
     ({ query, set }) => exportsController.holidays({ query, set }),
     {
       query: t.Object({ search: t.Optional(t.String()) }),
-      requireAuth: true,
+      // Supervisors (mobile) never export; keep other projects' data out of reach.
+      requireRole: ["super_admin", "admin", "viewer"],
     },
   );

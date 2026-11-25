@@ -6,6 +6,15 @@ import { buildPaginationMeta, cleanObject, parsePagination, toSearchPattern } fr
 import { auditService, permissionService } from "@services";
 import { activityService } from "@modules/activity/activity.service";
 import {
+  accessibleProjectIds,
+  assertCustomerAccess,
+  assertPlumberAccess,
+  assertProjectAccess,
+  ensureProjectMembers,
+  inProjects,
+  isProjectScoped,
+} from "@modules/projects/project-access.service";
+import {
   buildCustomerCompletionAudit,
   customerStatCondition,
   customerStatDateCondition,
@@ -140,6 +149,44 @@ async function getPlumberNameOrThrow(plumberId: string) {
   return plumber.name;
 }
 
+type CustomerViewer = Pick<AuthTokenPayload, "id" | "role"> | null | undefined;
+
+/**
+ * Supervisor guard for a customer write that may set plumberId/projectId:
+ * the plumber must be on one of their projects (only checked when it actually
+ * changes, so re-sending the current value from a full form still works) and
+ * the customer may not be moved onto a project they are not a member of.
+ */
+async function assertScopedCustomerPatch(
+  currentUser: CustomerViewer,
+  existing: { plumberId: string | null; projectId: string },
+  input: { plumberId?: string | null; projectId?: string | null },
+) {
+  if (!isProjectScoped(currentUser)) return;
+  if (input.plumberId && input.plumberId !== existing.plumberId) {
+    await assertPlumberAccess(currentUser, input.plumberId);
+  }
+  if (input.projectId && input.projectId !== existing.projectId) {
+    await assertProjectAccess(currentUser, input.projectId);
+  }
+}
+
+/**
+ * Admin assignment: when a customer's plumber is newly set/changed (or the
+ * customer moves to another project), that plumber becomes a member of the
+ * customer's project. Re-saving an unchanged plumber does NOT re-add them, so
+ * a plumber an admin removed from the project's team stays removed.
+ */
+async function syncCustomerPlumberMembership(
+  currentUser: CustomerViewer,
+  customer: { projectId: string; plumberId: string | null },
+  previous?: { projectId: string; plumberId: string | null },
+) {
+  if (isProjectScoped(currentUser) || !customer.plumberId) return;
+  if (previous && previous.plumberId === customer.plumberId && previous.projectId === customer.projectId) return;
+  await ensureProjectMembers(customer.projectId, { plumberIds: [customer.plumberId] }, currentUser?.id ?? null);
+}
+
 async function getCustomerOrThrow(id: string) {
   const db = getDb();
   const customer = await db.query.customers.findFirst({
@@ -181,13 +228,18 @@ type CustomerScopeQuery = Pick<
  * added to one but not the others is exactly the kind of silent page-local/
  * dataset-wide mismatch this batch exists to close.
  */
-function buildCustomerScopeConditions(query: CustomerScopeQuery, options: { excludeColumnFilter?: CustomerFilterColumnKey } = {}) {
+function buildCustomerScopeConditions(
+  query: CustomerScopeQuery,
+  options: { excludeColumnFilter?: CustomerFilterColumnKey; projectIds?: string[] | null } = {},
+) {
   const searchPattern = toSearchPattern(query.search);
   const idList = query.ids ? query.ids.split(",").map((id) => id.trim()).filter(Boolean) : undefined;
   const columnFilters = parseCustomerColumnFilters(query.columnFilters);
 
   return [
     idList && idList.length ? inArray(customers.id, idList) : undefined,
+    // Supervisor project boundary (null = unscoped); any projectId filter still applies on top.
+    inProjects(customers.projectId, options.projectIds ?? null),
     query.projectId ? eq(customers.projectId, query.projectId) : undefined,
     query.siteId ? eq(customers.siteId, query.siteId) : undefined,
     query.status ? eq(customers.status, query.status) : undefined,
@@ -216,10 +268,10 @@ function buildCustomerScopeConditions(query: CustomerScopeQuery, options: { excl
 const SELECT_ALL_MATCHING_ID_CAP = 10000;
 
 export const customersService = {
-  async list(query: CustomerListQuery) {
+  async list(query: CustomerListQuery, currentUser?: CustomerViewer) {
     const db = getDb();
     const { page, limit, offset } = parsePagination(query, 10000);
-    const conditions = buildCustomerScopeConditions(query);
+    const conditions = buildCustomerScopeConditions(query, { projectIds: await accessibleProjectIds(currentUser) });
     const where = conditions.length ? and(...conditions) : undefined;
 
     // Whitelisted sort - sortBy is a closed union at the type/schema level, so this
@@ -303,13 +355,16 @@ export const customersService = {
    * UX, and it protects against a free-text column (address, plumber name)
    * blowing up into an unbounded result set.
    */
-  async filterOptions(query: CustomerFilterOptionsQuery) {
+  async filterOptions(query: CustomerFilterOptionsQuery, currentUser?: CustomerViewer) {
     if (!isCustomerFilterColumnKey(query.column)) {
       throw new Error(`Invalid filter column: ${query.column}`);
     }
 
     const db = getDb();
-    const conditions = buildCustomerScopeConditions(query, { excludeColumnFilter: query.column });
+    const conditions = buildCustomerScopeConditions(query, {
+      excludeColumnFilter: query.column,
+      projectIds: await accessibleProjectIds(currentUser),
+    });
     const where = conditions.length ? and(...conditions) : undefined;
     const columnExpr = CUSTOMER_FILTER_COLUMNS[query.column];
 
@@ -331,9 +386,9 @@ export const customersService = {
    * matching set is bigger than what was returned, so the UI can say so
    * instead of silently acting as if it selected everything.
    */
-  async listIds(query: CustomerListQuery) {
+  async listIds(query: CustomerListQuery, currentUser?: CustomerViewer) {
     const db = getDb();
-    const conditions = buildCustomerScopeConditions(query);
+    const conditions = buildCustomerScopeConditions(query, { projectIds: await accessibleProjectIds(currentUser) });
     const where = conditions.length ? and(...conditions) : undefined;
 
     const [rows, [{ value: total }]] = await Promise.all([
@@ -353,7 +408,8 @@ export const customersService = {
     };
   },
 
-  async get(id: string) {
+  async get(id: string, currentUser?: CustomerViewer) {
+    await assertCustomerAccess(currentUser, id);
     const customer = await getCustomerOrThrow(id);
     return {
       ...customer,
@@ -375,6 +431,7 @@ export const customersService = {
     }
 
     const db = getDb();
+    await assertCustomerAccess(currentUser, id);
     const existing = await getCustomerOrThrow(id);
 
     if (!permissionService.canModifyCustomer(currentUser)) {
@@ -444,7 +501,7 @@ export const customersService = {
     };
   },
 
-  async create(input: CreateCustomerBody, userId: string) {
+  async create(input: CreateCustomerBody, userId: string, currentUser?: CustomerViewer) {
     const db = getDb();
     const plumberName = await getPlumberNameOrThrow(input.plumberId);
 
@@ -498,16 +555,21 @@ export const customersService = {
       description: `Created customer ${customer.customerName} (${customer.trBpNumber})`,
     });
 
+    // Create routes are admin-only; default to the creator as an unscoped actor.
+    await syncCustomerPlumberMembership(currentUser ?? { id: userId, role: "admin" }, customer);
+
     return customer;
   },
 
   async update(id: string, input: UpdateCustomerBody, currentUser: AuthTokenPayload) {
     const userId = currentUser.id;
+    await assertCustomerAccess(currentUser, id);
     const existing = await getCustomerOrThrow(id);
 
     if (!permissionService.canModifyCustomer(currentUser)) {
       throw new Error("Not authorized to update this customer");
     }
+    await assertScopedCustomerPatch(currentUser, existing, input);
 
     const db = getDb();
     const plumberName = input.plumberId ? await getPlumberNameOrThrow(input.plumberId) : undefined;
@@ -657,10 +719,17 @@ export const customersService = {
       metadata: changedSections.length ? { sections: changedSections } : undefined,
     });
 
+    await syncCustomerPlumberMembership(currentUser, customer, existing);
+
     return customer;
   },
 
-  async createWithPipeRecords(input: CreateCustomerBody, pipeRecords: LmcPipeRecordInput[], userId: string) {
+  async createWithPipeRecords(
+    input: CreateCustomerBody,
+    pipeRecords: LmcPipeRecordInput[],
+    userId: string,
+    currentUser?: CustomerViewer,
+  ) {
     const db = getDb();
     const plumberName = await getPlumberNameOrThrow(input.plumberId);
 
@@ -739,6 +808,9 @@ export const customersService = {
       description: `Created customer ${customer.customerName} (${customer.trBpNumber})`,
     });
 
+    // Create routes are admin-only; default to the creator as an unscoped actor.
+    await syncCustomerPlumberMembership(currentUser ?? { id: userId, role: "admin" }, customer);
+
     return customer;
   },
 
@@ -749,11 +821,13 @@ export const customersService = {
     currentUser: AuthTokenPayload,
   ) {
     const userId = currentUser.id;
+    await assertCustomerAccess(currentUser, id);
     const existing = await getCustomerOrThrow(id);
 
     if (!permissionService.canModifyCustomer(currentUser)) {
       throw new Error("Not authorized to update this customer");
     }
+    await assertScopedCustomerPatch(currentUser, existing, input);
 
     const db = getDb();
     const plumberName = input.plumberId ? await getPlumberNameOrThrow(input.plumberId) : undefined;
@@ -929,6 +1003,8 @@ export const customersService = {
       description: `Updated customer ${customer.customerName} (${customer.trBpNumber})`,
     });
 
+    await syncCustomerPlumberMembership(currentUser, customer, existing);
+
     return customer;
   },
 
@@ -936,7 +1012,8 @@ export const customersService = {
     return customersDeletionService.execute(id, userId);
   },
 
-  async listLmcPipeRecords(customerId: string) {
+  async listLmcPipeRecords(customerId: string, currentUser?: CustomerViewer) {
+    await assertCustomerAccess(currentUser, customerId);
     await getCustomerOrThrow(customerId);
     const db = getDb();
     return db
@@ -947,6 +1024,7 @@ export const customersService = {
   },
 
   async upsertLmcPipeRecord(customerId: string, input: UpsertLmcPipeRecordBody, currentUser: AuthTokenPayload) {
+    await assertCustomerAccess(currentUser, customerId);
     const customer = await getCustomerOrThrow(customerId);
     if (!permissionService.canModifyCustomer(currentUser)) {
       throw new Error("Not authorized to update this customer");
@@ -984,7 +1062,8 @@ export const customersService = {
     return record;
   },
 
-  async listDocuments(customerId: string) {
+  async listDocuments(customerId: string, currentUser?: CustomerViewer) {
+    await assertCustomerAccess(currentUser, customerId);
     await getCustomerOrThrow(customerId);
     const db = getDb();
     return db
@@ -995,6 +1074,7 @@ export const customersService = {
   },
 
   async createDocument(customerId: string, input: ResolvedCustomerDocumentInput, currentUser: AuthTokenPayload) {
+    await assertCustomerAccess(currentUser, customerId);
     const customer = await getCustomerOrThrow(customerId);
     if (!permissionService.canModifyCustomer(currentUser)) {
       throw new Error("Not authorized to update this customer");
@@ -1044,7 +1124,8 @@ export const customersService = {
     await db.delete(customerDocuments).where(eq(customerDocuments.id, documentId));
   },
 
-  async listNotes(customerId: string) {
+  async listNotes(customerId: string, currentUser?: CustomerViewer) {
+    await assertCustomerAccess(currentUser, customerId);
     await getCustomerOrThrow(customerId);
     const db = getDb();
     return db.query.customerNotes.findMany({
@@ -1055,6 +1136,7 @@ export const customersService = {
   },
 
   async createNote(customerId: string, input: CreateCustomerNoteBody, currentUser: AuthTokenPayload) {
+    await assertCustomerAccess(currentUser, customerId);
     const customer = await getCustomerOrThrow(customerId);
     if (!permissionService.canModifyCustomer(currentUser)) {
       throw new Error("Not authorized to update this customer");

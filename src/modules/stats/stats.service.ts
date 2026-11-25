@@ -1,20 +1,21 @@
-import { inArray, sql } from "drizzle-orm";
+import { and, inArray, sql } from "drizzle-orm";
 import { getDb } from "@db";
-import { complaints, customers, users } from "@db/schema";
+import { complaints, customers, dprRecords, sitePlans, users } from "@db/schema";
+import { accessibleProjectIds, inProjects } from "@modules/projects/project-access.service";
 import { buildCustomerCompletionAudit, type CustomerCompletionAudit, customerStatCondition } from "@modules/customers/customer-completion";
 import { buildPaginationMeta, parsePagination } from "@utils";
 import type { AuthTokenPayload } from "@types";
 import type { SupervisorStat, SupervisorStatDetailRow, SupervisorStatId, SupervisorStatTone } from "./stats.types";
 
 /**
- * A supervisor is NOT assigned to a project (product rule correction, R2) -
- * there is no per-supervisor project boundary for operational visibility.
- * `currentUser` is kept on getSummary/getDetails' signatures for role checks
- * done at the route layer and any future personalization, but it no longer
- * narrows which customers are counted: every authenticated role (supervisor
- * included) sees aggregate stats across ALL projects. staff.assignedProjectId
- * remains real staff metadata (see staff.schema.ts) - it is just no longer an
- * authorization boundary here.
+ * Project boundary: a supervisor only sees stats for the projects they are an
+ * ACTIVE member of (project_members, removed_at IS NULL - see
+ * project-access.service.ts). getSummary/getDetails resolve the viewer's
+ * project ids and limit every customer count/detail row (customers.projectId)
+ * and the DPR/planning rows (their projectId) to them; a supervisor with no
+ * memberships sees zeros/empty lists. Admins (and other roles) are not scoped
+ * and still see aggregates across ALL projects. staff.assignedProjectId is
+ * staff metadata only and is NOT used as a boundary here.
  */
 
 const STAT_DEFINITIONS: Record<SupervisorStatId, { label: string; suffix: string; tone: SupervisorStatTone }> = {
@@ -112,9 +113,10 @@ function latestDate(dates: (string | Date | null | undefined)[]) {
   return valid.length ? valid[valid.length - 1] : null;
 }
 
-async function fetchDprDetailRows() {
+async function fetchDprDetailRows(projectIds: string[] | null) {
   const db = getDb();
   const rows = await db.query.dprRecords.findMany({
+    where: inProjects(dprRecords.projectId, projectIds),
     with: { project: true, site: true },
     orderBy: (fields, { desc: descOrder }) => [descOrder(fields.date)],
   });
@@ -132,9 +134,10 @@ async function fetchDprDetailRows() {
   }));
 }
 
-async function fetchPlanningDetailRows() {
+async function fetchPlanningDetailRows(projectIds: string[] | null) {
   const db = getDb();
   const rows = await db.query.sitePlans.findMany({
+    where: inProjects(sitePlans.projectId, projectIds),
     with: { project: true, site: true },
     orderBy: (fields, { desc: descOrder }) => [descOrder(fields.date)],
   });
@@ -154,10 +157,10 @@ async function fetchPlanningDetailRows() {
 type CustomerRow = Awaited<ReturnType<typeof fetchMatchingCustomers>>[number];
 type LatestComplaint = { status: string; createdAt: Date | string; resolvedAt: Date | string | null; supervisorRemark: string | null };
 
-async function fetchMatchingCustomers(canonicalKey: string) {
+async function fetchMatchingCustomers(canonicalKey: string, projectIds: string[] | null) {
   const db = getDb();
   return db.query.customers.findMany({
-    where: customerStatCondition(canonicalKey),
+    where: and(customerStatCondition(canonicalKey), inProjects(customers.projectId, projectIds)),
     with: { site: true, lmcPipeRecords: true },
   });
 }
@@ -371,6 +374,8 @@ const COMPLAINT_BASED_STAT_IDS = new Set<SupervisorStatId>(["complaint-customer"
 export const statsService = {
   async getSummary(currentUser: AuthTokenPayload | null): Promise<SupervisorStat[]> {
     const db = getDb();
+    const projectIds = await accessibleProjectIds(currentUser);
+    const projectScope = inProjects(customers.projectId, projectIds);
 
     const filters = CUSTOMER_STAT_ENTRIES.map(([mobileId, canonicalKey]) => {
       const alias = sql.raw(mobileId.replace(/-/g, "_"));
@@ -382,9 +387,10 @@ export const statsService = {
       db.execute<Record<string, string>>(sql`
         SELECT COUNT(*) AS total_customers, ${sql.join(filters, sql`, `)}
         FROM customers
+        ${projectScope ? sql`WHERE ${projectScope}` : sql``}
       `),
-      fetchDprDetailRows(),
-      fetchPlanningDetailRows(),
+      fetchDprDetailRows(projectIds),
+      fetchPlanningDetailRows(projectIds),
     ]);
 
     const row = countsResult[0];
@@ -407,20 +413,21 @@ export const statsService = {
 
   async getDetails(type: string, query: { page?: string; limit?: string } = {}, currentUser: AuthTokenPayload | null = null) {
     if (!isStatId(type)) throw new Error("Stat not found");
+    const projectIds = await accessibleProjectIds(currentUser);
 
     let allRows: SupervisorStatDetailRow[];
 
     if (type === "dpr") {
-      allRows = await fetchDprDetailRows();
+      allRows = await fetchDprDetailRows(projectIds);
     } else if (type === "planning") {
-      allRows = await fetchPlanningDetailRows();
+      allRows = await fetchPlanningDetailRows(projectIds);
     } else {
       const canonicalKey = CUSTOMER_STAT_KEY[type];
       if (!canonicalKey) throw new Error("Stat not found");
 
       const db = getDb();
       const [matchingCustomers, userRows] = await Promise.all([
-        fetchMatchingCustomers(canonicalKey),
+        fetchMatchingCustomers(canonicalKey, projectIds),
         db.select({ id: users.id, name: users.name }).from(users),
       ]);
 

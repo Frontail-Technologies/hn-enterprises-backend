@@ -6,7 +6,7 @@ import { createPlumberBodySchema, plumberListQuerySchema, updatePlumberBodySchem
 
 export const plumbersRoutes = new Elysia({ prefix: "/plumbers" })
   .use(auth)
-  .get("/", ({ query, set }) => plumbersController.list({ query, set }), {
+  .get("/", ({ query, currentUser, set }) => plumbersController.list({ query, currentUser, set }), {
     query: plumberListQuerySchema,
     requireAuth: true,
   })
@@ -57,7 +57,7 @@ export const plumbersRoutes = new Elysia({ prefix: "/plumbers" })
   )
   .get(
     "/:id",
-    ({ params, set }) => plumbersController.get({ params, set }),
+    ({ params, currentUser, set }) => plumbersController.get({ params, currentUser, set }),
     { params: t.Object({ id: t.String() }), requireAuth: true },
   )
   .post(

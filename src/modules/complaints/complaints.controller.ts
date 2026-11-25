@@ -10,9 +10,17 @@ import type {
 } from "./complaints.types";
 
 export const complaintsController = {
-  async list({ query, set }: { query: ComplaintListQuery; set: SetContext }) {
+  async list({
+    query,
+    currentUser,
+    set,
+  }: {
+    query: ComplaintListQuery;
+    currentUser: AuthTokenPayload | null;
+    set: SetContext;
+  }) {
     try {
-      const { rows, pagination } = await complaintsService.list(query);
+      const { rows, pagination } = await complaintsService.list(query, currentUser);
       return paginated(rows, pagination);
     } catch (error) {
       set.status = statusFromError(error);
@@ -20,9 +28,16 @@ export const complaintsController = {
     }
   },
 
-  async statusCounts({ set }: { query: ComplaintStatusCountsQuery; set: SetContext }) {
+  async statusCounts({
+    currentUser,
+    set,
+  }: {
+    query: ComplaintStatusCountsQuery;
+    currentUser: AuthTokenPayload | null;
+    set: SetContext;
+  }) {
     try {
-      const counts = await complaintsService.statusCounts();
+      const counts = await complaintsService.statusCounts(currentUser);
       return ok(counts);
     } catch (error) {
       set.status = statusFromError(error);

@@ -1,13 +1,14 @@
 import type { AuthTokenPayload } from "@types";
 import type { SetContext } from "@modules/auth/auth.helpers";
 import { errorMessage, ok, paginated, statusFromError } from "@utils";
+import { accessiblePlumberIds } from "@modules/projects/project-access.service";
 import { wagesService } from "./wages.service";
 import type { UpsertWageBody, WageListQuery } from "./wages.types";
 
 export const wagesController = {
-  async list({ query, set }: { query: WageListQuery; set: SetContext }) {
+  async list({ query, currentUser, set }: { query: WageListQuery; currentUser: AuthTokenPayload | null; set: SetContext }) {
     try {
-      const { rows, pagination } = await wagesService.list(query);
+      const { rows, pagination } = await wagesService.list(query, await accessiblePlumberIds(currentUser));
       return paginated(rows, pagination);
     } catch (error) {
       set.status = statusFromError(error);

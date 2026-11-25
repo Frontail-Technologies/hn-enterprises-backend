@@ -34,7 +34,8 @@ export const attendanceRoutes = new Elysia({ prefix: "/attendance" })
   .get(
     "/",
     ({ query, set }) => attendanceController.adminList({ query, set }),
-    { query: adminListQuerySchema, requireAuth: true },
+    // Everyone's attendance (with check-in locations): not for supervisors.
+    { query: adminListQuerySchema, requireRole: ["super_admin", "admin", "viewer"] },
   )
   .put(
     "/",

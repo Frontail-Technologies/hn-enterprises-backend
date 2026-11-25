@@ -1,5 +1,7 @@
 import { sql } from "drizzle-orm";
 import { getDb } from "@db";
+import { customers } from "@db/schema";
+import { inProjects } from "@modules/projects/project-access.service";
 import { customerStatCondition, customerStatDateCondition } from "@modules/customers/customer-completion";
 
 const STAT_KEYS = [
@@ -31,7 +33,13 @@ export const dashboardStatsService = {
   async getAdminCounts(
     projectId?: string,
     city?: string,
-    options?: { siteId?: string; month?: number; year?: number },
+    options?: {
+      siteId?: string;
+      month?: number;
+      year?: number;
+      /** Viewer's accessible project ids (null/undefined = all). */
+      projectIds?: string[] | null;
+    },
   ) {
     const db = getDb();
 
@@ -39,6 +47,8 @@ export const dashboardStatsService = {
     if (projectId) scope.push(sql`project_id = ${projectId}`);
     if (options?.siteId) scope.push(sql`site_id = ${options.siteId}`);
     if (city) scope.push(sql`city = ${city}`);
+    const projectScope = inProjects(customers.projectId, options?.projectIds ?? null);
+    if (projectScope) scope.push(projectScope);
     const whereClause = scope.length > 0 ? sql`WHERE ${sql.join(scope, sql` AND `)}` : sql``;
 
     const filters = STAT_KEYS.map((key) => {

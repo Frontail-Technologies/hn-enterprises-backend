@@ -3,6 +3,7 @@ import type { AuthTokenPayload } from "@types";
 import { errorMessage, ok, paginated, statusFromError } from "@utils";
 import { statsService } from "./stats.service";
 import { dashboardStatsService } from "./dashboard-stats.service";
+import { accessibleProjectIds } from "@modules/projects/project-access.service";
 
 export const statsController = {
   async getSummary({ currentUser, set }: { currentUser: AuthTokenPayload | null; set: SetContext }) {
@@ -16,17 +17,22 @@ export const statsController = {
 
   async getAdminSummary({
     query,
+    currentUser,
     set,
   }: {
     query: { projectId?: string; city?: string; siteId?: string; month?: string; year?: string };
+    currentUser: AuthTokenPayload | null;
     set: SetContext;
   }) {
     try {
+      // Supervisors are limited to their projects; admins get all (null).
+      const projectIds = await accessibleProjectIds(currentUser);
       return ok(
         await dashboardStatsService.getAdminCounts(query.projectId, query.city, {
           siteId: query.siteId,
           month: query.month ? Number(query.month) : undefined,
           year: query.year ? Number(query.year) : undefined,
+          projectIds,
         }),
       );
     } catch (error) {

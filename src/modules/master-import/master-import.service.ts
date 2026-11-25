@@ -30,6 +30,7 @@ import type {
   PersistedImportRow,
 } from "./master-import.types";
 import { nextProjectCode } from "@modules/projects/projects.service";
+import { syncProjectMembersFromLinks } from "@modules/projects/project-members-sync.service";
 
 type ExistingProject = Pick<typeof projects.$inferSelect, "id" | "normalizedCode" | "normalizedName" | "normalizedCity">;
 type ExistingSite = Pick<typeof projectSites.$inferSelect, "id" | "projectId" | "normalizedCode" | "normalizedName">;
@@ -361,6 +362,12 @@ async function runConfirmedImport(
         }
       }
     }
+
+    // Plumbers/supervisors named in the sheet become members of those projects,
+    // so supervisors see them in the mobile app.
+    await syncProjectMembersFromLinks(resolved.map((item) => item.projectId), user.id).catch((error) =>
+      console.error("[import] project member sync failed", error),
+    );
 
     await db
       .update(importBatches)

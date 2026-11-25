@@ -20,7 +20,7 @@ export const inventoryRoutes = new Elysia({ prefix: "/inventory" })
   .use(auth)
   .get(
     "/overview",
-    ({ query, set }) => inventoryController.getOverview({ query, set }),
+    ({ query, currentUser, set }) => inventoryController.getOverview({ query, currentUser, set }),
     { query: inventoryOverviewQuerySchema, requireAuth: true },
   );
 
@@ -75,7 +75,7 @@ export const materialsRoutes = new Elysia({ prefix: "/materials" })
   )
   .get(
     "/transactions",
-    ({ query, set }) => materialsController.listTransactions({ query, set }),
+    ({ query, currentUser, set }) => materialsController.listTransactions({ query, currentUser, set }),
     { query: materialTransactionListQuerySchema, requireAuth: true },
   )
   .post(
@@ -85,22 +85,22 @@ export const materialsRoutes = new Elysia({ prefix: "/materials" })
   )
   .get(
     "/plumber-balances",
-    ({ query, set }) => materialsController.plumberBalances({ query, set }),
+    ({ query, currentUser, set }) => materialsController.plumberBalances({ query, currentUser, set }),
     { query: plumberBalanceQuerySchema, requireAuth: true },
   )
   .get(
     "/total-issue",
-    ({ query, set }) => materialsController.totalIssueSummary({ query, set }),
+    ({ query, currentUser, set }) => materialsController.totalIssueSummary({ query, currentUser, set }),
     { query: inventoryOverviewQuerySchema, requireAuth: true },
   )
   .get(
     "/project-usage",
-    ({ query, set }) => materialsController.projectUsageSummary({ query, set }),
+    ({ query, currentUser, set }) => materialsController.projectUsageSummary({ query, currentUser, set }),
     { query: projectUsageQuerySchema, requireAuth: true },
   )
   .get(
     "/stock-balances",
-    ({ query, set }) => materialsController.stockBalances({ query, set }),
+    ({ query, currentUser, set }) => materialsController.stockBalances({ query, currentUser, set }),
     { query: stockBalanceQuerySchema, requireAuth: true },
   )
   .post(
@@ -142,12 +142,12 @@ export const materialsRoutes = new Elysia({ prefix: "/materials" })
   )
   .get(
     "/:id/overview",
-    ({ params, set }) => materialsController.getOverview({ params, set }),
+    ({ params, currentUser, set }) => materialsController.getOverview({ params, currentUser, set }),
     { params: t.Object({ id: t.String() }), requireAuth: true },
   )
   .get(
     "/:id/transactions",
-    ({ params, query, set }) => materialsController.listTransactionsForDetailTab({ params, query, set }),
+    ({ params, query, currentUser, set }) => materialsController.listTransactionsForDetailTab({ params, query, currentUser, set }),
     {
       params: t.Object({ id: t.String() }),
       query: materialDetailTransactionListQuerySchema,

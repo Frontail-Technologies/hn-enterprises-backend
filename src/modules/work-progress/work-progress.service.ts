@@ -4,6 +4,7 @@ import { customers, projects, projectSites, users, workProgressUpdates } from "@
 import { buildPaginationMeta, parsePagination, toSearchPattern } from "@utils";
 import { permissionService } from "@services";
 import { activityService } from "@modules/activity/activity.service";
+import { accessibleProjectIds, assertCustomerAccess, inProjects } from "@modules/projects/project-access.service";
 import { workProgressTitle, workProgressType } from "@modules/activity/activity.catalog";
 import type { AuthTokenPayload } from "@types";
 import type {
@@ -39,10 +40,12 @@ function buildLatestUpdateSubquery() {
 
 type LatestUpdateSubquery = ReturnType<typeof buildLatestUpdateSubquery>;
 
-function buildQueueConditions(query: WorkProgressQueueQuery, latest: LatestUpdateSubquery) {
+function buildQueueConditions(query: WorkProgressQueueQuery, latest: LatestUpdateSubquery, projectIds: string[] | null) {
   const searchPattern = toSearchPattern(query.search);
 
   return [
+    // Supervisors only see customers of projects they are an active member of.
+    inProjects(customers.projectId, projectIds),
     query.projectId ? eq(customers.projectId, query.projectId) : undefined,
     query.siteId ? eq(customers.siteId, query.siteId) : undefined,
     query.stage ? eq(latest.stage, query.stage) : undefined,
@@ -70,6 +73,7 @@ export const workProgressService = {
     if (!permissionService.canModifyCustomer(currentUser)) {
       throw new Error("Not authorized to update this customer");
     }
+    await assertCustomerAccess(currentUser, input.customerId);
 
     const db = getDb();
     // Immutable supervisor snapshot (safe-hard-delete brief §5) - survives a hard-deleted supervisor.
@@ -116,11 +120,13 @@ export const workProgressService = {
     return row;
   },
 
-  async list(query: WorkProgressListQuery) {
+  async list(query: WorkProgressListQuery, currentUser?: AuthTokenPayload | null) {
     const db = getDb();
     const limit = Math.min(Math.max(Number(query.limit) || 50, 1), 200);
+    const projectIds = await accessibleProjectIds(currentUser);
 
     const conditions = [
+      inProjects(customers.projectId, projectIds),
       query.customerId ? eq(workProgressUpdates.customerId, query.customerId) : undefined,
       query.supervisorId ? eq(workProgressUpdates.supervisorId, query.supervisorId) : undefined,
       query.stage ? eq(workProgressUpdates.stage, query.stage) : undefined,
@@ -169,11 +175,12 @@ export const workProgressService = {
     }));
   },
 
-  async listQueue(query: WorkProgressQueueQuery) {
+  async listQueue(query: WorkProgressQueueQuery, currentUser?: AuthTokenPayload | null) {
     const db = getDb();
+    const projectIds = await accessibleProjectIds(currentUser);
     const { page, limit, offset } = parsePagination(query);
     const latest = buildLatestUpdateSubquery();
-    const where = and(...buildQueueConditions(query, latest));
+    const where = and(...buildQueueConditions(query, latest, projectIds));
 
     const selection = {
       id: customers.id,
@@ -229,10 +236,11 @@ export const workProgressService = {
     return { rows: mapped, pagination: buildPaginationMeta(page, limit, total) };
   },
 
-  async queueSummary(query: WorkProgressQueueQuery) {
+  async queueSummary(query: WorkProgressQueueQuery, currentUser?: AuthTokenPayload | null) {
     const db = getDb();
+    const projectIds = await accessibleProjectIds(currentUser);
     const latest = buildLatestUpdateSubquery();
-    const where = and(...buildQueueConditions(query, latest));
+    const where = and(...buildQueueConditions(query, latest, projectIds));
 
     const [row] = await db
       .select({

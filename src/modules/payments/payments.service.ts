@@ -8,6 +8,12 @@ const createdByUsers = alias(users, "created_by_users");
 import { permissionService } from "@services";
 import { activityService } from "@modules/activity/activity.service";
 import { expenseTitle } from "@modules/activity/activity.catalog";
+import {
+  assertCustomerAccess,
+  assertPlumberAccess,
+  assertProjectAccess,
+  isProjectScoped,
+} from "@modules/projects/project-access.service";
 import { buildPaginationMeta, cleanObject, parsePagination, toSearchPattern } from "@utils";
 import type { AuthTokenPayload } from "@types";
 import type { CreatePaymentBody, PaymentCategory, PaymentFilterColumn, PaymentListQuery, PaymentStatus, UpdatePaymentBody } from "./payments.types";
@@ -37,6 +43,20 @@ async function assertIsSupervisor(userId: string) {
   const db = getDb();
   const [user] = await db.select({ role: users.role }).from(users).where(eq(users.id, userId)).limit(1);
   if (!user || user.role !== "supervisor") throw new Error("Selected supervisor was not found");
+}
+
+/**
+ * Project boundary for supervisors: any project / customer / plumber they
+ * attach to an expense must belong to a project they are an active member of.
+ */
+async function assertSupervisorLinks(
+  currentUser: AuthTokenPayload,
+  input: { projectId?: string | null; customerId?: string | null; plumberId?: string | null },
+) {
+  if (!isProjectScoped(currentUser)) return;
+  if (input.customerId) await assertCustomerAccess(currentUser, input.customerId);
+  if (input.projectId) await assertProjectAccess(currentUser, input.projectId);
+  if (input.plumberId) await assertPlumberAccess(currentUser, input.plumberId);
 }
 
 async function resolveProjectIdForCustomer(customerId: string): Promise<string | null> {
@@ -263,10 +283,18 @@ export const paymentsService = {
     } as const;
     const valueColumn = columnMap[column];
 
+    // Same visibility scope as list(): a supervisor only gets values from
+    // their own expenses, never other supervisors'/projects'.
     const rows = await db
       .selectDistinct({ value: valueColumn })
       .from(payments)
-      .where(sql`${valueColumn} is not null`)
+      .where(
+        and(
+          sql`${valueColumn} is not null`,
+          supervisorCategoryCondition(currentUser),
+          supervisorOwnershipCondition(currentUser),
+        ),
+      )
       .orderBy(asc(valueColumn))
       .limit(500);
 
@@ -276,6 +304,10 @@ export const paymentsService = {
   async get(id: string, currentUser?: AuthTokenPayload | null) {
     const payment = await getPaymentOrThrow(id);
     if (isCategoryRestricted(currentUser) && !SUPERVISOR_VISIBLE_CATEGORIES.includes(payment.category)) {
+      throw new Error("Payment not found");
+    }
+    // Same ownership scope as list(): never another supervisor's expense.
+    if (currentUser?.role === "supervisor" && payment.supervisorId !== currentUser.id) {
       throw new Error("Payment not found");
     }
     return payment;
@@ -290,6 +322,8 @@ export const paymentsService = {
     if ((requestedStatus === "approved" || requestedStatus === "rejected") && !permissionService.canManage(currentUser)) {
       throw new Error("Only admins can create a payment that is already approved or rejected");
     }
+
+    await assertSupervisorLinks(currentUser, input);
 
     /**
      * Financial attribution (supervisorId) is server-derived, never trusted
@@ -393,6 +427,8 @@ export const paymentsService = {
     if (isApprovalTransition && !permissionService.canManage(currentUser)) {
       throw new Error("Only admins can approve or reject payments");
     }
+
+    await assertSupervisorLinks(currentUser, input);
 
     // Only an admin may reassign whose expense this is; a supervisor can
     // never touch supervisorId, spoofed or otherwise.

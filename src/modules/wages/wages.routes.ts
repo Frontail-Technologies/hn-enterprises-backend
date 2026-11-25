@@ -5,7 +5,7 @@ import { upsertWageBodySchema, wageListQuerySchema } from "./wages.schema";
 
 export const wagesRoutes = new Elysia({ prefix: "/wages" })
   .use(auth)
-  .get("/", ({ query, set }) => wagesController.list({ query, set }), {
+  .get("/", ({ query, currentUser, set }) => wagesController.list({ query, currentUser, set }), {
     query: wageListQuerySchema,
     requireAuth: true,
   })

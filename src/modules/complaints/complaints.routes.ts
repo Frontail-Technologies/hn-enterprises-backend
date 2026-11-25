@@ -10,13 +10,13 @@ import {
 
 export const complaintsRoutes = new Elysia({ prefix: "/complaints" })
   .use(auth)
-  .get("/", ({ query, set }) => complaintsController.list({ query, set }), {
+  .get("/", ({ query, currentUser, set }) => complaintsController.list({ query, currentUser, set }), {
     query: complaintListQuerySchema,
     requireAuth: true,
   })
   .get(
     "/status-counts",
-    ({ query, set }) => complaintsController.statusCounts({ query, set }),
+    ({ query, currentUser, set }) => complaintsController.statusCounts({ query, currentUser, set }),
     { query: complaintStatusCountsQuerySchema, requireAuth: true },
   )
   .post(

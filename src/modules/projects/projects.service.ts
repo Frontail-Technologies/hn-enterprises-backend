@@ -5,6 +5,7 @@ import { normalizeKey } from "@modules/master-import/master-import.mapper";
 import { auditService } from "@services";
 import { buildPaginationMeta, cleanObject, parsePagination, toSearchPattern } from "@utils";
 import { projectsDeletionService } from "./projects-deletion.service";
+import { ensureProjectMembers, inProjects } from "./project-access.service";
 import type {
   CreateProjectBody,
   CreateProjectDocumentBody,
@@ -57,7 +58,8 @@ export async function nextProjectCode() {
 }
 
 export const projectsService = {
-  async list(query: ProjectListQuery) {
+  /** `projectIds` null = all projects; a list limits a supervisor to their projects. */
+  async list(query: ProjectListQuery, projectIds: string[] | null = null) {
     const db = getDb();
     const { page, limit, offset } = parsePagination(query);
     const searchPattern = toSearchPattern(query.search);
@@ -68,6 +70,7 @@ export const projectsService = {
       searchPattern
         ? or(ilike(projects.name, searchPattern), ilike(projects.code, searchPattern))
         : undefined,
+      inProjects(projects.id, projectIds),
     ].filter((condition): condition is NonNullable<typeof condition> => Boolean(condition));
 
     const where = conditions.length ? and(...conditions) : undefined;
@@ -266,12 +269,13 @@ export const projectsService = {
       .orderBy(projectSites.name);
   },
 
-  async listAllSites(): Promise<{ id: string; name: string; projectId: string; projectName: string }[]> {
+  async listAllSites(projectIds: string[] | null = null): Promise<{ id: string; name: string; projectId: string; projectName: string }[]> {
     const db = getDb();
     const rows = await db
       .select({ id: projectSites.id, name: projectSites.name, projectId: projects.id, projectName: projects.name })
       .from(projectSites)
       .innerJoin(projects, eq(projectSites.projectId, projects.id))
+      .where(inProjects(projectSites.projectId, projectIds))
       .orderBy(projectSites.name);
 
     return rows;
@@ -308,11 +312,13 @@ export const projectsService = {
       .returning();
 
     if (!site) throw new Error("Unable to create project site");
+    // The site's supervisor becomes a project member so the app shows them this project.
+    if (site.supervisorId) await ensureProjectMembers(projectId, { userIds: [site.supervisorId] }, userId);
     return site;
   },
 
   async updateSite(projectId: string, siteId: string, input: UpdateProjectSiteBody, userId: string) {
-    await getSiteOrThrow(projectId, siteId);
+    const previous = await getSiteOrThrow(projectId, siteId);
     const db = getDb();
     const supervisorName = input.supervisorId ? await getUserNameOrThrow(input.supervisorId) : undefined;
 
@@ -346,6 +352,11 @@ export const projectsService = {
       .returning();
 
     if (!site) throw new Error("Unable to update project site");
+    // Only a newly set/changed supervisor joins the project - re-saving the same one must not
+    // re-add someone an admin removed on the Team tab.
+    if (input.supervisorId && input.supervisorId !== previous.supervisorId) {
+      await ensureProjectMembers(projectId, { userIds: [input.supervisorId] }, userId);
+    }
     return site;
   },
 

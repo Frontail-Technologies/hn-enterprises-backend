@@ -21,3 +21,4 @@ export * from "./schemas/user-preferences.schema";
 export * from "./schemas/activity-event.schema";
 export * from "./schemas/report-template.schema";
 export * from "./schemas/recycle-bin.schema";
+export * from "./schemas/project-member.schema";

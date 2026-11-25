@@ -1,8 +1,9 @@
-import { and, count, desc, eq, ilike, ne, or } from "drizzle-orm";
+import { and, count, desc, eq, ilike, ne, or, sql } from "drizzle-orm";
 import { getDb } from "@db";
 import { complaints, customers, users } from "@db/schema";
 import { notificationService } from "@services";
 import { activityService } from "@modules/activity/activity.service";
+import { accessibleProjectIds, assertCustomerAccess, inProjects } from "@modules/projects/project-access.service";
 import { humanizeToken } from "@modules/activity/activity.catalog";
 import type { AuthTokenPayload } from "@types";
 import { buildPaginationMeta, cleanObject, parsePagination, toSearchPattern } from "@utils";
@@ -29,9 +30,18 @@ const RESOLVED_STATUSES = new Set(["resolved", "closed"]);
  * announcements. excludeUserId drops the acting user so an action never
  * notifies its own actor.
  */
-async function resolveComplaintRecipients(excludeUserId?: string): Promise<string[]> {
+/** Active supervisors who are current members of the customer's project. */
+async function resolveComplaintRecipients(customerId: string, excludeUserId?: string): Promise<string[]> {
   const db = getDb();
-  const conditions = [eq(users.role, "supervisor"), eq(users.status, "active")];
+  const conditions = [
+    eq(users.role, "supervisor"),
+    eq(users.status, "active"),
+    sql`${users.id} IN (
+      SELECT m.user_id FROM project_members m
+      JOIN customers c ON c.project_id = m.project_id
+      WHERE c.id = ${customerId}::uuid AND m.removed_at IS NULL AND m.user_id IS NOT NULL
+    )`,
+  ];
   if (excludeUserId) conditions.push(ne(users.id, excludeUserId));
 
   const rows = await db.select({ id: users.id }).from(users).where(and(...conditions));
@@ -56,7 +66,7 @@ async function notifyComplaintRecipients(params: {
   message: string;
   excludeUserId?: string;
 }): Promise<{ recipientCount: number }> {
-  const recipients = await resolveComplaintRecipients(params.excludeUserId);
+  const recipients = await resolveComplaintRecipients(params.customerId, params.excludeUserId);
   if (!recipients.length) return { recipientCount: 0 };
 
   await notificationService.queue({
@@ -75,17 +85,17 @@ async function notifyComplaintRecipients(params: {
 }
 
 export const complaintsService = {
-  async list(query: ComplaintListQuery) {
+  async list(query: ComplaintListQuery, currentUser?: AuthTokenPayload | null) {
     const db = getDb();
     const { page, limit, offset } = parsePagination(query);
 
     const searchPattern = toSearchPattern(query.search);
 
-    // A supervisor is not assigned to a project (product rule correction,
-    // R2) - complaints have no per-supervisor ownership concept, so there is
-    // no scoping to apply here beyond the explicit filters below. Every
-    // supervisor sees complaints across all projects/customers.
+    // Supervisors only see complaints of customers in projects they are an
+    // active member of; admins (or no viewer) are not scoped.
+    const projectIds = await accessibleProjectIds(currentUser);
     const conditions = [
+      inProjects(customers.projectId, projectIds),
       query.customerId ? eq(complaints.customerId, query.customerId) : undefined,
       query.status ? eq(complaints.status, query.status) : undefined,
       searchPattern
@@ -136,13 +146,22 @@ export const complaintsService = {
     return { rows, pagination: buildPaginationMeta(page, limit, total) };
   },
 
-  async statusCounts() {
+  async statusCounts(currentUser?: AuthTokenPayload | null) {
     const db = getDb();
+    const projectIds = await accessibleProjectIds(currentUser);
 
-    const rows = await db
-      .select({ status: complaints.status, value: count() })
-      .from(complaints)
-      .groupBy(complaints.status);
+    const rows =
+      projectIds === null
+        ? await db
+            .select({ status: complaints.status, value: count() })
+            .from(complaints)
+            .groupBy(complaints.status)
+        : await db
+            .select({ status: complaints.status, value: count() })
+            .from(complaints)
+            .innerJoin(customers, eq(complaints.customerId, customers.id))
+            .where(inProjects(customers.projectId, projectIds))
+            .groupBy(complaints.status);
 
     const counts: Record<(typeof rows)[number]["status"], number> = {
       open: 0,
@@ -213,6 +232,8 @@ export const complaintsService = {
     if (!complaintAuthorized(currentUser)) {
       throw new Error("Not authorized to update this complaint");
     }
+    // Supervisors may only touch complaints of customers in their projects.
+    await assertCustomerAccess(currentUser, existing.customerId);
 
     const patch = isAdmin
       ? cleanObject({
@@ -308,6 +329,7 @@ export const complaintsService = {
     }
 
     const complaint = await getComplaintOrThrow(id);
+    await assertCustomerAccess(currentUser, complaint.customerId);
     const customerName = complaint.customer?.customerName ?? "customer";
     const trBpNumber = complaint.customer?.trBpNumber;
     const summary = complaint.title || "Complaint";

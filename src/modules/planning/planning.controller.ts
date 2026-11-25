@@ -1,6 +1,7 @@
 import type { AuthTokenPayload } from "@types";
 import type { SetContext } from "@modules/auth/auth.helpers";
 import { errorMessage, ok, statusFromError } from "@utils";
+import { accessibleProjectIds } from "@modules/projects/project-access.service";
 import { planningService } from "./planning.service";
 import type {
   DprRecordListQuery,
@@ -10,9 +11,9 @@ import type {
 } from "./planning.types";
 
 export const planningController = {
-  async listSitePlans({ query, set }: { query: SitePlanListQuery; set: SetContext }) {
+  async listSitePlans({ query, currentUser, set }: { query: SitePlanListQuery; currentUser: AuthTokenPayload | null; set: SetContext }) {
     try {
-      const rows = await planningService.listSitePlans(query);
+      const rows = await planningService.listSitePlans(query, await accessibleProjectIds(currentUser));
       return ok(rows);
     } catch (error) {
       set.status = statusFromError(error);
@@ -31,7 +32,7 @@ export const planningController = {
   }) {
     try {
       if (!currentUser) throw new Error("Authentication required");
-      const record = await planningService.upsertSitePlan(body, currentUser.id);
+      const record = await planningService.upsertSitePlan(body, currentUser);
       return ok(record, "Site plan saved");
     } catch (error) {
       set.status = statusFromError(error);
@@ -39,9 +40,9 @@ export const planningController = {
     }
   },
 
-  async listDprRecords({ query, set }: { query: DprRecordListQuery; set: SetContext }) {
+  async listDprRecords({ query, currentUser, set }: { query: DprRecordListQuery; currentUser: AuthTokenPayload | null; set: SetContext }) {
     try {
-      const rows = await planningService.listDprRecords(query);
+      const rows = await planningService.listDprRecords(query, await accessibleProjectIds(currentUser));
       return ok(rows);
     } catch (error) {
       set.status = statusFromError(error);
@@ -60,7 +61,7 @@ export const planningController = {
   }) {
     try {
       if (!currentUser) throw new Error("Authentication required");
-      const record = await planningService.upsertDprRecord(body, currentUser.id);
+      const record = await planningService.upsertDprRecord(body, currentUser);
       return ok(record, "DPR record saved");
     } catch (error) {
       set.status = statusFromError(error);
@@ -117,7 +118,7 @@ export const planningController = {
   }) {
     try {
       if (!currentUser) throw new Error("Authentication required");
-      const rows = await planningService.listSiteCustomers(query.siteId);
+      const rows = await planningService.listSiteCustomers(query.siteId, currentUser);
       return ok(rows);
     } catch (error) {
       set.status = statusFromError(error);

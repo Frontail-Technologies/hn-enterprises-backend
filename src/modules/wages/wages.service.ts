@@ -1,6 +1,7 @@
 import { and, count, eq } from "drizzle-orm";
 import { getDb } from "@db";
 import { plumbers, wageRecords } from "@db/schema";
+import { inPlumbers } from "@modules/projects/project-access.service";
 import { buildPaginationMeta, cleanObject, parsePagination } from "@utils";
 import type { UpsertWageBody, WageListQuery } from "./wages.types";
 
@@ -29,11 +30,13 @@ async function findRecord(plumberId: string, month: string) {
 }
 
 export const wagesService = {
-  async list(query: WageListQuery) {
+  /** `plumberScope` = plumber ids a supervisor may see (accessiblePlumberIds); null = all. */
+  async list(query: WageListQuery, plumberScope: string[] | null = null) {
     const db = getDb();
     const { page, limit, offset } = parsePagination(query);
 
     const conditions = [
+      inPlumbers(wageRecords.plumberId, plumberScope),
       query.month ? eq(wageRecords.month, query.month) : undefined,
       query.plumberId ? eq(wageRecords.plumberId, query.plumberId) : undefined,
       query.status ? eq(wageRecords.status, query.status) : undefined,

@@ -13,6 +13,7 @@ import {
 import type { UserRole } from "@types";
 import type { CreateStaffBody, StaffListQuery, UpdateStaffBody } from "./staff.types";
 import { forgetAuthUser } from "@plugins";
+import { ensureProjectMembers } from "@modules/projects/project-access.service";
 
 const staffName = sql<string>`coalesce(${users.name}, ${staff.name}, '')`;
 const staffMobile = sql<string | null>`coalesce(${users.mobile}, ${staff.mobile})`;
@@ -21,6 +22,11 @@ const staffStatus = sql<string>`coalesce(${users.status}::text, ${staff.status}:
 const staffSelection = {
   id: staff.id,
   userId: staff.userId,
+  /** Projects a supervisor is currently on (mobile access). */
+  projectNames: sql<string[]>`coalesce((
+    SELECT array_agg(p.name ORDER BY p.name) FROM project_members m JOIN projects p ON p.id = m.project_id
+    WHERE m.user_id = ${staff.userId} AND m.removed_at IS NULL
+  ), '{}')`,
   designation: staff.designation,
   /** Resolved from the login account for supervisors, from the staff row otherwise. */
   name: staffName,
@@ -209,7 +215,10 @@ export const staffService = {
       return staffRow.id;
     });
 
-    return getStaffOrThrow(newId);
+    // A supervisor's "assigned project" makes them a member of it (mobile access).
+    const created = await getStaffOrThrow(newId);
+    if (created.userId) await ensureProjectMembers(created.assignedProjectId, { userIds: [created.userId] }, actorId);
+    return created;
   },
 
   async update(id: string, input: UpdateStaffBody, actorId: string, actorRole: UserRole) {
@@ -279,7 +288,13 @@ export const staffService = {
       .set({ ...patch, updatedBy: actorId, updatedAt: new Date() })
       .where(eq(staff.id, id));
 
-    return getStaffOrThrow(id);
+    const updated = await getStaffOrThrow(id);
+    // Only when the assigned project changes, so an admin removing them on the
+    // Team tab isn't undone by a later salary edit.
+    if (updated.userId && input.assignedProjectId && input.assignedProjectId !== existing.assignedProjectId) {
+      await ensureProjectMembers(updated.assignedProjectId, { userIds: [updated.userId] }, actorId);
+    }
+    return updated;
   },
 
   /**

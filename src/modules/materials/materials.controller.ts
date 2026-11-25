@@ -1,6 +1,7 @@
 import type { AuthTokenPayload } from "@types";
 import type { SetContext } from "@modules/auth/auth.helpers";
 import { uploadService } from "@services";
+import { accessibleProjectIds, assertProjectAccess } from "@modules/projects/project-access.service";
 import { errorCode, errorMessage, ok, paginated, statusFromError } from "@utils";
 import { materialsService } from "./materials.service";
 import { materialsDeletionService } from "./materials-deletion.service";
@@ -35,9 +36,9 @@ async function mergeUploadedEvidence(
 }
 
 export const inventoryController = {
-  async getOverview({ query, set }: { query: InventoryOverviewQuery; set: SetContext }) {
+  async getOverview({ query, currentUser, set }: { query: InventoryOverviewQuery; currentUser: AuthTokenPayload | null; set: SetContext }) {
     try {
-      const overview = await materialsService.getInventoryOverview(query);
+      const overview = await materialsService.getInventoryOverview(query, await accessibleProjectIds(currentUser));
       return ok(overview);
     } catch (error) {
       set.status = statusFromError(error);
@@ -67,9 +68,9 @@ export const materialsController = {
     }
   },
 
-  async getOverview({ params, set }: { params: { id: string }; set: SetContext }) {
+  async getOverview({ params, currentUser, set }: { params: { id: string }; currentUser: AuthTokenPayload | null; set: SetContext }) {
     try {
-      const overview = await materialsService.getOverview(params.id);
+      const overview = await materialsService.getOverview(params.id, await accessibleProjectIds(currentUser));
       return ok(overview);
     } catch (error) {
       set.status = statusFromError(error);
@@ -80,15 +81,22 @@ export const materialsController = {
   async listTransactionsForDetailTab({
     params,
     query,
+    currentUser,
     set,
   }: {
     params: { id: string };
     query: MaterialTransactionListQuery & { tab?: string };
+    currentUser: AuthTokenPayload | null;
     set: SetContext;
   }) {
     try {
       const { tab, ...rest } = query;
-      const { rows, pagination } = await materialsService.listTransactionsForDetailTab(params.id, tab ?? "transactions", rest);
+      const { rows, pagination } = await materialsService.listTransactionsForDetailTab(
+        params.id,
+        tab ?? "transactions",
+        rest,
+        await accessibleProjectIds(currentUser),
+      );
       return paginated(rows, pagination);
     } catch (error) {
       set.status = statusFromError(error);
@@ -161,9 +169,11 @@ export const materialsController = {
 
   async listTransactions({
     query,
+    currentUser,
     set,
   }: {
     query: Omit<MaterialTransactionListQuery, "types"> & { types?: string };
+    currentUser: AuthTokenPayload | null;
     set: SetContext;
   }) {
     try {
@@ -171,7 +181,10 @@ export const materialsController = {
       const parsedTypes = types
         ? (types.split(",").map((value) => value.trim()) as MaterialTransactionListQuery["types"])
         : undefined;
-      const { rows, pagination } = await materialsService.listTransactions({ ...rest, types: parsedTypes });
+      const { rows, pagination } = await materialsService.listTransactions(
+        { ...rest, types: parsedTypes },
+        await accessibleProjectIds(currentUser),
+      );
       return paginated(rows, pagination);
     } catch (error) {
       set.status = statusFromError(error);
@@ -192,7 +205,7 @@ export const materialsController = {
       if (!currentUser) throw new Error("Authentication required");
       const { files, ...rest } = body;
       const evidence = await mergeUploadedEvidence(rest.evidence, files, currentUser.id);
-      const transaction = await materialsService.createTransaction({ ...rest, evidence }, currentUser.id);
+      const transaction = await materialsService.createTransaction({ ...rest, evidence }, currentUser.id, currentUser);
       set.status = 201;
       return ok(transaction, "Transaction recorded");
     } catch (error) {
@@ -201,9 +214,9 @@ export const materialsController = {
     }
   },
 
-  async plumberBalances({ query, set }: { query: PlumberBalanceQuery; set: SetContext }) {
+  async plumberBalances({ query, currentUser, set }: { query: PlumberBalanceQuery; currentUser: AuthTokenPayload | null; set: SetContext }) {
     try {
-      const rows = await materialsService.plumberBalances(query);
+      const rows = await materialsService.plumberBalances(query, await accessibleProjectIds(currentUser));
       return ok(rows);
     } catch (error) {
       set.status = statusFromError(error);
@@ -211,9 +224,9 @@ export const materialsController = {
     }
   },
 
-  async totalIssueSummary({ query, set }: { query: InventoryOverviewQuery; set: SetContext }) {
+  async totalIssueSummary({ query, currentUser, set }: { query: InventoryOverviewQuery; currentUser: AuthTokenPayload | null; set: SetContext }) {
     try {
-      const rows = await materialsService.totalIssueSummary(query);
+      const rows = await materialsService.totalIssueSummary(query, await accessibleProjectIds(currentUser));
       return ok(rows);
     } catch (error) {
       set.status = statusFromError(error);
@@ -221,8 +234,17 @@ export const materialsController = {
     }
   },
 
-  async projectUsageSummary({ query, set }: { query: { projectId?: string }; set: SetContext }) {
+  async projectUsageSummary({
+    query,
+    currentUser,
+    set,
+  }: {
+    query: { projectId?: string };
+    currentUser: AuthTokenPayload | null;
+    set: SetContext;
+  }) {
     try {
+      await assertProjectAccess(currentUser, query.projectId);
       const rows = await materialsService.projectUsageSummary(query.projectId ?? "");
       return ok(rows);
     } catch (error) {
@@ -231,9 +253,9 @@ export const materialsController = {
     }
   },
 
-  async stockBalances({ query, set }: { query: StockBalanceQuery; set: SetContext }) {
+  async stockBalances({ query, currentUser, set }: { query: StockBalanceQuery; currentUser: AuthTokenPayload | null; set: SetContext }) {
     try {
-      const rows = await materialsService.stockBalances(query);
+      const rows = await materialsService.stockBalances(query, await accessibleProjectIds(currentUser));
       return ok(rows);
     } catch (error) {
       set.status = statusFromError(error);

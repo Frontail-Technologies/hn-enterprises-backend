@@ -1,7 +1,20 @@
 import { Elysia, t } from "elysia";
 import { auth } from "@plugins";
 import { bulkDeleteByIdsBodySchema } from "@utils";
+import type { AuthTokenPayload } from "@types";
+import { errorMessage, ok, statusFromError } from "@utils";
+import { projectMembersService } from "./project-members.service";
 import { projectsController } from "./projects.controller";
+
+type SetContext = { status?: number | string };
+async function run<T>(set: SetContext, fallback: string, action: () => Promise<T>, message?: string) {
+  try {
+    return ok(await action(), message);
+  } catch (error) {
+    set.status = statusFromError(error);
+    return { success: false, message: errorMessage(error, fallback) };
+  }
+}
 import {
   createProjectBodySchema,
   createProjectDocumentBodySchema,
@@ -13,7 +26,7 @@ import {
 
 export const projectsRoutes = new Elysia({ prefix: "/projects" })
   .use(auth)
-  .get("/", ({ query, set }) => projectsController.list({ query, set }), {
+  .get("/", ({ query, currentUser, set }) => projectsController.list({ query, currentUser, set }), {
     query: projectListQuerySchema,
     requireAuth: true,
   })
@@ -35,23 +48,51 @@ export const projectsRoutes = new Elysia({ prefix: "/projects" })
   // route's convention above - Elysia already prioritizes static routes).
   .get(
     "/sites",
-    ({ set }) => projectsController.listAllSites({ set }),
+    ({ currentUser, set }) => projectsController.listAllSites({ currentUser, set }),
     { requireAuth: true },
   )
   .get(
     "/:id",
-    ({ params, set }) => projectsController.get({ params, set }),
+    ({ params, currentUser, set }) => projectsController.get({ params, currentUser, set }),
     { params: t.Object({ id: t.String() }), requireAuth: true },
   )
   .get(
     "/:id/summary",
-    ({ params, set }) => projectsController.getSummary({ params, set }),
+    ({ params, currentUser, set }) => projectsController.getSummary({ params, currentUser, set }),
     { params: t.Object({ id: t.String() }), requireAuth: true },
   )
   .get(
     "/:id/team",
-    ({ params, set }) => projectsController.getTeam({ params, set }),
+    ({ params, currentUser, set }) => projectsController.getTeam({ params, currentUser, set }),
     { params: t.Object({ id: t.String() }), requireAuth: true },
+  )
+  // Project members (supervisors, plumbers, labour). Admins only; removal keeps history.
+  .get(
+    "/:id/members",
+    ({ params, set }) => run(set, "Unable to load project members", () => projectMembersService.list(params.id)),
+    { params: t.Object({ id: t.String({ format: "uuid" }) }), requireRole: ["super_admin", "admin"] },
+  )
+  .post(
+    "/:id/members",
+    ({ params, body, currentUser, set }) =>
+      run(set, "Unable to add members", () => projectMembersService.add(params.id, body, (currentUser as AuthTokenPayload).id), "Members added"),
+    {
+      params: t.Object({ id: t.String({ format: "uuid" }) }),
+      body: t.Object({
+        supervisorIds: t.Optional(t.Array(t.String({ format: "uuid" }), { maxItems: 500 })),
+        plumberIds: t.Optional(t.Array(t.String({ format: "uuid" }), { maxItems: 500 })),
+      }),
+      requireRole: ["super_admin", "admin"],
+    },
+  )
+  .delete(
+    "/:id/members/:memberId",
+    ({ params, currentUser, set }) =>
+      run(set, "Unable to remove member", () => projectMembersService.remove(params.id, params.memberId, (currentUser as AuthTokenPayload).id), "Removed from project"),
+    {
+      params: t.Object({ id: t.String({ format: "uuid" }), memberId: t.String({ format: "uuid" }) }),
+      requireRole: ["super_admin", "admin"],
+    },
   )
   .patch(
     "/:id",
@@ -81,7 +122,7 @@ export const projectsRoutes = new Elysia({ prefix: "/projects" })
   )
   .get(
     "/:id/sites",
-    ({ params, set }) => projectsController.listSites({ params, set }),
+    ({ params, currentUser, set }) => projectsController.listSites({ params, currentUser, set }),
     { params: t.Object({ id: t.String() }), requireAuth: true },
   )
   .post(
@@ -114,7 +155,7 @@ export const projectsRoutes = new Elysia({ prefix: "/projects" })
   )
   .get(
     "/:id/documents",
-    ({ params, set }) => projectsController.listDocuments({ params, set }),
+    ({ params, currentUser, set }) => projectsController.listDocuments({ params, currentUser, set }),
     { params: t.Object({ id: t.String() }), requireAuth: true },
   )
   .post(

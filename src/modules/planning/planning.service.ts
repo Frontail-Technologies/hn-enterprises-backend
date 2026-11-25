@@ -4,6 +4,13 @@ import { customers, dprRecords, projects, projectSites, sitePlans, users } from 
 import { cleanObject } from "@utils";
 import { activityService } from "@modules/activity/activity.service";
 import { dprAction, dprTitle } from "@modules/activity/activity.catalog";
+import {
+  accessibleProjectIds,
+  assertCustomerAccess,
+  assertProjectAccess,
+  inProjects,
+  isProjectScoped,
+} from "@modules/projects/project-access.service";
 import type { AuthTokenPayload } from "@types";
 import type {
   DprRecordListQuery,
@@ -22,9 +29,29 @@ function planningScope(currentUser: AuthTokenPayload): string | undefined {
   return GLOBAL_PLANNING_ROLES.has(currentUser.role) ? undefined : currentUser.id;
 }
 
-async function fetchSiteTotals() {
+/**
+ * A supervisor may only plan/report work for their own projects: the project,
+ * the customer and the site in the body must all be inside them.
+ */
+async function assertPlanningTargetAccess(
+  currentUser: AuthTokenPayload,
+  input: { projectId: string; customerId: string; siteId: string },
+) {
+  if (!isProjectScoped(currentUser)) return;
+  await assertProjectAccess(currentUser, input.projectId);
+  await assertCustomerAccess(currentUser, input.customerId);
+  const [site] = await getDb()
+    .select({ projectId: projectSites.projectId })
+    .from(projectSites)
+    .where(eq(projectSites.id, input.siteId))
+    .limit(1);
+  if (!site) throw new Error("Project site not found");
+  await assertProjectAccess(currentUser, site.projectId);
+}
+
+async function fetchSiteTotals(projectIds: string[] | null) {
   const db = getDb();
-  const conditions = [isNotNull(customers.siteId), isNotNull(customers.projectId)];
+  const conditions = [isNotNull(customers.siteId), isNotNull(customers.projectId), inProjects(customers.projectId, projectIds)];
 
   return db
     .select({
@@ -105,9 +132,11 @@ async function findDprRecord(customerId: string, date: string, supervisorId: str
 }
 
 export const planningService = {
-  async listSitePlans(query: SitePlanListQuery) {
+  /** `projectIds` null = all; a list limits a supervisor to their projects. */
+  async listSitePlans(query: SitePlanListQuery, projectIds: string[] | null = null) {
     const db = getDb();
     const conditions = [
+      inProjects(sitePlans.projectId, projectIds),
       query.projectId ? eq(sitePlans.projectId, query.projectId) : undefined,
       query.siteId ? eq(sitePlans.siteId, query.siteId) : undefined,
       query.supervisorId ? eq(sitePlans.supervisorId, query.supervisorId) : undefined,
@@ -152,7 +181,9 @@ export const planningService = {
     }));
   },
 
-  async upsertSitePlan(input: UpsertSitePlanBody, supervisorId: string) {
+  async upsertSitePlan(input: UpsertSitePlanBody, currentUser: AuthTokenPayload) {
+    await assertPlanningTargetAccess(currentUser, input);
+    const supervisorId = currentUser.id;
     const db = getDb();
     const existing = await findSitePlan(input.customerId, input.date, supervisorId);
     // Immutable supervisor snapshot (safe-hard-delete brief §5) - survives a hard-deleted supervisor. Only resolved on create; an existing row keeps its original snapshot.
@@ -187,9 +218,10 @@ export const planningService = {
     return record;
   },
 
-  async listDprRecords(query: DprRecordListQuery) {
+  async listDprRecords(query: DprRecordListQuery, projectIds: string[] | null = null) {
     const db = getDb();
     const conditions = [
+      inProjects(dprRecords.projectId, projectIds),
       query.projectId ? eq(dprRecords.projectId, query.projectId) : undefined,
       query.siteId ? eq(dprRecords.siteId, query.siteId) : undefined,
       query.supervisorId ? eq(dprRecords.supervisorId, query.supervisorId) : undefined,
@@ -239,7 +271,9 @@ export const planningService = {
     }));
   },
 
-  async upsertDprRecord(input: UpsertDprRecordBody, supervisorId: string) {
+  async upsertDprRecord(input: UpsertDprRecordBody, currentUser: AuthTokenPayload) {
+    await assertPlanningTargetAccess(currentUser, input);
+    const supervisorId = currentUser.id;
     const db = getDb();
     const existing = await findDprRecord(input.customerId, input.date, supervisorId);
     const status = input.status ?? existing?.status ?? "draft";
@@ -299,15 +333,15 @@ export const planningService = {
     return record;
   },
 
-  // A supervisor is not assigned to a project (product rule correction, R2) -
-  // site/customer totals are unscoped across all projects; only which
-  // supervisor's OWN submissions count toward "completed" (planningScope,
-  // an actor-ownership concept, unrelated to project assignment) narrows.
+  // Site/customer totals cover the viewer's projects (all for admins); which
+  // supervisor's OWN submissions count toward "completed" is narrowed
+  // separately by planningScope (actor ownership).
   async getWorkPlanningOverview(date: string, currentUser: AuthTokenPayload): Promise<SiteOverviewRow[]> {
     const db = getDb();
     const scopeId = planningScope(currentUser);
 
-    const siteTotals = await fetchSiteTotals();
+    // Supervisors only see the sites of their own projects.
+    const siteTotals = await fetchSiteTotals(await accessibleProjectIds(currentUser));
     if (!siteTotals.length) return [];
     const siteIds = siteTotals.map((row) => row.siteId).filter((id): id is string => Boolean(id));
 
@@ -338,7 +372,8 @@ export const planningService = {
     const db = getDb();
     const scopeId = planningScope(currentUser);
 
-    const siteTotals = await fetchSiteTotals();
+    // Supervisors only see the sites of their own projects.
+    const siteTotals = await fetchSiteTotals(await accessibleProjectIds(currentUser));
     if (!siteTotals.length) return [];
     const siteIds = siteTotals.map((row) => row.siteId).filter((id): id is string => Boolean(id));
 
@@ -365,10 +400,10 @@ export const planningService = {
     );
   },
 
-  // A supervisor is not assigned to a project (product rule correction, R2) -
-  // any customer at this site is visible regardless of project.
-  async listSiteCustomers(siteId: string): Promise<SiteCustomerRow[]> {
+  // Customers at this site, limited to the viewer's projects for supervisors.
+  async listSiteCustomers(siteId: string, currentUser?: AuthTokenPayload | null): Promise<SiteCustomerRow[]> {
     const db = getDb();
+    const projectIds = await accessibleProjectIds(currentUser);
 
     const rows = await db
       .select({
@@ -379,7 +414,7 @@ export const planningService = {
         siteId: customers.siteId,
       })
       .from(customers)
-      .where(and(eq(customers.siteId, siteId), isNotNull(customers.projectId)))
+      .where(and(eq(customers.siteId, siteId), isNotNull(customers.projectId), inProjects(customers.projectId, projectIds)))
       .orderBy(customers.customerName);
 
     return rows

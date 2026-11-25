@@ -11,17 +11,17 @@ export const workProgressRoutes = new Elysia({ prefix: "/work-progress" })
   .use(auth)
   .get(
     "/queue",
-    ({ query, set }) => workProgressController.listQueue({ query, set }),
+    ({ query, currentUser, set }) => workProgressController.listQueue({ query, currentUser, set }),
     { query: workProgressQueueQuerySchema, requireAuth: true },
   )
   .get(
     "/queue/summary",
-    ({ query, set }) => workProgressController.queueSummary({ query, set }),
+    ({ query, currentUser, set }) => workProgressController.queueSummary({ query, currentUser, set }),
     { query: workProgressQueueQuerySchema, requireAuth: true },
   )
   .get(
     "/",
-    ({ query, set }) => workProgressController.list({ query, set }),
+    ({ query, currentUser, set }) => workProgressController.list({ query, currentUser, set }),
     { query: workProgressListQuerySchema, requireAuth: true },
   )
   .post(

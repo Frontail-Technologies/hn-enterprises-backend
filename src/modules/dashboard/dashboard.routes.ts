@@ -6,18 +6,20 @@ export const dashboardRoutes = new Elysia({ prefix: "/dashboard" })
   .use(auth)
   .get(
     "/overview",
-    ({ query, set }) =>
+    ({ query, currentUser, set }) =>
       dashboardController.getOverview({
         query: query as { projectId?: string; period?: string; month?: string; year?: string },
+        currentUser,
         set,
       }),
     { requireAuth: true },
   )
   .get(
     "/charts",
-    ({ query, set }) =>
+    ({ query, currentUser, set }) =>
       dashboardController.getCharts({
         query: query as { projectId?: string; period?: string; month?: string; year?: string },
+        currentUser,
         set,
       }),
     { requireAuth: true },

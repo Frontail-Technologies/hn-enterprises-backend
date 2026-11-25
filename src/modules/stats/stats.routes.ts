@@ -10,9 +10,10 @@ export const statsRoutes = new Elysia({ prefix: "/stats" })
   })
   .get(
     "/admin-summary",
-    ({ query, set }) =>
+    ({ query, currentUser, set }) =>
       statsController.getAdminSummary({
         query: query as { projectId?: string; city?: string; siteId?: string; month?: string; year?: string },
+        currentUser,
         set,
       }),
     { requireAuth: true },

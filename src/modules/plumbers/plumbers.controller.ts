@@ -1,15 +1,16 @@
 import type { AuthTokenPayload } from "@types";
 import type { SetContext } from "@modules/auth/auth.helpers";
 import { errorCode, errorMessage, ok, paginated, statusFromError } from "@utils";
+import { accessiblePlumberIds, assertPlumberAccess } from "@modules/projects/project-access.service";
 import { plumbersService } from "./plumbers.service";
 import { plumbersDeletionService } from "./plumbers-deletion.service";
 import { plumbersImportService } from "./plumbers.import.service";
 import type { CreatePlumberBody, PlumberListQuery, UpdatePlumberBody } from "./plumbers.types";
 
 export const plumbersController = {
-  async list({ query, set }: { query: PlumberListQuery; set: SetContext }) {
+  async list({ query, currentUser, set }: { query: PlumberListQuery; currentUser: AuthTokenPayload | null; set: SetContext }) {
     try {
-      const { rows, pagination } = await plumbersService.list(query);
+      const { rows, pagination } = await plumbersService.list(query, await accessiblePlumberIds(currentUser));
       return paginated(rows, pagination);
     } catch (error) {
       set.status = statusFromError(error);
@@ -17,8 +18,9 @@ export const plumbersController = {
     }
   },
 
-  async get({ params, set }: { params: { id: string }; set: SetContext }) {
+  async get({ params, currentUser, set }: { params: { id: string }; currentUser: AuthTokenPayload | null; set: SetContext }) {
     try {
+      await assertPlumberAccess(currentUser, params.id);
       const plumber = await plumbersService.get(params.id);
       return ok(plumber);
     } catch (error) {

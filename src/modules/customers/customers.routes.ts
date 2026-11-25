@@ -19,7 +19,7 @@ import { bulkDeleteBodySchema, bulkRemarkBodySchema, bulkUpdateBodySchema } from
 
 export const customersRoutes = new Elysia({ prefix: "/customers" })
   .use(auth)
-  .get("/", ({ query, set }) => customersController.list({ query, set }), {
+  .get("/", ({ query, currentUser, set }) => customersController.list({ query, currentUser, set }), {
     query: customerListQuerySchema,
     requireAuth: true,
   })
@@ -32,7 +32,7 @@ export const customersRoutes = new Elysia({ prefix: "/customers" })
   )
   .get(
     "/filter-options",
-    ({ query, set }) => customersController.filterOptions({ query, set }),
+    ({ query, currentUser, set }) => customersController.filterOptions({ query, currentUser, set }),
     { query: customerFilterOptionsQuerySchema, requireAuth: true },
   )
   // Replace import-assigned TEMP-... IDs with real BR/TR numbers (check, then apply).
@@ -43,7 +43,7 @@ export const customersRoutes = new Elysia({ prefix: "/customers" })
   )
   .get(
     "/ids",
-    ({ query, set }) => customersController.listIds({ query, set }),
+    ({ query, currentUser, set }) => customersController.listIds({ query, currentUser, set }),
     { query: customerListQuerySchema, requireAuth: true },
   )
   .put(
@@ -74,7 +74,7 @@ export const customersRoutes = new Elysia({ prefix: "/customers" })
   )
   .get(
     "/:id",
-    ({ params, set }) => customersController.get({ params, set }),
+    ({ params, currentUser, set }) => customersController.get({ params, currentUser, set }),
     { params: t.Object({ id: t.String() }), requireAuth: true },
   )
   .patch(
@@ -149,7 +149,7 @@ export const customersRoutes = new Elysia({ prefix: "/customers" })
   )
   .get(
     "/:id/lmc-pipes",
-    ({ params, set }) => customersController.listLmcPipeRecords({ params, set }),
+    ({ params, currentUser, set }) => customersController.listLmcPipeRecords({ params, currentUser, set }),
     { params: t.Object({ id: t.String() }), requireAuth: true },
   )
   .put(
@@ -164,7 +164,7 @@ export const customersRoutes = new Elysia({ prefix: "/customers" })
   )
   .get(
     "/:id/documents",
-    ({ params, set }) => customersController.listDocuments({ params, set }),
+    ({ params, currentUser, set }) => customersController.listDocuments({ params, currentUser, set }),
     { params: t.Object({ id: t.String() }), requireAuth: true },
   )
   .post(
@@ -187,7 +187,7 @@ export const customersRoutes = new Elysia({ prefix: "/customers" })
   )
   .get(
     "/:id/notes",
-    ({ params, set }) => customersController.listNotes({ params, set }),
+    ({ params, currentUser, set }) => customersController.listNotes({ params, currentUser, set }),
     { params: t.Object({ id: t.String() }), requireAuth: true },
   )
   .post(

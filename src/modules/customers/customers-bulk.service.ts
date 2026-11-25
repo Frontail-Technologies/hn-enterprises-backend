@@ -7,6 +7,7 @@ import type { AuthTokenPayload } from "@types";
 import { getStatKeyCondition } from "./customers.service";
 import { assertCustomersDeletable } from "./customers-deletion.service";
 import { snapshotCustomers } from "@modules/recycle-bin/recycle-bin.service";
+import { accessibleProjectIds, ensureProjectMembers, inProjects, isProjectScoped } from "@modules/projects/project-access.service";
 
 const MAX_BULK_TARGETS = 20000;
 
@@ -88,8 +89,13 @@ function buildFilterConditions(filters: CustomerBulkFilters) {
   ].filter((condition): condition is NonNullable<typeof condition> => Boolean(condition));
 }
 
-async function resolveSelectionIds(selection: CustomerBulkSelection): Promise<string[]> {
+async function resolveSelectionIds(
+  selection: CustomerBulkSelection,
+  currentUser?: Pick<AuthTokenPayload, "id" | "role"> | null,
+): Promise<string[]> {
   const db = getDb();
+  // Supervisor project boundary; null (admins) = unscoped.
+  const projectIds = await accessibleProjectIds(currentUser);
 
   if (selection.mode === "ids") {
     const unique = Array.from(new Set(selection.ids));
@@ -98,9 +104,12 @@ async function resolveSelectionIds(selection: CustomerBulkSelection): Promise<st
       throw new Error(`Too many customers selected (max ${MAX_BULK_TARGETS}).`);
     }
     const rows = await db
-      .select({ id: customers.id })
+      .select({ id: customers.id, projectId: customers.projectId })
       .from(customers)
       .where(inArray(customers.id, unique));
+    if (projectIds !== null && rows.some((row) => !projectIds.includes(row.projectId))) {
+      throw new Error("You do not have permission to access one or more of the selected customers");
+    }
     return rows.map((row) => row.id);
   }
 
@@ -108,6 +117,7 @@ async function resolveSelectionIds(selection: CustomerBulkSelection): Promise<st
   const excluded = Array.from(new Set(selection.excludedIds ?? []));
   const where = and(
     ...conditions,
+    inProjects(customers.projectId, projectIds),
     excluded.length ? notInArray(customers.id, excluded) : undefined,
   );
   const rows = await db.select({ id: customers.id }).from(customers).where(where);
@@ -150,8 +160,18 @@ export const customersBulkService = {
     currentUser: AuthTokenPayload,
   ) {
     const db = getDb();
-    const ids = await resolveSelectionIds(selection);
+    const ids = await resolveSelectionIds(selection, currentUser);
     if (!ids.length) return { count: 0 };
+
+    // Pre-write plumber/project per row, so memberships are only added for
+    // rows whose plumber (or project) actually changes.
+    const touchesAssignment = "plumberId" in changes || isSet(changes.projectId);
+    const before = touchesAssignment
+      ? await db
+          .select({ id: customers.id, plumberId: customers.plumberId, projectId: customers.projectId })
+          .from(customers)
+          .where(inArray(customers.id, ids))
+      : [];
 
     const columnPatch: Record<string, unknown> = {};
     const changeSummary: string[] = [];
@@ -280,6 +300,22 @@ export const customersBulkService = {
         .where(inArray(customers.id, ids));
     });
 
+    if (touchesAssignment && !isProjectScoped(currentUser)) {
+      const plumbersByProject = new Map<string, Set<string>>();
+      for (const row of before) {
+        const nextPlumberId = "plumberId" in changes ? (columnPatch.plumberId as string | null) : row.plumberId;
+        const nextProjectId = isSet(changes.projectId) ? changes.projectId : row.projectId;
+        if (!nextPlumberId) continue;
+        if (nextPlumberId === row.plumberId && nextProjectId === row.projectId) continue;
+        const bucket = plumbersByProject.get(nextProjectId) ?? new Set<string>();
+        bucket.add(nextPlumberId);
+        plumbersByProject.set(nextProjectId, bucket);
+      }
+      for (const [projectId, plumberIds] of plumbersByProject) {
+        await ensureProjectMembers(projectId, { plumberIds: [...plumberIds] }, currentUser.id);
+      }
+    }
+
     const changedFields = [
       ...Object.keys(columnPatch).filter((k) => k !== "plumberName"),
       ...Object.keys(jsonMerge),
@@ -300,7 +336,7 @@ export const customersBulkService = {
 
   async bulkRemark(selection: CustomerBulkSelection, note: string, currentUser: AuthTokenPayload) {
     const db = getDb();
-    const ids = await resolveSelectionIds(selection);
+    const ids = await resolveSelectionIds(selection, currentUser);
     if (!ids.length) return { count: 0 };
 
     if (!permissionService.canModifyCustomer(currentUser)) {
@@ -329,7 +365,7 @@ export const customersBulkService = {
 
   async bulkDelete(selection: CustomerBulkSelection, currentUser: AuthTokenPayload) {
     const db = getDb();
-    const ids = await resolveSelectionIds(selection);
+    const ids = await resolveSelectionIds(selection, currentUser);
     if (!ids.length) return { count: 0 };
 
     const projectId = await resolveSharedProjectId(ids);

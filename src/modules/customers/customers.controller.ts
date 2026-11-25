@@ -137,9 +137,9 @@ export const customersController = {
     }
   },
 
-  async list({ query, set }: { query: CustomerListQuery; set: SetContext }) {
+  async list({ query, currentUser, set }: { query: CustomerListQuery; currentUser: AuthTokenPayload | null; set: SetContext }) {
     try {
-      const { rows, pagination } = await customersService.list(query);
+      const { rows, pagination } = await customersService.list(query, currentUser);
       return paginated(rows, pagination);
     } catch (error) {
       set.status = statusFromError(error);
@@ -147,9 +147,9 @@ export const customersController = {
     }
   },
 
-  async filterOptions({ query, set }: { query: CustomerFilterOptionsQuery; set: SetContext }) {
+  async filterOptions({ query, currentUser, set }: { query: CustomerFilterOptionsQuery; currentUser: AuthTokenPayload | null; set: SetContext }) {
     try {
-      const values = await customersService.filterOptions(query);
+      const values = await customersService.filterOptions(query, currentUser);
       return ok(values);
     } catch (error) {
       set.status = statusFromError(error);
@@ -157,9 +157,9 @@ export const customersController = {
     }
   },
 
-  async listIds({ query, set }: { query: CustomerListQuery; set: SetContext }) {
+  async listIds({ query, currentUser, set }: { query: CustomerListQuery; currentUser: AuthTokenPayload | null; set: SetContext }) {
     try {
-      const result = await customersService.listIds(query);
+      const result = await customersService.listIds(query, currentUser);
       return ok(result);
     } catch (error) {
       set.status = statusFromError(error);
@@ -209,9 +209,9 @@ export const customersController = {
     }
   },
 
-  async get({ params, set }: { params: { id: string }; set: SetContext }) {
+  async get({ params, currentUser, set }: { params: { id: string }; currentUser: AuthTokenPayload | null; set: SetContext }) {
     try {
-      const customer = await customersService.get(params.id);
+      const customer = await customersService.get(params.id, currentUser);
       return ok(customer);
     } catch (error) {
       set.status = statusFromError(error);
@@ -231,7 +231,7 @@ export const customersController = {
     try {
       if (!currentUser) throw new Error("Authentication required");
       const patch = await applyUploadedFilesToSection(body, currentUser.id);
-      const customer = await customersService.create(patch, currentUser.id);
+      const customer = await customersService.create(patch, currentUser.id, currentUser);
       set.status = 201;
       return ok(customer, "Customer created");
     } catch (error) {
@@ -276,7 +276,7 @@ export const customersController = {
       const { pipeRecords, ...customerBody } = body;
       const patch = await applyUploadedFilesToSection(customerBody, currentUser.id);
       const resolvedPipeRecords = await resolvePipeRecordsEvidence(pipeRecords, currentUser.id, undefined);
-      const customer = await customersService.createWithPipeRecords(patch, resolvedPipeRecords, currentUser.id);
+      const customer = await customersService.createWithPipeRecords(patch, resolvedPipeRecords, currentUser.id, currentUser);
       set.status = 201;
       return ok(customer, "Customer created");
     } catch (error) {
@@ -362,9 +362,9 @@ export const customersController = {
     }
   },
 
-  async listLmcPipeRecords({ params, set }: { params: { id: string }; set: SetContext }) {
+  async listLmcPipeRecords({ params, currentUser, set }: { params: { id: string }; currentUser: AuthTokenPayload | null; set: SetContext }) {
     try {
-      const records = await customersService.listLmcPipeRecords(params.id);
+      const records = await customersService.listLmcPipeRecords(params.id, currentUser);
       return ok(records);
     } catch (error) {
       set.status = statusFromError(error);
@@ -402,9 +402,9 @@ export const customersController = {
     }
   },
 
-  async listDocuments({ params, set }: { params: { id: string }; set: SetContext }) {
+  async listDocuments({ params, currentUser, set }: { params: { id: string }; currentUser: AuthTokenPayload | null; set: SetContext }) {
     try {
-      const documents = await customersService.listDocuments(params.id);
+      const documents = await customersService.listDocuments(params.id, currentUser);
       return ok(documents);
     } catch (error) {
       set.status = statusFromError(error);
@@ -466,9 +466,9 @@ export const customersController = {
     }
   },
 
-  async listNotes({ params, set }: { params: { id: string }; set: SetContext }) {
+  async listNotes({ params, currentUser, set }: { params: { id: string }; currentUser: AuthTokenPayload | null; set: SetContext }) {
     try {
-      const notes = await customersService.listNotes(params.id);
+      const notes = await customersService.listNotes(params.id, currentUser);
       return ok(notes);
     } catch (error) {
       set.status = statusFromError(error);

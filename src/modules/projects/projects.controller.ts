@@ -1,6 +1,7 @@
 import type { AuthTokenPayload } from "@types";
 import type { SetContext } from "@modules/auth/auth.helpers";
 import { errorCode, errorMessage, ok, paginated, statusFromError } from "@utils";
+import { accessibleProjectIds, assertProjectAccess } from "./project-access.service";
 import { projectsService } from "./projects.service";
 import { projectsDeletionService } from "./projects-deletion.service";
 import { projectsSummaryService } from "./projects-summary.service";
@@ -15,9 +16,9 @@ import type {
 } from "./projects.types";
 
 export const projectsController = {
-  async list({ query, set }: { query: ProjectListQuery; set: SetContext }) {
+  async list({ query, currentUser, set }: { query: ProjectListQuery; currentUser: AuthTokenPayload | null; set: SetContext }) {
     try {
-      const { rows, pagination } = await projectsService.list(query);
+      const { rows, pagination } = await projectsService.list(query, await accessibleProjectIds(currentUser));
       return paginated(rows, pagination);
     } catch (error) {
       set.status = statusFromError(error);
@@ -25,8 +26,9 @@ export const projectsController = {
     }
   },
 
-  async get({ params, set }: { params: { id: string }; set: SetContext }) {
+  async get({ params, currentUser, set }: { params: { id: string }; currentUser: AuthTokenPayload | null; set: SetContext }) {
     try {
+      await assertProjectAccess(currentUser, params.id);
       const project = await projectsService.get(params.id);
       return ok(project);
     } catch (error) {
@@ -118,8 +120,9 @@ export const projectsController = {
     }
   },
 
-  async listSites({ params, set }: { params: { id: string }; set: SetContext }) {
+  async listSites({ params, currentUser, set }: { params: { id: string }; currentUser: AuthTokenPayload | null; set: SetContext }) {
     try {
+      await assertProjectAccess(currentUser, params.id);
       const sites = await projectsService.listSites(params.id);
       return ok(sites);
     } catch (error) {
@@ -128,9 +131,9 @@ export const projectsController = {
     }
   },
 
-  async listAllSites({ set }: { set: SetContext }) {
+  async listAllSites({ currentUser, set }: { currentUser: AuthTokenPayload | null; set: SetContext }) {
     try {
-      return ok(await projectsService.listAllSites());
+      return ok(await projectsService.listAllSites(await accessibleProjectIds(currentUser)));
     } catch (error) {
       set.status = statusFromError(error);
       return { success: false, message: errorMessage(error, "Unable to list sites") };
@@ -190,8 +193,9 @@ export const projectsController = {
     }
   },
 
-  async listDocuments({ params, set }: { params: { id: string }; set: SetContext }) {
+  async listDocuments({ params, currentUser, set }: { params: { id: string }; currentUser: AuthTokenPayload | null; set: SetContext }) {
     try {
+      await assertProjectAccess(currentUser, params.id);
       const documents = await projectsService.listDocuments(params.id);
       return ok(documents);
     } catch (error) {
@@ -232,8 +236,9 @@ export const projectsController = {
     }
   },
 
-  async getSummary({ params, set }: { params: { id: string }; set: SetContext }) {
+  async getSummary({ params, currentUser, set }: { params: { id: string }; currentUser: AuthTokenPayload | null; set: SetContext }) {
     try {
+      await assertProjectAccess(currentUser, params.id);
       const summary = await projectsSummaryService.getSummary(params.id);
       return ok(summary);
     } catch (error) {
@@ -242,8 +247,9 @@ export const projectsController = {
     }
   },
 
-  async getTeam({ params, set }: { params: { id: string }; set: SetContext }) {
+  async getTeam({ params, currentUser, set }: { params: { id: string }; currentUser: AuthTokenPayload | null; set: SetContext }) {
     try {
+      await assertProjectAccess(currentUser, params.id);
       const team = await projectsTeamService.getTeam(params.id);
       return ok(team);
     } catch (error) {
