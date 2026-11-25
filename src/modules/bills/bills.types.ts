@@ -1,4 +1,4 @@
-import type { billPaymentStatusEnum, billStatusEnum } from "@db/schema";
+import type { BillAttachment, billPaymentStatusEnum, billStatusEnum } from "@db/schema";
 
 export type BillStatus = (typeof billStatusEnum.enumValues)[number];
 export type PaymentMode = string;
@@ -21,6 +21,7 @@ export type CreateBillBody = {
   tax?: number;
   status?: BillStatus;
   remarks?: string;
+  attachments?: BillAttachment[];
 };
 
 export type UpdateBillBody = Partial<CreateBillBody>;

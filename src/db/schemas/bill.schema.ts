@@ -1,6 +1,7 @@
 import { relations } from "drizzle-orm";
 import {
   index,
+  jsonb,
   numeric,
   pgEnum,
   pgTable,
@@ -25,6 +26,9 @@ export const billPaymentStatusEnum = pgEnum("bill_payment_status", [
   "bounced",
 ]);
 
+/** A photo of the bill (or anything attached to it), uploaded via /uploads. */
+export type BillAttachment = { id: string; label: string; fileName: string; fileUrl: string };
+
 export const bills = pgTable(
   "bills",
   {
@@ -41,6 +45,7 @@ export const bills = pgTable(
     paidAmount: numeric("paid_amount", { precision: 14, scale: 2 }).notNull().default("0"),
     status: billStatusEnum("status").notNull().default("draft"),
     remarks: text("remarks"),
+    attachments: jsonb("attachments").$type<BillAttachment[]>().notNull().default([]),
     createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
     updatedBy: uuid("updated_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

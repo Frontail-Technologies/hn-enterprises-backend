@@ -107,6 +107,7 @@ export const billsService = {
         tax: String(input.tax ?? 0),
         status: input.status ?? "draft",
         remarks: input.remarks || null,
+        attachments: input.attachments ?? [],
         createdBy: userId,
         updatedBy: userId,
       })
@@ -136,6 +137,8 @@ export const billsService = {
       .set({
         ...patch,
         ...(input.billNumber ? { normalizedBillNumber: normalizeKey(input.billNumber) } : {}),
+        // An empty list is a real value (all photos removed), so it bypasses cleanObject.
+        ...(input.attachments ? { attachments: input.attachments } : {}),
         updatedBy: userId,
         updatedAt: new Date(),
       })

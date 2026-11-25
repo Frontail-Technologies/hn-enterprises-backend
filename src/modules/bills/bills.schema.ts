@@ -12,6 +12,13 @@ export const billListQuerySchema = t.Object({
   status: t.Optional(billStatusSchema),
 });
 
+const billAttachmentSchema = t.Object({
+  id: t.String({ maxLength: 100 }),
+  label: t.String({ maxLength: 200 }),
+  fileName: t.String({ maxLength: 300 }),
+  fileUrl: t.String({ minLength: 1, maxLength: 1000 }),
+});
+
 export const createBillBodySchema = t.Object({
   projectId: t.String({ minLength: 1 }),
   billNumber: t.String({ minLength: 1 }),
@@ -21,6 +28,8 @@ export const createBillBodySchema = t.Object({
   tax: t.Optional(t.Number()),
   status: t.Optional(billStatusSchema),
   remarks: t.Optional(t.String()),
+  /** Bill photos, already uploaded via /uploads. */
+  attachments: t.Optional(t.Array(billAttachmentSchema, { maxItems: 20 })),
 });
 
 export const updateBillBodySchema = t.Partial(createBillBodySchema);
