@@ -183,6 +183,41 @@ function computeQuantityDelta(
 }
 
 
+const PLUMBER_PROJECT_TYPES = new Set<MaterialTransactionType>(["return", "adjustment", "consumption"]);
+
+/**
+ * The project a plumber holds a material for: the only project where their
+ * balance of it is above zero, else the only project they are a member of.
+ * Null when it isn't clear (the row then has no project, as before).
+ */
+async function inferPlumberProject(
+  tx: Pick<ReturnType<typeof getDb>, "execute">,
+  plumberId: string,
+  materialId: string,
+  source: string | null,
+): Promise<string | null> {
+  const held = await tx.execute<{ projectId: string }>(sql`
+    SELECT project_id AS "projectId"
+    FROM material_transactions
+    WHERE plumber_id = ${plumberId}::uuid AND material_id = ${materialId}::uuid AND project_id IS NOT NULL
+      AND (${source}::text IS NULL OR source::text = ${source}::text)
+    GROUP BY project_id
+    HAVING sum(CASE type
+      WHEN 'issue' THEN quantity
+      WHEN 'return' THEN -quantity
+      WHEN 'consumption' THEN -quantity
+      WHEN 'pbg_consumption' THEN -quantity
+      WHEN 'adjustment' THEN quantity_delta
+      ELSE 0 END) > 0
+  `);
+  if (held.length === 1) return held[0].projectId;
+  const memberships = await tx.execute<{ projectId: string }>(sql`
+    SELECT DISTINCT project_id AS "projectId" FROM project_members
+    WHERE plumber_id = ${plumberId}::uuid AND removed_at IS NULL
+  `);
+  return memberships.length === 1 ? memberships[0].projectId : null;
+}
+
 /** The one-reversal index turns a double click / second admin into a clear message. */
 function alreadyReversed(error: unknown): never {
   const code = (error as { code?: string; cause?: { code?: string } })?.code ?? (error as { cause?: { code?: string } })?.cause?.code;
@@ -466,6 +501,12 @@ export const materialsService = {
           .where(eq(customers.id, input.customerId))
           .limit(1);
         projectId = customer?.projectId ?? null;
+      }
+      // Return / adjustment / consumption without a project: use the project the
+      // plumber holds this material for, so the balance nets off on one line
+      // instead of a separate "no project" line.
+      if (!projectId && input.plumberId && PLUMBER_PROJECT_TYPES.has(input.type)) {
+        projectId = await inferPlumberProject(tx, input.plumberId, input.materialId, input.type === "consumption" ? null : source);
       }
 
       // The resolved project (explicit, via site or via customer) must be one
