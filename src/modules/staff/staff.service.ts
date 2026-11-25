@@ -174,6 +174,7 @@ export const staffService = {
             username,
             email,
             mobile: input.newUser.mobile || null,
+            avatarUrl: input.avatarUrl || null,
             passwordHash: await hashPassword(input.newUser.password),
             role: "supervisor",
             status: "active",
@@ -189,6 +190,8 @@ export const staffService = {
         const [linkUser] = await tx.select({ role: users.role }).from(users).where(eq(users.id, userId)).limit(1);
         if (!linkUser) throw new Error("User not found");
         if (linkUser.role !== "supervisor") throw new Error("Only supervisor accounts can be linked as staff");
+        // A photo picked while linking replaces the account's photo.
+        if (input.avatarUrl) await tx.update(users).set({ avatarUrl: input.avatarUrl, updatedAt: new Date() }).where(eq(users.id, userId));
       }
 
       const [staffRow] = await tx
