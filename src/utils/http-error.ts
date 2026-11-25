@@ -22,6 +22,17 @@ function isKnownDomainError(message: string) {
   return KNOWN_ERROR_PATTERNS.some((pattern) => lower.includes(pattern));
 }
 
+/**
+ * A message our own code wrote for the user: a plain `new Error("...")` (not
+ * a TypeError, database error, etc., which carry a different class or a
+ * `cause`/`code`). These are shown as they are instead of a generic fallback.
+ */
+function isOwnMessage(error: unknown): error is Error {
+  if (!(error instanceof Error) || error.constructor !== Error) return false;
+  const extra = error as Error & { code?: unknown; query?: unknown };
+  return !error.cause && extra.code === undefined && extra.query === undefined && error.message.length > 0 && error.message.length <= 300;
+}
+
 export function statusFromError(error: unknown) {
   if (!(error instanceof Error)) return 500;
   if (error instanceof EntityInUseError) return 409;
@@ -32,6 +43,7 @@ export function statusFromError(error: unknown) {
   if (message.includes("only admin") || message.includes("only super_admin")) return 403;
   if (message.includes("not found")) return 404;
   if (isKnownDomainError(error.message)) return 400;
+  if (isOwnMessage(error)) return 400;
   return 500;
 }
 
@@ -41,6 +53,7 @@ export function errorMessage(error: unknown, fallback: string) {
   if (error instanceof Error && isKnownDomainError(error.message)) {
     return error.message;
   }
+  if (isOwnMessage(error)) return error.message;
 
   const rawMessage =
     error && typeof error === "object" && "message" in error && typeof error.message === "string"
