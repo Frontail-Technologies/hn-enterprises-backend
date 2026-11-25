@@ -1,6 +1,6 @@
-import { count, eq } from "drizzle-orm";
+import { count, eq, sql } from "drizzle-orm";
 import { getDb } from "@db";
-import { customerDocuments, customers, materials, masterValues, payments } from "@db/schema";
+import { customerDocuments, customers, materials, masterValues, payments, projects } from "@db/schema";
 import { EntityInUseError } from "@utils";
 import { computeDeleteImpact } from "../deletion/deletion.service";
 import type { DbHandle, DeleteImpactConfig, DeleteImpactDependencyConfig, DeleteImpactResult } from "../deletion/deletion.types";
@@ -57,6 +57,14 @@ async function buildMasterValueDeleteImpactConfig(db: DbHandle, masterValueId: s
       action: "block",
       count: async (db) => scalarCount(countOf(db).from(customers).where(eq(customers.houseType, master.value))),
       blockReason: (n) => `${n} customer${n === 1 ? "" : "s"} use this house type.`,
+    });
+  } else if (master.category === "project_types") {
+    dependencies.push({
+      key: "projectsType",
+      label: "Projects (Project Type)",
+      action: "block",
+      count: async (db) => scalarCount(countOf(db).from(projects).where(sql`lower(${projects.projectType}) = lower(${master.value})`)),
+      blockReason: (n) => `${n} project${n === 1 ? "" : "s"} use this project type.`,
     });
   } else if (master.category === "schemes") {
     dependencies.push({

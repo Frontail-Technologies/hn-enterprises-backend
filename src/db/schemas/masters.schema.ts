@@ -20,6 +20,7 @@ export const masterValueCategoryEnum = pgEnum("master_value_category", [
   "document_categories",
   "material_categories",
   "meter_types",
+  "project_types",
 ]);
 
 export const masterValueStatusEnum = pgEnum("master_value_status", ["active", "inactive"]);

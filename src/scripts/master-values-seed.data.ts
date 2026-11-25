@@ -28,6 +28,7 @@ export const MASTER_VALUES_SEED: Record<MasterValueCategory, string[]> = {
   connection_types: ["Domestic", "Commercial", "Industrial"],
   house_types: ["Independent House", "Apartment", "Shop"],
   schemes: ["Normal", "PMUY"],
+  project_types: ["Tender", "Work Order", "Sub-Contract"],
   document_categories: [
     "ID / Address Proof",
     "LMC / Site Evidence",
