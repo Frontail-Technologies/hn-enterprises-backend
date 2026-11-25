@@ -228,7 +228,7 @@ export const staffService = {
     if (input.designation && input.designation !== existing.designation) {
       // Supervisors are login accounts; the others have none, so a record can't switch between the two.
       if (existing.userId || input.designation === "supervisor") {
-        throw new Error("A supervisor can't be changed to another designation (or back). Add a new staff member instead.");
+        throw new Error("A supervisor cannot be changed to another designation (or back). Add a new staff member instead.");
       }
     }
 
@@ -303,7 +303,7 @@ export const staffService = {
    */
   async remove(id: string) {
     const existing = await getStaffOrThrow(id);
-    if (existing.userId) throw new Error("Supervisors are deleted with their login account");
+    if (existing.userId) throw new Error("A supervisor cannot be deleted here - delete their login account instead");
     await getDb().delete(staff).where(eq(staff.id, id));
     return { id, name: existing.name };
   },

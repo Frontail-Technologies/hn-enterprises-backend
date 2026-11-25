@@ -247,6 +247,9 @@ export const planningService = {
         tasks: dprRecords.tasks,
         evidence: dprRecords.evidence,
         submittedAt: dprRecords.submittedAt,
+        reviewedAt: dprRecords.reviewedAt,
+        reviewNote: dprRecords.reviewNote,
+        reviewedByName: sql<string | null>`(SELECT u.name FROM users u WHERE u.id = "dpr_records"."reviewed_by")`,
         createdAt: dprRecords.createdAt,
         updatedAt: dprRecords.updatedAt,
         site: { id: projectSites.id, name: projectSites.name, address: projectSites.address },
@@ -276,6 +279,12 @@ export const planningService = {
     const supervisorId = currentUser.id;
     const db = getDb();
     const existing = await findDprRecord(input.customerId, input.date, supervisorId);
+    const isAdmin = currentUser.role === "super_admin" || currentUser.role === "admin";
+    if (!isAdmin) {
+      // Approval is an admin decision; an approved DPR is final for the supervisor.
+      if (input.status === "approved") throw new Error("Only admins can approve a DPR");
+      if (existing?.status === "approved") throw new Error("You do not have permission to change a DPR that is already approved");
+    }
     const status = input.status ?? existing?.status ?? "draft";
     const submittedAt =
       status === "submitted" ? (existing?.submittedAt ?? new Date()) : (existing?.submittedAt ?? null);

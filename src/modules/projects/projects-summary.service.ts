@@ -114,7 +114,7 @@ async function getDprCounts(projectId: string) {
   startOfMonth.setUTCDate(1);
   const startOfMonthDate = startOfMonth.toISOString().slice(0, 10);
 
-  const [[pending], [submittedThisMonth]] = await Promise.all([
+  const [[pending], [submittedThisMonth], [byStatus]] = await Promise.all([
     db
       .select({ value: count() })
       .from(dprRecords)
@@ -129,9 +129,27 @@ async function getDprCounts(projectId: string) {
           ne(dprRecords.status, "draft"),
         ),
       ),
+    db
+      .select({
+        awaitingApproval: sql<number>`count(*) FILTER (WHERE ${dprRecords.status} = 'submitted')::int`,
+        approved: sql<number>`count(*) FILTER (WHERE ${dprRecords.status} = 'approved')::int`,
+        drafts: sql<number>`count(*) FILTER (WHERE ${dprRecords.status} = 'draft')::int`,
+        sentBack: sql<number>`count(*) FILTER (WHERE ${dprRecords.status} = 'draft' AND ${dprRecords.reviewNote} IS NOT NULL)::int`,
+      })
+      .from(dprRecords)
+      .where(eq(dprRecords.projectId, projectId)),
   ]);
 
-  return { pending: pending.value, submittedThisMonth: submittedThisMonth.value };
+  return {
+    pending: pending.value,
+    submittedThisMonth: submittedThisMonth.value,
+    /** Submitted, waiting for an admin. */
+    awaitingApproval: byStatus?.awaitingApproval ?? 0,
+    approved: byStatus?.approved ?? 0,
+    /** Not submitted yet (includes ones sent back). */
+    drafts: byStatus?.drafts ?? 0,
+    sentBack: byStatus?.sentBack ?? 0,
+  };
 }
 
 async function getExpenseTotal(projectId: string) {

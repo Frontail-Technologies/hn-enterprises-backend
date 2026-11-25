@@ -98,6 +98,10 @@ export const dprRecords = pgTable(
     tasks: jsonb("tasks").$type<DprTaskPayload[]>().notNull().default([]),
     evidence: jsonb("evidence").$type<PlanningEvidenceFile[]>(),
     submittedAt: timestamp("submitted_at", { withTimezone: true }),
+    /** Admin review: who approved/rejected it, when, and the rejection reason. */
+    reviewedBy: uuid("reviewed_by").references(() => users.id, { onDelete: "set null" }),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    reviewNote: text("review_note"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

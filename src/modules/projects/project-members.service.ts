@@ -70,7 +70,7 @@ export const projectMembersService = {
     const validSupervisors = supervisorIds.length
       ? await db.select({ id: users.id, name: users.name }).from(users).where(and(inArray(users.id, supervisorIds), eq(users.role, "supervisor")))
       : [];
-    if (validSupervisors.length !== supervisorIds.length) throw new Error("Only supervisor accounts can be added as project supervisors");
+    if (validSupervisors.length !== supervisorIds.length) throw new Error("Invalid supervisor: only supervisor accounts can be added to a project");
     const validPlumbers = plumberIds.length ? await db.select({ id: plumbers.id, name: plumbers.name }).from(plumbers).where(inArray(plumbers.id, plumberIds)) : [];
     if (validPlumbers.length !== plumberIds.length) throw new Error("Plumber not found");
 
