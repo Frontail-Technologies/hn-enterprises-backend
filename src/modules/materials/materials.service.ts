@@ -307,6 +307,14 @@ export const materialsService = {
   async update(id: string, input: UpdateMaterialBody, userId: string) {
     await getMaterialOrThrow(id);
     const db = getDb();
+    if (input.name) {
+      const [clash] = await db
+        .select({ id: materials.id })
+        .from(materials)
+        .where(and(eq(materials.normalizedName, normalizeKey(input.name)), sql`${materials.id} <> ${id}`))
+        .limit(1);
+      if (clash) throw new Error("A material with this name already exists");
+    }
 
     const patch = cleanObject({
       name: input.name,
