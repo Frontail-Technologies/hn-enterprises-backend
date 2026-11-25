@@ -1,7 +1,7 @@
 import { Elysia, t } from "elysia";
 import { auth } from "@plugins";
 import { staffController } from "./staff.controller";
-import { createStaffBodySchema, staffListQuerySchema, updateStaffBodySchema } from "./staff.schema";
+import { bulkStaffIdsSchema, createStaffBodySchema, staffListQuerySchema, updateStaffBodySchema } from "./staff.schema";
 
 // No DELETE /:id, GET /:id/delete-impact, or POST /bulk/delete here anymore -
 // deleting a staff-linked supervisor goes through the canonical user
@@ -31,4 +31,13 @@ export const staffRoutes = new Elysia({ prefix: "/staff" })
       body: updateStaffBodySchema,
       requireRole: ["super_admin", "admin"],
     },
-  );
+  )
+  // Staff without a login only (drivers, helpers...); supervisors go through /users.
+  .post("/bulk/delete", ({ body, set }) => staffController.bulkRemove({ body, set }), {
+    body: bulkStaffIdsSchema,
+    requireRole: ["super_admin", "admin"],
+  })
+  .delete("/:id", ({ params, set }) => staffController.remove({ params, set }), {
+    params: t.Object({ id: t.String() }),
+    requireRole: ["super_admin", "admin"],
+  });

@@ -3,6 +3,8 @@ import { index, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } from "driz
 import { users } from "./auth.schema";
 
 export const plumberTypeEnum = pgEnum("plumber_type", ["individual", "team"]);
+/** Plumbers are picked on customers; labour only for payments, wages and material. */
+export const plumberCategoryEnum = pgEnum("plumber_category", ["plumber", "labour"]);
 export const plumberStatusEnum = pgEnum("plumber_status", ["active", "inactive"]);
 
 export const plumbers = pgTable(
@@ -11,6 +13,7 @@ export const plumbers = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     name: text("name").notNull(),
     normalizedName: text("normalized_name").notNull(),
+    category: plumberCategoryEnum("category").notNull().default("plumber"),
     type: plumberTypeEnum("type").notNull().default("individual"),
     contactNumber: text("contact_number"),
     /** Profile photo URL (set by admins from the admin panel). */
@@ -23,7 +26,7 @@ export const plumbers = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
-    normalizedNameIdx: uniqueIndex("plumbers_normalized_name_idx").on(table.normalizedName),
+    normalizedNameIdx: uniqueIndex("plumbers_category_normalized_name_idx").on(table.category, table.normalizedName),
     statusIdx: index("plumbers_status_idx").on(table.status),
   }),
 );

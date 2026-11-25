@@ -134,8 +134,9 @@ async function recordCustomerActivity(
 
 async function getPlumberNameOrThrow(plumberId: string) {
   const db = getDb();
-  const [plumber] = await db.select({ name: plumbers.name }).from(plumbers).where(eq(plumbers.id, plumberId)).limit(1);
+  const [plumber] = await db.select({ name: plumbers.name, category: plumbers.category }).from(plumbers).where(eq(plumbers.id, plumberId)).limit(1);
   if (!plumber) throw new Error("Plumber not found");
+  if (plumber.category !== "plumber") throw new Error("Only a plumber can be set as the customer's plumber, not labour");
   return plumber.name;
 }
 

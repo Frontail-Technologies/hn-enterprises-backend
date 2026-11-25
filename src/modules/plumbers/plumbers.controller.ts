@@ -127,7 +127,7 @@ export const plumbersImportController = {
     currentUser,
     set,
   }: {
-    body: { validRows: { rowNumber: number; name: string; type: string; contactNumber: string; remarks: string }[] };
+    body: { validRows: { rowNumber: number; name: string; category?: string; type: string; contactNumber: string; remarks: string }[] };
     currentUser: AuthTokenPayload | null;
     set: SetContext;
   }) {
@@ -145,7 +145,7 @@ export const plumbersImportController = {
     currentUser,
     set,
   }: {
-    body: { data: { name: string; type: string; contactNumber: string; remarks: string } };
+    body: { data: { name: string; category?: string; type: string; contactNumber: string; remarks: string } };
     currentUser: AuthTokenPayload | null;
     set: SetContext;
   }) {

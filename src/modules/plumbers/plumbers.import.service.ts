@@ -1,10 +1,12 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { readSheetRows, normalizeKey } from "@modules/master-import/master-import.mapper";
 import { getDb } from "@db";
 import { plumbers } from "@db/schema";
 
 export type PlumberImportRowData = {
   name: string;
+  /** "plumber" or "labour" ("" = plumber). */
+  category?: string;
   type: string;
   contactNumber: string;
   remarks: string;
@@ -29,16 +31,24 @@ function assertAdmin(role: string) {
   }
 }
 
+export function toCategory(value: string): "plumber" | "labour" {
+  return /^lab(ou?r)?(er|ers)?$/i.test(value.trim()) ? "labour" : "plumber";
+}
+
+const nameKey = (data: Pick<PlumberImportRowData, "name" | "category">) => `${toCategory(data.category ?? "")}:${normalizeKey(data.name)}`;
+
 export function validatePlumberRow(data: PlumberImportRowData, existingNames: Set<string>): { error?: string } {
   if (!data.name) return { error: "Missing name" };
-  if (existingNames.has(normalizeKey(data.name))) return { error: "Duplicate plumber name in system" };
+  if (existingNames.has(nameKey(data))) {
+    return { error: toCategory(data.category ?? "") === "labour" ? "Duplicate labour name in system" : "Duplicate plumber name in system" };
+  }
   return {};
 }
 
 async function loadExistingNames() {
   const db = getDb();
-  const existing = await db.select({ normalizedName: plumbers.normalizedName }).from(plumbers);
-  return new Set(existing.map((e) => e.normalizedName));
+  const existing = await db.select({ category: plumbers.category, normalizedName: plumbers.normalizedName }).from(plumbers);
+  return new Set(existing.map((e) => `${e.category}:${e.normalizedName}`));
 }
 
 export const plumbersImportService = {
@@ -54,18 +64,19 @@ export const plumbersImportService = {
     for (const row of rawRows) {
       const name = cell(row.values, "name");
       const typeRaw = cell(row.values, "type");
+      const category = toCategory(cell(row.values, "category"));
       const contactNumber = cell(row.values, "contact number") || cell(row.values, "contact");
       const remarks = cell(row.values, "remarks");
       const type = /^team$/i.test(typeRaw) ? "team" : "individual";
 
-      const base = { rowNumber: row.rowNumber, name, type, contactNumber, remarks };
+      const base = { rowNumber: row.rowNumber, name, category, type, contactNumber, remarks };
       const { error } = validatePlumberRow(base, existingSet);
       if (error) {
         invalidRows.push({ ...base, error });
         continue;
       }
 
-      existingSet.add(normalizeKey(name));
+      existingSet.add(nameKey(base));
       validRows.push(base);
     }
 
@@ -87,20 +98,22 @@ export const plumbersImportService = {
       const tempId = String(row.rowNumber);
       try {
         const norm = normalizeKey(row.name);
+        const category = toCategory(row.category ?? "");
         const [existing] = await db
           .select({ id: plumbers.id })
           .from(plumbers)
-          .where(eq(plumbers.normalizedName, norm))
+          .where(and(eq(plumbers.category, category), eq(plumbers.normalizedName, norm)))
           .limit(1);
 
         if (existing) {
-          failed.push({ tempId, message: "Duplicate plumber name in system" });
+          failed.push({ tempId, message: category === "labour" ? "Duplicate labour name in system" : "Duplicate plumber name in system" });
           continue;
         }
 
         await db.insert(plumbers).values({
           name: row.name,
           normalizedName: norm,
+          category,
           type: row.type === "team" ? "team" : "individual",
           contactNumber: row.contactNumber || null,
           status: "active",

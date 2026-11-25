@@ -42,7 +42,7 @@ async function getSupervisors(projectId: string, sites: ProjectSiteRow[]) {
   ]);
 
   const siteSupervisorIds = sites.map((site) => site.supervisorId).filter((id): id is string => Boolean(id));
-  const assignedSupervisorIds = assignedStaff.map((row) => row.userId);
+  const assignedSupervisorIds = assignedStaff.flatMap((row) => (row.userId ? [row.userId] : []));
   const distinctIds = Array.from(new Set([...siteSupervisorIds, ...assignedSupervisorIds]));
   if (!distinctIds.length) return [];
 
@@ -150,14 +150,14 @@ async function getStaffRoster(projectId: string) {
   return db
     .select({
       id: staff.id,
-      name: users.name,
-      designation: users.role,
-      status: users.status,
+      name: sql<string>`coalesce(${users.name}, ${staff.name}, '')`,
+      designation: staff.designation,
+      status: sql<string>`coalesce(${users.status}::text, ${staff.status}::text)`,
     })
     .from(staff)
-    .innerJoin(users, eq(staff.userId, users.id))
-    .where(and(eq(staff.assignedProjectId, projectId), eq(users.status, "active")))
-    .orderBy(users.name);
+    .leftJoin(users, eq(staff.userId, users.id))
+    .where(and(eq(staff.assignedProjectId, projectId), sql`coalesce(${users.status}::text, ${staff.status}::text) = 'active'`))
+    .orderBy(sql`coalesce(${users.name}, ${staff.name}, '')`);
 }
 
 /**

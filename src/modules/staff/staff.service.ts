@@ -1,4 +1,4 @@
-import { and, count, eq, ilike, or } from "drizzle-orm";
+import { and, count, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm";
 import { getDb } from "@db";
 import { staff, users } from "@db/schema";
 import {
@@ -14,9 +14,19 @@ import type { UserRole } from "@types";
 import type { CreateStaffBody, StaffListQuery, UpdateStaffBody } from "./staff.types";
 import { forgetAuthUser } from "@plugins";
 
+const staffName = sql<string>`coalesce(${users.name}, ${staff.name}, '')`;
+const staffMobile = sql<string | null>`coalesce(${users.mobile}, ${staff.mobile})`;
+const staffStatus = sql<string>`coalesce(${users.status}::text, ${staff.status}::text)`;
+
 const staffSelection = {
   id: staff.id,
   userId: staff.userId,
+  designation: staff.designation,
+  /** Resolved from the login account for supervisors, from the staff row otherwise. */
+  name: staffName,
+  mobile: staffMobile,
+  avatarUrl: sql<string | null>`coalesce(${users.avatarUrl}, ${staff.avatarUrl})`,
+  status: staffStatus,
   assignedProjectId: staff.assignedProjectId,
   salaryType: staff.salaryType,
   monthlySalary: staff.monthlySalary,
@@ -53,7 +63,7 @@ async function getStaffOrThrow(id: string) {
   const [row] = await db
     .select(staffSelection)
     .from(staff)
-    .innerJoin(users, eq(staff.userId, users.id))
+    .leftJoin(users, eq(staff.userId, users.id))
     .where(eq(staff.id, id))
     .limit(1);
 
@@ -61,18 +71,38 @@ async function getStaffOrThrow(id: string) {
   return row;
 }
 
+function payrollValues(input: CreateStaffBody) {
+  return {
+    assignedProjectId: input.assignedProjectId || null,
+    salaryType: input.salaryType ?? "monthly",
+    monthlySalary: String(input.monthlySalary ?? 0),
+    allowance: String(input.allowance ?? 0),
+    paymentAccountType: input.paymentAccountType ?? "bank_account",
+    bankType: input.bankType || null,
+    bankName: input.bankName || null,
+    accountHolderName: input.accountHolderName || null,
+    accountNumber: input.accountNumber || null,
+    ifscCode: input.ifscCode || null,
+    upiType: input.upiType || null,
+    upiId: input.upiId || null,
+    salaryEffectiveFrom: input.salaryEffectiveFrom ? new Date(input.salaryEffectiveFrom) : null,
+    lastSalaryRevisionDate: input.lastSalaryRevisionDate ? new Date(input.lastSalaryRevisionDate) : null,
+    nextSalaryReviewDate: input.nextSalaryReviewDate ? new Date(input.nextSalaryReviewDate) : null,
+    remarks: input.remarks || null,
+  };
+}
+
 export const staffService = {
   async list(query: StaffListQuery) {
     const db = getDb();
-    const { page, limit, offset } = parsePagination(query);
+    const { page, limit, offset } = parsePagination(query, 1000); // pickers load the whole roster
     const searchPattern = toSearchPattern(query.search);
 
     const conditions = [
       query.role ? eq(users.role, query.role) : undefined,
-      query.status ? eq(users.status, query.status) : undefined,
-      searchPattern
-        ? or(ilike(users.name, searchPattern), ilike(users.mobile, searchPattern))
-        : undefined,
+      query.designation ? eq(staff.designation, query.designation) : undefined,
+      query.status ? sql`${staffStatus} = ${query.status}` : undefined,
+      searchPattern ? or(ilike(staffName, searchPattern), ilike(staffMobile, searchPattern)) : undefined,
     ].filter((condition): condition is NonNullable<typeof condition> => Boolean(condition));
 
     const where = conditions.length ? and(...conditions) : undefined;
@@ -81,12 +111,12 @@ export const staffService = {
       db
         .select(staffSelection)
         .from(staff)
-        .innerJoin(users, eq(staff.userId, users.id))
+        .leftJoin(users, eq(staff.userId, users.id))
         .where(where)
         .limit(limit)
         .offset(offset)
-        .orderBy(users.name),
-      db.select({ value: count() }).from(staff).innerJoin(users, eq(staff.userId, users.id)).where(where),
+        .orderBy(staffName),
+      db.select({ value: count() }).from(staff).leftJoin(users, eq(staff.userId, users.id)).where(where),
     ]);
 
     return { rows, pagination: buildPaginationMeta(page, limit, total) };
@@ -98,6 +128,28 @@ export const staffService = {
 
   async create(input: CreateStaffBody, actorId: string, actorRole: UserRole) {
     const db = getDb();
+
+    const designation = input.designation ?? "supervisor";
+    if (designation !== "supervisor") {
+      // Staff without app access: no login account, details live on the staff row.
+      const name = input.name?.trim();
+      if (!name) throw new Error("Name is required");
+      const [row] = await db
+        .insert(staff)
+        .values({
+          ...payrollValues(input),
+          designation,
+          name,
+          mobile: input.mobile?.trim() || null,
+          avatarUrl: input.avatarUrl || null,
+          status: input.status ?? "active",
+          createdBy: actorId,
+          updatedBy: actorId,
+        })
+        .returning({ id: staff.id });
+      if (!row) throw new Error("Unable to create staff record");
+      return getStaffOrThrow(row.id);
+    }
 
     const newId = await db.transaction(async (tx) => {
       let userId = input.userId;
@@ -142,23 +194,9 @@ export const staffService = {
       const [staffRow] = await tx
         .insert(staff)
         .values({
+          ...payrollValues(input),
           userId,
-          assignedProjectId: input.assignedProjectId || null,
-          salaryType: input.salaryType ?? "monthly",
-          monthlySalary: String(input.monthlySalary ?? 0),
-          allowance: String(input.allowance ?? 0),
-          paymentAccountType: input.paymentAccountType ?? "bank_account",
-          bankType: input.bankType || null,
-          bankName: input.bankName || null,
-          accountHolderName: input.accountHolderName || null,
-          accountNumber: input.accountNumber || null,
-          ifscCode: input.ifscCode || null,
-          upiType: input.upiType || null,
-          upiId: input.upiId || null,
-          salaryEffectiveFrom: input.salaryEffectiveFrom ? new Date(input.salaryEffectiveFrom) : null,
-          lastSalaryRevisionDate: input.lastSalaryRevisionDate ? new Date(input.lastSalaryRevisionDate) : null,
-          nextSalaryReviewDate: input.nextSalaryReviewDate ? new Date(input.nextSalaryReviewDate) : null,
-          remarks: input.remarks || null,
+          designation: "supervisor",
           createdBy: actorId,
           updatedBy: actorId,
         })
@@ -175,7 +213,27 @@ export const staffService = {
     const existing = await getStaffOrThrow(id);
     const db = getDb();
 
-    if (input.user) {
+    if (input.designation && input.designation !== existing.designation) {
+      // Supervisors are login accounts; the others have none, so a record can't switch between the two.
+      if (existing.userId || input.designation === "supervisor") {
+        throw new Error("A supervisor can't be changed to another designation (or back). Add a new staff member instead.");
+      }
+    }
+
+    if (input.user && !existing.userId) {
+      const own = input.user;
+      if (own.name !== undefined && !own.name.trim()) throw new Error("Name is required");
+      await db
+        .update(staff)
+        .set({
+          ...(own.name !== undefined ? { name: own.name.trim() } : {}),
+          ...(own.mobile !== undefined ? { mobile: own.mobile.trim() || null } : {}),
+          ...(own.avatarUrl !== undefined ? { avatarUrl: own.avatarUrl || null } : {}),
+          ...(own.status ? { status: own.status } : {}),
+        })
+        .where(eq(staff.id, id));
+    } else if (input.user && existing.userId) {
+      const userId = existing.userId;
       if (input.user.role) assertCanAssignRole(actorRole, input.user.role);
       const userPatch = {
         ...cleanObject({
@@ -188,12 +246,13 @@ export const staffService = {
         ...(input.user.avatarUrl !== undefined ? { avatarUrl: input.user.avatarUrl || null } : {}),
       };
       if (Object.keys(userPatch).length) {
-        await db.update(users).set({ ...userPatch, updatedAt: new Date() }).where(eq(users.id, existing.userId));
-        forgetAuthUser(existing.userId);
+        await db.update(users).set({ ...userPatch, updatedAt: new Date() }).where(eq(users.id, userId));
+        forgetAuthUser(userId);
       }
     }
 
     const patch = cleanObject({
+      designation: existing.userId ? undefined : input.designation,
       assignedProjectId: input.assignedProjectId,
       salaryType: input.salaryType,
       monthlySalary: input.monthlySalary != null ? String(input.monthlySalary) : undefined,
@@ -218,6 +277,27 @@ export const staffService = {
       .where(eq(staff.id, id));
 
     return getStaffOrThrow(id);
+  },
+
+  /**
+   * Delete staff without a login. Supervisors (login accounts) are deleted
+   * through the user hard-delete workflow, keyed by staff.userId (see below).
+   */
+  async remove(id: string) {
+    const existing = await getStaffOrThrow(id);
+    if (existing.userId) throw new Error("Supervisors are deleted with their login account");
+    await getDb().delete(staff).where(eq(staff.id, id));
+    return { id, name: existing.name };
+  },
+
+  async bulkRemove(ids: string[]) {
+    const unique = Array.from(new Set(ids));
+    if (!unique.length) return { count: 0 };
+    const rows = await getDb()
+      .delete(staff)
+      .where(and(inArray(staff.id, unique), isNull(staff.userId)))
+      .returning({ id: staff.id });
+    return { count: rows.length };
   },
 
   // No delete/bulkDelete here anymore - deleting a staff-linked supervisor

@@ -1,6 +1,6 @@
 import { relations } from "drizzle-orm";
 import { numeric, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
-import { users } from "./auth.schema";
+import { users, userStatusEnum } from "./auth.schema";
 import { projects } from "./project.schema";
 
 export const staffSalaryTypeEnum = pgEnum("staff_salary_type", [
@@ -17,13 +17,30 @@ export const staffPaymentAccountTypeEnum = pgEnum("staff_payment_account_type", 
   "other",
 ]);
 
+/** Job title. Only supervisors have an app login; everyone else is a record without one. */
+export const staffDesignationEnum = pgEnum("staff_designation", [
+  "supervisor",
+  "site_manager",
+  "project_manager",
+  "driver",
+  "jointer",
+  "helper",
+  "operator",
+  "store_incharge",
+]);
+
 export const staff = pgTable(
   "staff",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    userId: uuid("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+    /** Login account (supervisors only); null for staff without app access. */
+    userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }),
+    designation: staffDesignationEnum("designation").notNull().default("supervisor"),
+    /** Name, mobile, photo and status of staff without a login (supervisors keep these on their user). */
+    name: text("name"),
+    mobile: text("mobile"),
+    avatarUrl: text("avatar_url"),
+    status: userStatusEnum("status").notNull().default("active"),
     assignedProjectId: uuid("assigned_project_id").references(() => projects.id, { onDelete: "set null" }),
     salaryType: staffSalaryTypeEnum("salary_type").notNull().default("monthly"),
     monthlySalary: numeric("monthly_salary", { precision: 12, scale: 2 }).notNull().default("0"),

@@ -1,7 +1,8 @@
-import type { staffPaymentAccountTypeEnum, staffSalaryTypeEnum } from "@db/schema";
+import type { staffDesignationEnum, staffPaymentAccountTypeEnum, staffSalaryTypeEnum } from "@db/schema";
 import type { UserRole, UserStatus } from "../users/users.types";
 
 export type StaffSalaryType = (typeof staffSalaryTypeEnum.enumValues)[number];
+export type StaffDesignation = (typeof staffDesignationEnum.enumValues)[number];
 export type StaffPaymentAccountType = (typeof staffPaymentAccountTypeEnum.enumValues)[number];
 
 export type StaffListQuery = {
@@ -9,6 +10,7 @@ export type StaffListQuery = {
   limit?: number | string;
   search?: string;
   role?: UserRole;
+  designation?: StaffDesignation;
   status?: UserStatus;
 };
 
@@ -24,6 +26,12 @@ export type NewStaffUserInput = {
 export type CreateStaffBody = {
   userId?: string;
   newUser?: NewStaffUserInput;
+  /** Default "supervisor" (needs userId or newUser); others use name/mobile below. */
+  designation?: StaffDesignation;
+  name?: string;
+  mobile?: string;
+  avatarUrl?: string;
+  status?: UserStatus;
   assignedProjectId?: string;
   salaryType?: StaffSalaryType;
   monthlySalary?: number;
@@ -51,6 +59,6 @@ export type UpdateStaffUserInput = {
   status?: UserStatus;
 };
 
-export type UpdateStaffBody = Omit<Partial<CreateStaffBody>, "userId" | "newUser"> & {
+export type UpdateStaffBody = Omit<Partial<CreateStaffBody>, "userId" | "newUser" | "name" | "mobile" | "avatarUrl" | "status"> & {
   user?: UpdateStaffUserInput;
 };

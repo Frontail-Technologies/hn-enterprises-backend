@@ -30,6 +30,7 @@ export const plumbersRoutes = new Elysia({ prefix: "/plumbers" })
             rowNumber: t.Number(),
             name: t.String(),
             type: t.String(),
+            category: t.Optional(t.String()),
             contactNumber: t.String(),
             remarks: t.String(),
           }),
@@ -46,6 +47,7 @@ export const plumbersRoutes = new Elysia({ prefix: "/plumbers" })
         data: t.Object({
           name: t.String(),
           type: t.String(),
+          category: t.Optional(t.String()),
           contactNumber: t.String(),
           remarks: t.String(),
         }),

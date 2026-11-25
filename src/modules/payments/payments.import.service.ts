@@ -112,8 +112,10 @@ export const paymentsImportService = {
   async confirm(validRows: PaymentImportRow[], user: { id: string }) {
     const db = getDb();
 
-    const plumberRows = await db.select({ id: plumbers.id, normalizedName: plumbers.normalizedName }).from(plumbers);
-    const plumberIdByName = new Map(plumberRows.map((p) => [p.normalizedName, p.id]));
+    const plumberRows = await db.select({ id: plumbers.id, normalizedName: plumbers.normalizedName }).from(plumbers).orderBy(plumbers.category);
+    // Plumbers sort first, so a name shared with a labourer links to the plumber.
+    const plumberIdByName = new Map<string, string>();
+    for (const p of plumberRows) if (!plumberIdByName.has(p.normalizedName)) plumberIdByName.set(p.normalizedName, p.id);
 
     let insertedCount = 0;
     const failed: { tempId: string; message: string }[] = [];

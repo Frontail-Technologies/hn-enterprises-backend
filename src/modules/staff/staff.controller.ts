@@ -66,7 +66,25 @@ export const staffController = {
     }
   },
 
-  // No delete/deleteImpact/bulkDelete here anymore - deleting a staff-linked
+  async remove({ params, set }: { params: { id: string }; set: SetContext }) {
+    try {
+      return ok(await staffService.remove(params.id), "Staff member deleted");
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to delete staff member") };
+    }
+  },
+
+  async bulkRemove({ body, set }: { body: { ids: string[] }; set: SetContext }) {
+    try {
+      return ok(await staffService.bulkRemove(body.ids), "Staff deleted");
+    } catch (error) {
+      set.status = statusFromError(error);
+      return { success: false, message: errorMessage(error, "Unable to delete staff") };
+    }
+  },
+
+  // Supervisors: no delete/deleteImpact/bulkDelete here - deleting a staff-linked
   // supervisor goes through the canonical user hard-delete endpoints
   // (usersController.delete/getDeleteImpact/bulkDelete), keyed by
   // staff.userId. See remove-staff-block brief §8.

@@ -1,9 +1,10 @@
 import { t } from "elysia";
-import { staffPaymentAccountTypeEnum, staffSalaryTypeEnum, userRoleEnum, userStatusEnum } from "@db/schema";
+import { staffDesignationEnum, staffPaymentAccountTypeEnum, staffSalaryTypeEnum, userRoleEnum, userStatusEnum } from "@db/schema";
 
 const userRoleSchema = t.Union(userRoleEnum.enumValues.map((value) => t.Literal(value)));
 const userStatusSchema = t.Union(userStatusEnum.enumValues.map((value) => t.Literal(value)));
 const salaryTypeSchema = t.Union(staffSalaryTypeEnum.enumValues.map((value) => t.Literal(value)));
+const designationSchema = t.Union(staffDesignationEnum.enumValues.map((value) => t.Literal(value)));
 const paymentAccountTypeSchema = t.Union(staffPaymentAccountTypeEnum.enumValues.map((value) => t.Literal(value)));
 
 export const staffListQuerySchema = t.Object({
@@ -11,6 +12,7 @@ export const staffListQuerySchema = t.Object({
   limit: t.Optional(t.String()),
   search: t.Optional(t.String()),
   role: t.Optional(userRoleSchema),
+  designation: t.Optional(designationSchema),
   status: t.Optional(userStatusSchema),
 });
 
@@ -24,6 +26,7 @@ const newStaffUserSchema = t.Object({
 });
 
 const staffPayrollFieldsSchema = t.Object({
+  designation: t.Optional(designationSchema),
   assignedProjectId: t.Optional(t.String()),
   salaryType: t.Optional(salaryTypeSchema),
   monthlySalary: t.Optional(t.Number()),
@@ -46,6 +49,11 @@ export const createStaffBodySchema = t.Composite([
   t.Object({
     userId: t.Optional(t.String()),
     newUser: t.Optional(newStaffUserSchema),
+    // Staff without a login (any designation except supervisor).
+    name: t.Optional(t.String()),
+    mobile: t.Optional(t.String()),
+    avatarUrl: t.Optional(t.String()),
+    status: t.Optional(userStatusSchema),
   }),
   staffPayrollFieldsSchema,
 ]);
@@ -65,3 +73,5 @@ export const updateStaffBodySchema = t.Composite([
   }),
   t.Partial(staffPayrollFieldsSchema),
 ]);
+
+export const bulkStaffIdsSchema = t.Object({ ids: t.Array(t.String({ format: "uuid" }), { minItems: 1, maxItems: 500 }) });

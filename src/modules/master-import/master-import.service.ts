@@ -519,7 +519,7 @@ function loadPeopleLinksCached() {
 async function loadPeopleLinks(): Promise<PeopleLinks> {
   const db = getDb();
   const [plumberRows, supervisorRows] = await Promise.all([
-    db.select({ id: plumbers.id, normalizedName: plumbers.normalizedName }).from(plumbers).where(eq(plumbers.status, "active")),
+    db.select({ id: plumbers.id, normalizedName: plumbers.normalizedName }).from(plumbers).where(and(eq(plumbers.status, "active"), eq(plumbers.category, "plumber"))),
     db.select({ id: users.id, name: users.name }).from(users).where(and(eq(users.role, "supervisor"), eq(users.status, "active"))),
   ]);
   const supervisorIdByName = new Map<string, string>();

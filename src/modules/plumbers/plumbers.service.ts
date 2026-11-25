@@ -16,10 +16,11 @@ async function getPlumberOrThrow(id: string) {
 export const plumbersService = {
   async list(query: PlumberListQuery) {
     const db = getDb();
-    const { page, limit, offset } = parsePagination(query);
+    const { page, limit, offset } = parsePagination(query, 1000); // pickers load the whole roster
     const searchPattern = toSearchPattern(query.search);
 
     const conditions = [
+      query.category ? eq(plumbers.category, query.category) : undefined,
       query.type ? eq(plumbers.type, query.type) : undefined,
       query.status ? eq(plumbers.status, query.status) : undefined,
       searchPattern ? ilike(plumbers.name, searchPattern) : undefined,
@@ -46,6 +47,7 @@ export const plumbersService = {
       .values({
         name: input.name,
         normalizedName: normalizeKey(input.name),
+        category: input.category ?? "plumber",
         type: input.type ?? "individual",
         contactNumber: input.contactNumber || null,
         avatarUrl: input.avatarUrl || null,
@@ -67,6 +69,7 @@ export const plumbersService = {
     const patch = {
       ...cleanObject({
         name: input.name,
+        category: input.category,
         type: input.type,
         contactNumber: input.contactNumber,
         status: input.status,
