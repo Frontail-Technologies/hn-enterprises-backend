@@ -28,6 +28,9 @@ export const plumbersService = {
       query.status ? eq(plumbers.status, query.status) : undefined,
       searchPattern ? ilike(plumbers.name, searchPattern) : undefined,
       inPlumbers(plumbers.id, plumberIds),
+      query.projectId
+        ? sql`${plumbers.id} IN (SELECT pm.plumber_id FROM project_members pm WHERE pm.project_id = ${query.projectId} AND pm.removed_at IS NULL AND pm.plumber_id IS NOT NULL)`
+        : undefined,
     ].filter((condition): condition is NonNullable<typeof condition> => Boolean(condition));
 
     const where = conditions.length ? and(...conditions) : undefined;

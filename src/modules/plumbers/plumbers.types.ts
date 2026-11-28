@@ -11,6 +11,8 @@ export type PlumberListQuery = {
   category?: PlumberCategory;
   type?: PlumberType;
   status?: PlumberStatus;
+  /** Only people currently on this project (plan / DPR worker picker). */
+  projectId?: string;
 };
 
 export type CreatePlumberBody = {

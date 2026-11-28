@@ -12,6 +12,7 @@ export const plumberListQuerySchema = t.Object({
   category: t.Optional(plumberCategorySchema),
   type: t.Optional(plumberTypeSchema),
   status: t.Optional(plumberStatusSchema),
+  projectId: t.Optional(t.String({ format: "uuid" })),
 });
 
 export const createPlumberBodySchema = t.Object({
