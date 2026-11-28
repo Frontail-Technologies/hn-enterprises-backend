@@ -324,13 +324,17 @@ async function runConfirmedImport(
           projectIdByKey.set(projectKey, projectId);
         }
 
-        const siteKey = getSiteKey(projectKey, row);
-        let siteId = row.matchedSiteId ?? siteIdByKey.get(siteKey);
-        if (!siteId) {
-          const site = await findOrCreateImportSite(db, projectId, row, user.id);
-          siteId = site.id;
-          if (site.created) sitesCreated += 1;
-          siteIdByKey.set(siteKey, siteId);
+        // Sites are optional now: a row without a site name / code gets none.
+        let siteId: string | null = null;
+        if (hasImportSite(row)) {
+          const siteKey = getSiteKey(projectKey, row);
+          siteId = row.matchedSiteId ?? siteIdByKey.get(siteKey) ?? null;
+          if (!siteId) {
+            const site = await findOrCreateImportSite(db, projectId, row, user.id);
+            siteId = site.id;
+            if (site.created) sitesCreated += 1;
+            siteIdByKey.set(siteKey, siteId);
+          }
         }
 
         resolved.push({ ...item, projectId, siteId });
@@ -401,7 +405,12 @@ async function runConfirmedImport(
 /** Rows per insert/transaction at confirm time (~30 params per customer, well under Postgres' 65k limit). */
 const CONFIRM_CHUNK_SIZE = 200;
 
-type PendingImportRow = { storedRowId: string; row: NormalizedImportRow; projectId: string; siteId: string };
+type PendingImportRow = { storedRowId: string; row: NormalizedImportRow; projectId: string; siteId: string | null };
+
+/** The sheet names a site for this row (sites are optional). */
+function hasImportSite(row: NormalizedImportRow) {
+  return Boolean(normalizeText(row.siteName) || normalizeText(row.siteCode));
+}
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
 async function setImportRowStatus(ids: string[], status: "imported" | "rejected", executor: Db | Tx = getDb()) {
@@ -736,7 +745,9 @@ export async function matchRows(rows: NormalizedImportRow[]) {
 
     if (project) {
       row.matchedProjectId = project.id;
-      const site = row.siteCode
+      const site = !hasImportSite(row)
+        ? undefined
+        : row.siteCode
         ? sitesByProjectCode.get(`${project.id}::${normalizeKey(row.siteCode)}`)
         : sitesByProjectName.get(`${project.id}::${normalizeKey(row.siteName)}`);
 

@@ -192,6 +192,8 @@ export const customersBulkService = {
       if (!project) throw new Error("Selected project was not found.");
       columnPatch.projectId = changes.projectId;
       changeSummary.push(`${FIELD_LABELS.projectId} → ${project.name}`);
+      // Sites are no longer picked; the old project's site can't stay on a moved customer.
+      if (!("siteId" in changes)) columnPatch.siteId = null;
     }
     if ("siteId" in changes) {
       if (isSet(changes.siteId)) {

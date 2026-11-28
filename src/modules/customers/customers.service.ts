@@ -592,6 +592,10 @@ export const customersService = {
       projectId: input.projectId,
       siteId: input.siteId,
     });
+    // Moving to another project drops the old project's site (sites are no longer picked).
+    if (!input.siteId && input.projectId && input.projectId !== existing.projectId) {
+      (patch as Record<string, unknown>).siteId = null;
+    }
 
     const jsonPatch: Record<string, Record<string, unknown>> = {};
     const workProgressInserts: any[] = [];
@@ -850,6 +854,10 @@ export const customersService = {
       projectId: input.projectId,
       siteId: input.siteId,
     });
+    // Moving to another project drops the old project's site (sites are no longer picked).
+    if (!input.siteId && input.projectId && input.projectId !== existing.projectId) {
+      (patch as Record<string, unknown>).siteId = null;
+    }
 
     const jsonPatch: Record<string, Record<string, unknown>> = {};
     const workProgressInserts: any[] = [];

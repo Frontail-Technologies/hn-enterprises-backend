@@ -17,9 +17,9 @@ import { customers } from "@db/schema";
  * directly queryable customers-table columns or simple JSONB scalar fields and
  * (b) passed through byte-for-byte by mapCustomer() with no display-label
  * transformation - so a value returned here always matches what the grid shows.
- * `status` and `projectName`/`siteArea` are deliberately excluded: status has a
+ * `status` and `projectName` are deliberately excluded: status has a
  * frontend display-label mapping (STATUS_TO_FRONTEND) that would need a
- * duplicated, drift-prone mirror table on the backend, and projectName/siteArea
+ * duplicated, drift-prone mirror table on the backend, and projectName
  * require a join that customers.list()'s relational query isn't set up for
  * without a larger rewrite. All are reported, not silently dropped.
  */

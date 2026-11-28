@@ -205,7 +205,7 @@ export const inventoryExportService = {
       { header: "Project", type: "text", width: 22, get: (row) => textOf(projectById.get(row.projectId ?? "")?.name) },
       { header: "Plumber", type: "text", width: 20, get: (row) => textOf(plumberById.get(row.plumberId ?? "")?.name) },
       { header: "Supervisor", type: "text", width: 18, get: (row) => textOf(row.supervisorName) },
-      { header: "Address / Site", type: "text", width: 26, get: (row) => textOf(row.address) },
+      { header: "Address", type: "text", width: 26, get: (row) => textOf(row.address) },
     ];
 
     const workbook = newWorkbook();
@@ -259,7 +259,7 @@ export const inventoryExportService = {
       { header: "Date", type: "date", width: 13, get: (row) => dateOf(row.transactionDate) },
       { header: "TR / BP No.", type: "text", width: 14, get: (row) => textOf(customerById.get(row.customerId ?? "")?.trBpNumber) },
       { header: "Customer Name", type: "text", width: 24, get: (row) => textOf(customerById.get(row.customerId ?? "")?.customerName) },
-      { header: "Full Address / Site", type: "text", width: 30, get: (row) => textOf(customerById.get(row.customerId ?? "")?.fullAddress ?? row.address) },
+      { header: "Full Address", type: "text", width: 30, get: (row) => textOf(customerById.get(row.customerId ?? "")?.fullAddress ?? row.address) },
       { header: "Project", type: "text", width: 22, get: (row) => textOf(projectById.get(row.projectId ?? "")?.name) },
       { header: "Supervisor", type: "text", width: 18, get: (row) => textOf(row.supervisorName) },
       { header: "Plumber", type: "text", width: 18, get: (row) => textOf(plumberById.get(row.plumberId ?? "")?.name) },

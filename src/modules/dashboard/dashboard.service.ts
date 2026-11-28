@@ -11,7 +11,6 @@ import {
   projectDprs,
   projectPlans,
   projects,
-  projectSites,
   workProgressUpdates,
 } from "@db/schema";
 import { dashboardStatsService } from "@modules/stats/dashboard-stats.service";
@@ -103,17 +102,6 @@ async function getProjectsCount(projectId: string | undefined) {
     .select({ value: count() })
     .from(projects)
     .where(projectId ? eq(projects.id, projectId) : undefined);
-  return row?.value ?? 0;
-}
-
-async function getActiveSitesCount(projectId: string | undefined) {
-  const db = getDb();
-  const [row] = await db
-    .select({ value: count() })
-    .from(projectSites)
-    .where(
-      and(ne(projectSites.status, "not_started"), projectId ? eq(projectSites.projectId, projectId) : undefined),
-    );
   return row?.value ?? 0;
 }
 
@@ -246,7 +234,6 @@ async function getAdminMetrics(
 
   const [
     projectsCount,
-    activeSites,
     overdueBills,
     submittedBills,
     stockAlerts,
@@ -258,7 +245,6 @@ async function getAdminMetrics(
     fieldUpdates,
   ] = await Promise.all([
     getProjectsCount(projectId),
-    getActiveSitesCount(projectId),
     getOverdueBillsCount(projectId),
     getSubmittedBillsCount(projectId),
     getStockAlertsCount(),
@@ -279,13 +265,6 @@ async function getAdminMetrics(
       value: String(projectsCount),
       helperText: "Across selected scope",
       href: `/dashboard/summary/total-projects?${scopeQuery}`,
-    },
-    {
-      id: "active-sites",
-      label: "Active Sites",
-      value: String(activeSites),
-      helperText: "Field locations",
-      href: `/dashboard/summary/active-sites?${scopeQuery}`,
     },
     {
       id: "overdue-bills",

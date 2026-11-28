@@ -56,7 +56,6 @@ export const CUSTOMER_COLUMN_GETTERS: Record<string, CustomerColumnGetter> = {
   mobileNo: (r) => textOf(r.mobileNumber),
   fullAddress: (r) => textOf(r.fullAddress),
   projectName: (r) => textOf(r.project?.name),
-  siteArea: (r) => textOf(r.site?.name),
   city: (r) => textOf(r.city),
   status: (r) => textOf(r.status),
   scheme: (r) => textOf(r.scheme),

@@ -19,7 +19,6 @@ export const CUSTOMER_COLUMN_CATALOG: CustomerColumnCatalogEntry[] = [
   { key: "mobileNo", label: "Mobile No.", group: "Customer", type: "text", width: 130 },
   { key: "fullAddress", label: "Full Address", group: "Customer", type: "text", width: 260 },
   { key: "projectName", label: "Project", group: "Customer", type: "text", width: 190 },
-  { key: "siteArea", label: "Site / Area", group: "Customer", type: "text", width: 170 },
   { key: "city", label: "City", group: "Customer", type: "text", width: 120, defaultVisible: false },
   { key: "status", label: "Status", group: "Customer", type: "text", width: 120, defaultVisible: false },
   { key: "scheme", label: "Scheme", group: "Customer", type: "text", width: 130 },
