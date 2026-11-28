@@ -1,6 +1,6 @@
-import { and, count, eq, ilike, inArray, or } from "drizzle-orm";
+import { and, count, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import { getDb } from "@db";
-import { users, type userRoleEnum } from "@db/schema";
+import { staff, users, type userRoleEnum } from "@db/schema";
 import {
   assertCanAssignRole,
   assertStrongPassword,
@@ -40,6 +40,9 @@ async function getUserOrThrow(id: string) {
   return user;
 }
 
+/** Job title from the staff row linked to this login (Site Manager etc.). */
+const STAFF_DESIGNATION = sql<string | null>`(select ${staff.designation}::text from ${staff} where ${staff.userId} = ${users.id} limit 1)`;
+
 export const usersService = {
   async list(query: UserListQuery) {
     const db = getDb();
@@ -66,6 +69,7 @@ export const usersService = {
           mobile: users.mobile,
           avatarUrl: users.avatarUrl,
           role: users.role,
+          designation: STAFF_DESIGNATION,
           status: users.status,
           lastLoginAt: users.lastLoginAt,
         })
@@ -85,6 +89,7 @@ export const usersService = {
           mobile: users.mobile,
           avatarUrl: users.avatarUrl,
           role: users.role,
+          designation: STAFF_DESIGNATION,
           status: users.status,
           lastLoginAt: users.lastLoginAt,
         })
