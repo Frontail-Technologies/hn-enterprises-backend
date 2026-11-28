@@ -1,4 +1,4 @@
-import { count, eq, inArray } from "drizzle-orm";
+import { count, eq, inArray, sql } from "drizzle-orm";
 import { getDb } from "@db";
 import {
   complaints,
@@ -16,7 +16,46 @@ import { auditService } from "@services";
 import { EntityInUseError } from "@utils";
 import { computeDeleteImpact } from "../deletion/deletion.service";
 import type { DbHandle, DeleteImpactConfig, DeleteImpactDependencyConfig, DeleteImpactResult } from "../deletion/deletion.types";
-import { snapshotCustomers } from "@modules/recycle-bin/recycle-bin.service";
+import { snapshotCustomers, type CustomerOptionalTable } from "@modules/recycle-bin/recycle-bin.service";
+
+/** What the admin ticked in the delete dialog. Defaults keep expenses and material entries. */
+export type CustomerDeleteOptions = {
+  /** Plans and DPRs must go with the customer (they can't exist without it). */
+  deletePlans?: boolean;
+  deletePayments?: boolean;
+  deleteMaterial?: boolean;
+};
+
+function optionalTables(options: CustomerDeleteOptions): CustomerOptionalTable[] {
+  return [
+    ...(options.deletePlans ? (["site_plans", "dpr_records"] as const) : []),
+    ...(options.deletePayments ? (["payments"] as const) : []),
+    ...(options.deleteMaterial ? (["material_transactions"] as const) : []),
+  ];
+}
+
+/**
+ * Remove the ticked related rows (after the snapshot), and stamp the customer's
+ * name on expenses that are kept, so they read "Deleted customer (name)".
+ */
+async function removeOptionalRows(tx: DbHandle, customerIds: string[], options: CustomerDeleteOptions) {
+  if (!customerIds.length) return;
+  if (options.deletePlans) {
+    await tx.delete(dprRecords).where(inArray(dprRecords.customerId, customerIds));
+    await tx.delete(sitePlans).where(inArray(sitePlans.customerId, customerIds));
+  }
+  if (options.deletePayments) {
+    await tx.delete(payments).where(inArray(payments.customerId, customerIds));
+  } else {
+    await tx
+      .update(payments)
+      .set({ customerNameSnapshot: sql`(SELECT c.customer_name FROM customers c WHERE c.id = ${payments.customerId})` })
+      .where(inArray(payments.customerId, customerIds));
+  }
+  if (options.deleteMaterial) {
+    await tx.delete(materialTransactions).where(inArray(materialTransactions.customerId, customerIds));
+  }
+}
 
 function countOf(db: DbHandle) {
   return db.select({ value: count() });
@@ -27,7 +66,7 @@ async function scalarCount(query: Promise<{ value: number }[]>) {
   return row?.value ?? 0;
 }
 
-function customerDependencies(customerId: string): DeleteImpactDependencyConfig[] {
+function customerDependencies(customerId: string, options: CustomerDeleteOptions = {}): DeleteImpactDependencyConfig[] {
   return [
     {
       key: "customerDocuments",
@@ -71,36 +110,35 @@ function customerDependencies(customerId: string): DeleteImpactDependencyConfig[
     },
     {
       key: "payments",
-      label: "Payments",
-      action: "block",
+      label: "Payments & expenses",
+      action: options.deletePayments ? "delete" : "detach",
       count: async (db) => scalarCount(countOf(db).from(payments).where(eq(payments.customerId, customerId))),
-      blockReason: (n) => `${n} payment${n === 1 ? "" : "s"} reference this customer. Payment records are never deleted automatically.`,
     },
     {
       key: "materialTransactions",
-      label: "Material Transactions",
-      action: "detach",
+      label: "Material entries",
+      action: options.deleteMaterial ? "delete" : "detach",
       count: async (db) =>
         scalarCount(countOf(db).from(materialTransactions).where(eq(materialTransactions.customerId, customerId))),
     },
     {
       key: "sitePlans",
-      label: "Site Plans",
-      action: "block",
+      label: "Plans",
+      action: options.deletePlans ? "delete" : "block",
       count: async (db) => scalarCount(countOf(db).from(sitePlans).where(eq(sitePlans.customerId, customerId))),
-      blockReason: (n) => `${n} site plan${n === 1 ? "" : "s"} reference this customer. Field planning history is never deleted automatically.`,
+      blockReason: (n) => `${n} plan${n === 1 ? "" : "s"} belong to this customer. Tick "Delete plans and DPRs" to delete them with it.`,
     },
     {
       key: "dprRecords",
-      label: "DPR Records",
-      action: "block",
+      label: "DPRs",
+      action: options.deletePlans ? "delete" : "block",
       count: async (db) => scalarCount(countOf(db).from(dprRecords).where(eq(dprRecords.customerId, customerId))),
-      blockReason: (n) => `${n} DPR record${n === 1 ? "" : "s"} reference this customer. Field work history is never deleted automatically.`,
+      blockReason: (n) => `${n} DPR${n === 1 ? "" : "s"} belong to this customer. Tick "Delete plans and DPRs" to delete them with it.`,
     },
   ];
 }
 
-function buildCustomerDeleteImpactConfig(customerId: string): DeleteImpactConfig {
+function buildCustomerDeleteImpactConfig(customerId: string, options: CustomerDeleteOptions = {}): DeleteImpactConfig {
   return {
     entityType: "customer",
     getLabel: async (db) => {
@@ -108,7 +146,7 @@ function buildCustomerDeleteImpactConfig(customerId: string): DeleteImpactConfig
       if (!customer) throw new Error("Customer not found");
       return customer.customerName;
     },
-    dependencies: customerDependencies(customerId),
+    dependencies: customerDependencies(customerId, options),
   };
 }
 
@@ -118,11 +156,11 @@ export const customersDeletionService = {
     return computeDeleteImpact(db, buildCustomerDeleteImpactConfig(customerId), customerId);
   },
 
-  async execute(customerId: string, userId: string): Promise<{ label: string; totalAffected: number }> {
+  async execute(customerId: string, userId: string, options: CustomerDeleteOptions = {}): Promise<{ label: string; totalAffected: number }> {
     const db = getDb();
 
     const result = await db.transaction(async (tx) => {
-      const config = buildCustomerDeleteImpactConfig(customerId);
+      const config = buildCustomerDeleteImpactConfig(customerId, options);
       const impact = await computeDeleteImpact(tx, config, customerId);
 
       if (!impact.canDelete) {
@@ -130,7 +168,8 @@ export const customersDeletionService = {
       }
 
       // Keep a restorable copy for 30 days (recycle bin) before deleting.
-      await snapshotCustomers(tx, [customerId], userId);
+      await snapshotCustomers(tx, [customerId], userId, optionalTables(options));
+      await removeOptionalRows(tx, [customerId], options);
       await tx.delete(customers).where(eq(customers.id, customerId));
 
       return { label: impact.entity.label, totalAffected: impact.totalAffected };
@@ -149,18 +188,23 @@ export const customersDeletionService = {
   },
 };
 
-export async function assertCustomersDeletable(db: DbHandle, customerIds: string[]) {
-  if (!customerIds.length) return;
-  const blockingPayments = await scalarCount(countOf(db).from(payments).where(inArray(payments.customerId, customerIds)));
+/** Bulk delete: plans/DPRs block unless ticked; expenses and material entries never block. */
+export async function assertCustomersDeletable(db: DbHandle, customerIds: string[], options: CustomerDeleteOptions = {}) {
+  if (!customerIds.length || options.deletePlans) return;
   const blockingSitePlans = await scalarCount(countOf(db).from(sitePlans).where(inArray(sitePlans.customerId, customerIds)));
   const blockingDprRecords = await scalarCount(countOf(db).from(dprRecords).where(inArray(dprRecords.customerId, customerIds)));
-  if (blockingPayments > 0 || blockingSitePlans > 0 || blockingDprRecords > 0) {
+  if (blockingSitePlans > 0 || blockingDprRecords > 0) {
     const parts: string[] = [];
-    if (blockingPayments > 0) parts.push(`${blockingPayments} payment${blockingPayments === 1 ? "" : "s"}`);
-    if (blockingSitePlans > 0) parts.push(`${blockingSitePlans} site plan${blockingSitePlans === 1 ? "" : "s"}`);
-    if (blockingDprRecords > 0) parts.push(`${blockingDprRecords} DPR record${blockingDprRecords === 1 ? "" : "s"}`);
+    if (blockingSitePlans > 0) parts.push(`${blockingSitePlans} plan${blockingSitePlans === 1 ? "" : "s"}`);
+    if (blockingDprRecords > 0) parts.push(`${blockingDprRecords} DPR${blockingDprRecords === 1 ? "" : "s"}`);
     throw new EntityInUseError(
-      `Some selected customers cannot be deleted: ${parts.join(", ")} reference them. Financial and field-work records are never deleted automatically.`,
+      `Some selected customers have ${parts.join(" and ")}. Tick "Delete plans and DPRs" to delete them too.`,
     );
   }
+}
+
+/** Snapshot + remove ticked related rows for a bulk delete (call inside its transaction). */
+export async function prepareCustomersDelete(tx: DbHandle, customerIds: string[], userId: string, options: CustomerDeleteOptions = {}) {
+  await snapshotCustomers(tx, customerIds, userId, optionalTables(options));
+  await removeOptionalRows(tx, customerIds, options);
 }

@@ -5,8 +5,7 @@ import { isForeignKeyViolation, toEntityInUseError, toSearchPattern } from "@uti
 import { auditService, permissionService } from "@services";
 import type { AuthTokenPayload } from "@types";
 import { getStatKeyCondition } from "./customers.service";
-import { assertCustomersDeletable } from "./customers-deletion.service";
-import { snapshotCustomers } from "@modules/recycle-bin/recycle-bin.service";
+import { assertCustomersDeletable, prepareCustomersDelete, type CustomerDeleteOptions } from "./customers-deletion.service";
 import { accessibleProjectIds, ensureProjectMembers, inProjects, isProjectScoped } from "@modules/projects/project-access.service";
 
 const MAX_BULK_TARGETS = 20000;
@@ -363,7 +362,7 @@ export const customersBulkService = {
     return { count: ids.length };
   },
 
-  async bulkDelete(selection: CustomerBulkSelection, currentUser: AuthTokenPayload) {
+  async bulkDelete(selection: CustomerBulkSelection, currentUser: AuthTokenPayload, options: CustomerDeleteOptions = {}) {
     const db = getDb();
     const ids = await resolveSelectionIds(selection, currentUser);
     if (!ids.length) return { count: 0 };
@@ -372,9 +371,9 @@ export const customersBulkService = {
 
     try {
       await db.transaction(async (tx) => {
-        await assertCustomersDeletable(tx, ids);
-        // Keep restorable copies for 30 days (recycle bin) before deleting.
-        await snapshotCustomers(tx, ids, currentUser.id);
+        await assertCustomersDeletable(tx, ids, options);
+        // Keep restorable copies for 30 days (recycle bin), remove what was ticked, then delete.
+        await prepareCustomersDelete(tx, ids, currentUser.id, options);
         await tx.delete(customers).where(inArray(customers.id, ids));
       });
     } catch (error) {

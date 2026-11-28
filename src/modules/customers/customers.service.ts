@@ -22,7 +22,7 @@ import {
   PROGRESS_MILESTONE_KEYS,
   type ProgressMilestoneKey,
 } from "./customer-completion";
-import { customersDeletionService } from "./customers-deletion.service";
+import { customersDeletionService, type CustomerDeleteOptions } from "./customers-deletion.service";
 import {
   CUSTOMER_FILTER_COLUMNS,
   customerFilterColumnInArray,
@@ -1008,8 +1008,8 @@ export const customersService = {
     return customer;
   },
 
-  async delete(id: string, userId: string) {
-    return customersDeletionService.execute(id, userId);
+  async delete(id: string, userId: string, options: CustomerDeleteOptions = {}) {
+    return customersDeletionService.execute(id, userId, options);
   },
 
   async listLmcPipeRecords(customerId: string, currentUser?: CustomerViewer) {

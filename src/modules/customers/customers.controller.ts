@@ -340,10 +340,24 @@ export const customersController = {
     }
   },
 
-  async delete({ params, currentUser, set }: { params: { id: string }; currentUser: AuthTokenPayload | null; set: SetContext }) {
+  async delete({
+    params,
+    query,
+    currentUser,
+    set,
+  }: {
+    params: { id: string };
+    query?: { deletePlans?: string; deletePayments?: string; deleteMaterial?: string };
+    currentUser: AuthTokenPayload | null;
+    set: SetContext;
+  }) {
     try {
       if (!currentUser) throw new Error("Authentication required");
-      await customersService.delete(params.id, currentUser.id);
+      await customersService.delete(params.id, currentUser.id, {
+        deletePlans: query?.deletePlans === "true",
+        deletePayments: query?.deletePayments === "true",
+        deleteMaterial: query?.deleteMaterial === "true",
+      });
       return ok(null, "Customer deleted");
     } catch (error) {
       set.status = statusFromError(error);
@@ -543,13 +557,17 @@ export const customersBulkController = {
     currentUser,
     set,
   }: {
-    body: { selection: CustomerBulkSelection };
+    body: { selection: CustomerBulkSelection; deletePlans?: boolean; deletePayments?: boolean; deleteMaterial?: boolean };
     currentUser: AuthTokenPayload | null;
     set: SetContext;
   }) {
     try {
       if (!currentUser) throw new Error("Authentication required");
-      const result = await customersBulkService.bulkDelete(body.selection, currentUser);
+      const result = await customersBulkService.bulkDelete(body.selection, currentUser, {
+        deletePlans: body.deletePlans,
+        deletePayments: body.deletePayments,
+        deleteMaterial: body.deleteMaterial,
+      });
       return ok(result, `${result.count} customer${result.count === 1 ? "" : "s"} deleted`);
     } catch (error) {
       set.status = statusFromError(error);

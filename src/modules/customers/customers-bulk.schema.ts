@@ -55,4 +55,7 @@ export const bulkRemarkBodySchema = t.Object({
 
 export const bulkDeleteBodySchema = t.Object({
   selection: bulkSelectionSchema,
+  deletePlans: t.Optional(t.Boolean()),
+  deletePayments: t.Optional(t.Boolean()),
+  deleteMaterial: t.Optional(t.Boolean()),
 });

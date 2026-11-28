@@ -9,6 +9,13 @@ export const RETENTION_DAYS = 30;
 const CUSTOMER_CHILD_TABLES = ["complaints", "customer_documents", "customer_lmc_pipe_records", "customer_notes", "work_progress_updates"] as const;
 /** Rows that only lose their link to the customer (ON DELETE SET NULL), re-linked on restore. */
 const CUSTOMER_LINKED_TABLES = ["activity_events", "material_transactions", "payments"] as const;
+/**
+ * Rows deleted with the customer only when the admin ticks it in the delete
+ * dialog (plans/DPRs, expenses, material entries). Saved in the snapshot only
+ * then, and put back on restore when present.
+ */
+export const CUSTOMER_OPTIONAL_TABLES = ["site_plans", "dpr_records", "payments", "material_transactions"] as const;
+export type CustomerOptionalTable = (typeof CUSTOMER_OPTIONAL_TABLES)[number];
 
 const idList = (ids: string[]) => sql.join(ids.map((id) => sql`${id}::uuid`), sql`, `);
 
@@ -16,9 +23,9 @@ const idList = (ids: string[]) => sql.join(ids.map((id) => sql`${id}::uuid`), sq
  * Copy customers - and everything their delete removes or detaches - into the
  * recycle bin. Call inside the delete's transaction, right before deleting.
  */
-export async function snapshotCustomers(tx: Executor, customerIds: string[], userId: string) {
+export async function snapshotCustomers(tx: Executor, customerIds: string[], userId: string, alsoDeleted: CustomerOptionalTable[] = []) {
   if (!customerIds.length) return;
-  const children = CUSTOMER_CHILD_TABLES.map(
+  const children = [...CUSTOMER_CHILD_TABLES, ...alsoDeleted].map(
     (table) => sql`${table}::text, coalesce((SELECT jsonb_agg(to_jsonb(x)) FROM ${sql.raw(table)} x WHERE x.customer_id = c.id), '[]'::jsonb)`,
   );
   const links = CUSTOMER_LINKED_TABLES.map(
@@ -54,7 +61,7 @@ async function purgeExpired(db: Executor) {
 /** List (after dropping expired items); takes an executor so it can run inside a transaction. */
 export async function listWith(db: Executor): Promise<RecycleBinItem[]> {
     await purgeExpired(db);
-    const counts: SQL[] = CUSTOMER_CHILD_TABLES.map((table) => sql`${table}::text, jsonb_array_length(coalesce(d.data->${table}, '[]'::jsonb))`);
+    const counts: SQL[] = [...CUSTOMER_CHILD_TABLES, "site_plans", "dpr_records", "payments", "material_transactions"].map((table) => sql`${table}::text, jsonb_array_length(coalesce(d.data->${table}, '[]'::jsonb))`);
     const rows = await db.execute<Omit<RecycleBinItem, "related"> & { related: Record<string, number> }>(sql`
       SELECT d.id, d.entity_type AS "entityType", d.entity_id AS "entityId", d.label,
              d.data->'customer'->>'tr_bp_number' AS "trBpNumber",
@@ -109,6 +116,14 @@ export async function restoreWith(tx: Executor, recordId: string): Promise<{ lab
         await tx.execute(sql`
           INSERT INTO ${sql.raw(table)}
           SELECT * FROM jsonb_populate_recordset(NULL::${sql.raw(table)}, coalesce(${source}->${table}, '[]'::jsonb))
+        `);
+      }
+      // Plans/DPRs, expenses, material entries - only when they were deleted with it.
+      for (const table of CUSTOMER_OPTIONAL_TABLES) {
+        await tx.execute(sql`
+          INSERT INTO ${sql.raw(table)}
+          SELECT * FROM jsonb_populate_recordset(NULL::${sql.raw(table)}, coalesce(${source}->${table}, '[]'::jsonb))
+          ON CONFLICT DO NOTHING
         `);
       }
       for (const table of CUSTOMER_LINKED_TABLES) {

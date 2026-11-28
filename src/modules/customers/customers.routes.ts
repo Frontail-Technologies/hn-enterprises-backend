@@ -104,9 +104,15 @@ export const customersRoutes = new Elysia({ prefix: "/customers" })
   )
   .delete(
     "/:id",
-    ({ params, currentUser, set }) => customersController.delete({ params, currentUser, set }),
+    ({ params, query, currentUser, set }) => customersController.delete({ params, query, currentUser, set }),
     {
       params: t.Object({ id: t.String() }),
+      // What to delete along with the customer (ticked in the delete dialog).
+      query: t.Object({
+        deletePlans: t.Optional(t.String()),
+        deletePayments: t.Optional(t.String()),
+        deleteMaterial: t.Optional(t.String()),
+      }),
       requireRole: ["super_admin", "admin"],
     },
   )

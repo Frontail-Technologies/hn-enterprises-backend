@@ -28,6 +28,8 @@ export const payments = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     category: paymentCategoryEnum("category").notNull(),
     plumberId: uuid("plumber_id").references(() => plumbers.id, { onDelete: "set null" }),
+    /** Customer's name, kept so the expense still says who it was for after the customer is deleted. */
+    customerNameSnapshot: text("customer_name_snapshot"),
     paidTo: text("paid_to"),
     siteId: uuid("site_id").references(() => projectSites.id, { onDelete: "set null" }),
     address: text("address"),
