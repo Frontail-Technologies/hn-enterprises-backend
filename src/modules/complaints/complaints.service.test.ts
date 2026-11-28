@@ -17,6 +17,14 @@
  *   bun test src/modules/complaints/complaints.service.test.ts
  */
 import { describe, expect, it } from "bun:test";
+/**
+ * These tests write to the database in DATABASE_URL, which on dev machines is
+ * the LIVE database. They only run when ALLOW_DB_TESTS=1 is set, against a
+ * throwaway database. (A failed run once left test projects / customers /
+ * users behind in live data.)
+ */
+const dbDescribe = process.env.ALLOW_DB_TESTS === "1" ? describe : describe.skip;
+
 import { eq } from "drizzle-orm";
 import { getDb, getDbClient } from "@db";
 import { complaints, customers, projects, users } from "@db/schema";
@@ -52,7 +60,7 @@ async function createCustomer(projectId: string, name: string) {
   return customer;
 }
 
-describe("complaints are visible across ALL projects for every role - a supervisor is not assigned to a project (R2)", () => {
+dbDescribe("complaints are visible across ALL projects for every role - a supervisor is not assigned to a project (R2)", () => {
   let projectAId: string;
   let projectBId: string;
   let adminId: string;

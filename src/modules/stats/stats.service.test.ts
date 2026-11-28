@@ -25,6 +25,14 @@
  *   bun test src/modules/stats/stats.service.test.ts
  */
 import { describe, expect, it } from "bun:test";
+/**
+ * These tests write to the database in DATABASE_URL, which on dev machines is
+ * the LIVE database. They only run when ALLOW_DB_TESTS=1 is set, against a
+ * throwaway database. (A failed run once left test projects / customers /
+ * users behind in live data.)
+ */
+const dbDescribe = process.env.ALLOW_DB_TESTS === "1" ? describe : describe.skip;
+
 import { eq } from "drizzle-orm";
 import { getDb, getDbClient } from "@db";
 import { customers, projects, staff, users } from "@db/schema";
@@ -82,7 +90,7 @@ function parseCount(value: string): number {
   return Number(value.split("/")[0]);
 }
 
-describe("mobile stats aggregate across ALL projects - a supervisor is not assigned to a project (R2)", () => {
+dbDescribe("mobile stats aggregate across ALL projects - a supervisor is not assigned to a project (R2)", () => {
   let projectAId: string;
   let projectBId: string;
   let supervisorNoStaffId: string;

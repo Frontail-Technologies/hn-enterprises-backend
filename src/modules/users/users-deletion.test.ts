@@ -19,6 +19,14 @@
  *   bun test src/modules/users/users-deletion.test.ts
  */
 import { describe, expect, it } from "bun:test";
+/**
+ * These tests write to the database in DATABASE_URL, which on dev machines is
+ * the LIVE database. They only run when ALLOW_DB_TESTS=1 is set, against a
+ * throwaway database. (A failed run once left test projects / customers /
+ * users behind in live data.)
+ */
+const dbDescribe = process.env.ALLOW_DB_TESTS === "1" ? describe : describe.skip;
+
 import { eq } from "drizzle-orm";
 import { getDb, getDbClient } from "@db";
 import { activityEvents, projects, projectSites, staff, users } from "@db/schema";
@@ -35,7 +43,7 @@ const sourceId = `test-safe-hard-delete-${RUN_ID}`;
 const supervisorEmail = `safe-hard-delete-test-${RUN_ID}@example.invalid`;
 const supervisorName = `Safe Hard Delete Test Supervisor ${RUN_ID}`;
 
-describe("safe supervisor hard delete with permanent history", () => {
+dbDescribe("safe supervisor hard delete with permanent history", () => {
   let supervisorId: string;
   let adminId: string;
   let projectId: string;
@@ -200,7 +208,7 @@ describe("safe supervisor hard delete with permanent history", () => {
   });
 });
 
-describe("a staff-linked user can be permanently hard deleted (remove-staff-block brief)", () => {
+dbDescribe("a staff-linked user can be permanently hard deleted (remove-staff-block brief)", () => {
   let localAdminId: string;
   let staffUserId: string;
   let staffId: string;
