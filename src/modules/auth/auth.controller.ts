@@ -98,10 +98,12 @@ export const authController = {
             : result.user,
       };
     } catch (error) {
-      set.status = isRateLimitError(error) ? 429 : 401;
+      const maintenance = error instanceof Error && error.name === "MaintenanceError";
+      set.status = isRateLimitError(error) ? 429 : maintenance ? 503 : 401;
       return {
         success: false,
         message: error instanceof Error ? error.message : "Login failed",
+        ...(maintenance ? { code: "MAINTENANCE" } : {}),
       };
     }
   },

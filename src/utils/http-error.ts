@@ -36,6 +36,8 @@ function isOwnMessage(error: unknown): error is Error {
 export function statusFromError(error: unknown) {
   if (!(error instanceof Error)) return 500;
   if (error instanceof EntityInUseError) return 409;
+  // Maintenance mode (modules/system/maintenance.service.ts).
+  if (error.name === "MaintenanceError") return 503;
   const message = error.message.toLowerCase();
   if (message.includes("authentication required")) return 401;
   if (message.includes("you do not have permission")) return 403;
@@ -49,6 +51,7 @@ export function statusFromError(error: unknown) {
 
 export function errorMessage(error: unknown, fallback: string) {
   if (error instanceof EntityInUseError) return error.message;
+  if (error instanceof Error && error.name === "MaintenanceError") return error.message;
 
   if (error instanceof Error && isKnownDomainError(error.message)) {
     return error.message;

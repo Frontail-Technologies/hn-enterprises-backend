@@ -4,6 +4,7 @@ import { JWT_ACCESS_SECRET } from "@constants";
 import { getDb } from "@db";
 import { users } from "@db/schema";
 import { accessTokenFromRequest } from "@modules/auth/auth.helpers";
+import { getMaintenance } from "@modules/system/maintenance.service";
 import type { AuthTokenPayload, UserRole } from "@types";
 import { eq } from "drizzle-orm";
 
@@ -38,6 +39,15 @@ async function getUserStatus(userId: string): Promise<string | null> {
   const status = user?.status ?? null;
   userStatusCache.set(userId, { status, expiresAt: now + USER_STATUS_TTL_MS });
   return status;
+}
+
+/** 503 for non-admins while maintenance mode is on (the app shows its maintenance screen). */
+async function maintenanceBlock(currentUser: AuthTokenPayload, set: { status?: number }) {
+  if (currentUser.role === "super_admin" || currentUser.role === "admin") return;
+  const state = await getMaintenance();
+  if (!state.enabled) return;
+  set.status = 503;
+  return { success: false, message: state.message, code: "MAINTENANCE" };
 }
 
 function normalizeRoles(roles: UserRole | UserRole[]) {
@@ -82,7 +92,7 @@ export const auth = (app: Elysia) =>
         if (!enabled) return {};
 
         return {
-          beforeHandle({
+          async beforeHandle({
             currentUser,
             set,
           }: {
@@ -96,6 +106,7 @@ export const auth = (app: Elysia) =>
                 message: "Authentication required",
               };
             }
+            return maintenanceBlock(currentUser, set);
           },
         };
       },
@@ -104,7 +115,7 @@ export const auth = (app: Elysia) =>
         const allowedRoles = normalizeRoles(roles);
 
         return {
-          beforeHandle({
+          async beforeHandle({
             currentUser,
             set,
           }: {
@@ -126,6 +137,7 @@ export const auth = (app: Elysia) =>
                 message: "You do not have permission to perform this action",
               };
             }
+            return maintenanceBlock(currentUser, set);
           },
         };
       },

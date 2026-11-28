@@ -12,6 +12,7 @@ import { auditService, backgroundJobService, emailService } from "@services";
 import { assertStrongPassword, generateSecureToken, hashPassword, hashToken, verifyPassword } from "@utils";
 import type { AuthTokenPayload } from "@types";
 import type { RequestMeta } from "./auth.helpers";
+import { assertNotInMaintenance } from "@modules/system/maintenance.service";
 
 type LoginInput = {
   identifier: string;
@@ -182,6 +183,9 @@ export const authService = {
       });
       throw new Error("Invalid username or password");
     }
+
+    // Maintenance mode blocks everyone but admins from signing in.
+    await assertNotInMaintenance(user.role);
 
     const loggedInAt = new Date();
     const sessionId = randomUUID();
