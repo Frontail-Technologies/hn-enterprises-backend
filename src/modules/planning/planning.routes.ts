@@ -3,6 +3,7 @@ import { auth } from "@plugins";
 import type { AuthTokenPayload } from "@types";
 import { errorMessage, ok, statusFromError } from "@utils";
 import { planningController } from "./planning.controller";
+import { getProjectPlanningOverview, listProjectCustomers } from "./planning-project.service";
 import { deletePlanningRecord, reviewSitePlans, updateDprRecordByAdmin, updateSitePlanByAdmin } from "./planning-review.service";
 
 type SetContext = { status?: number | string };
@@ -27,6 +28,24 @@ import {
 
 export const planningRoutes = new Elysia({ prefix: "/planning" })
   .use(auth)
+  // Project-wise overview / customers (mobile planning lists by project, not site).
+  .get(
+    "/project-overview",
+    ({ query, currentUser, set }) =>
+      run(set, "Unable to load the planning overview", () =>
+        getProjectPlanningOverview(query.date, query.mode ?? "work", currentUser as AuthTokenPayload),
+      ),
+    {
+      query: t.Object({ date: t.String({ minLength: 1 }), mode: t.Optional(t.Union([t.Literal("work"), t.Literal("dpr")])) }),
+      requireAuth: true,
+    },
+  )
+  .get(
+    "/project-customers",
+    ({ query, currentUser, set }) =>
+      run(set, "Unable to load customers", () => listProjectCustomers(query.projectId, currentUser as AuthTokenPayload)),
+    { query: t.Object({ projectId: t.String({ format: "uuid" }) }), requireAuth: true },
+  )
   .get(
     "/site-plans",
     ({ query, currentUser, set }) => planningController.listSitePlans({ query, currentUser, set }),
