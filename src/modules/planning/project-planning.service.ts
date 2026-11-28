@@ -262,6 +262,23 @@ export async function upsertProjectDpr(
 ) {
   await assertProjectAccess(currentUser, input.projectId);
   const db = getDb();
+  // A DPR reports against an approved plan: the supervisor's plan for this
+  // project and day must be approved first (admins can still file / fix one).
+  if (!isAdmin(currentUser)) {
+    const [plan] = await db
+      .select({ status: projectPlans.status })
+      .from(projectPlans)
+      .where(and(eq(projectPlans.projectId, input.projectId), eq(projectPlans.date, input.date), eq(projectPlans.supervisorId, currentUser.id)))
+      .limit(1);
+    if (!plan) throw new Error("File the plan for this day first. The DPR opens once the plan is approved.");
+    if (plan.status !== "approved") {
+      throw new Error(
+        plan.status === "sent_back"
+          ? "Your plan for this day was sent back. Fix and resubmit it; the DPR opens once it is approved."
+          : "The plan for this day is waiting for approval. The DPR opens once it is approved.",
+      );
+    }
+  }
   const [existing] = await db
     .select()
     .from(projectDprs)
