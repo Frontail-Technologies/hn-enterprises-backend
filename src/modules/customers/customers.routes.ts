@@ -1,5 +1,8 @@
 import { Elysia, t } from "elysia";
 import { auth } from "@plugins";
+import type { AuthTokenPayload } from "@types";
+import { errorMessage, ok, statusFromError } from "@utils";
+import { findMeterOwner } from "./meter-check.service";
 import { customersController, customersBulkController } from "./customers.controller";
 import {
   createCustomerBodySchema,
@@ -19,6 +22,19 @@ import { bulkDeleteBodySchema, bulkRemarkBodySchema, bulkUpdateBodySchema } from
 
 export const customersRoutes = new Elysia({ prefix: "/customers" })
   .use(auth)
+  // Duplicate meter check for the app's meter scan / Meter Number field.
+  .get(
+    "/meter-check",
+    async ({ query, currentUser, set }) => {
+      try {
+        return ok({ owner: await findMeterOwner(query.meterNo, query.excludeId, currentUser as AuthTokenPayload) });
+      } catch (error) {
+        set.status = statusFromError(error);
+        return { success: false, message: errorMessage(error, "Unable to check the meter number") };
+      }
+    },
+    { query: t.Object({ meterNo: t.String({ minLength: 1, maxLength: 60 }), excludeId: t.Optional(t.String({ format: "uuid" })) }), requireAuth: true },
+  )
   .get("/", ({ query, currentUser, set }) => customersController.list({ query, currentUser, set }), {
     query: customerListQuerySchema,
     requireAuth: true,
