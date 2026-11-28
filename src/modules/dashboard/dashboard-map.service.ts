@@ -5,8 +5,26 @@ import { customerStatCondition } from "@modules/customers/customer-completion";
 import { accessibleProjectIds, inProjects } from "@modules/projects/project-access.service";
 import type { AuthTokenPayload } from "@types";
 
-/** Furthest stage a customer has reached, for the pin colour. */
-export type MapStage = "conversion" | "commissioning" | "gi" | "survey" | "none";
+/** Work stages shown on the map, in work order (keys of the dashboard stat conditions). */
+export const MAP_STAGE_KEYS = [
+  "survey-done",
+  "gi-done",
+  "gc-done",
+  "laying-done",
+  "flushing-testing-done",
+  "valve-chamber-done",
+  "pre-commissioning-done",
+  "commissioning",
+  "conversion-done",
+  "connection-done",
+  "pole-marker-done",
+  "route-marker-done",
+  "site-expenses-done",
+  "jmr-done",
+  "gi-bill-done",
+  "gc-bill-done",
+  "conversion-bill-done",
+] as const;
 
 export type CustomerMapPoint = {
   id: string;
@@ -16,21 +34,24 @@ export type CustomerMapPoint = {
   projectName: string;
   lat: number;
   lng: number;
-  stage: MapStage;
+  /** Stage keys this customer has completed. */
+  done: string[];
 };
 
 // Survey stores the position as latitude / longitude, or as "lat, lng" text (mobile "Capture GPS").
 const LAT = sql<string | null>`coalesce(nullif(trim(${customers.survey}->>'latitude'), ''), nullif(trim(split_part(${customers.survey}->>'gpsLocation', ',', 1)), ''))`;
 const LNG = sql<string | null>`coalesce(nullif(trim(${customers.survey}->>'longitude'), ''), nullif(trim(split_part(${customers.survey}->>'gpsLocation', ',', 2)), ''))`;
 
-const stageCase = () => {
-  const when = (key: string, stage: MapStage) => sql`WHEN ${customerStatCondition(key) ?? sql`false`} THEN ${stage}`;
-  return sql<MapStage>`CASE ${when("conversion-done", "conversion")} ${when("commissioning", "commissioning")} ${when("gi-done", "gi")} ${when("survey-done", "survey")} ELSE 'none' END`;
-};
+// Every completed stage as a text array, e.g. {survey-done,gi-done}.
+const doneStages = () =>
+  sql<string[]>`array_remove(ARRAY[${sql.join(
+    MAP_STAGE_KEYS.map((key) => sql`CASE WHEN ${customerStatCondition(key) ?? sql`false`} THEN ${key} END`),
+    sql`, `,
+  )}]::text[], NULL)`;
 
 /**
  * Customers that have a location (only those: no location = no pin), with
- * the stage they reached. Supervisors only see their own projects.
+ * the stages they have completed. Supervisors only see their own projects.
  */
 export async function getCustomerMapPoints(projectId: string | undefined, currentUser: AuthTokenPayload | null) {
   const projectIds = await accessibleProjectIds(currentUser);
@@ -43,7 +64,7 @@ export async function getCustomerMapPoints(projectId: string | undefined, curren
       projectName: projects.name,
       lat: LAT,
       lng: LNG,
-      stage: stageCase(),
+      done: doneStages(),
     })
     .from(customers)
     .leftJoin(projects, eq(customers.projectId, projects.id))
@@ -69,7 +90,7 @@ export async function getCustomerMapPoints(projectId: string | undefined, curren
       projectName: row.projectName ?? "",
       lat,
       lng,
-      stage: row.stage,
+      done: row.done ?? [],
     });
   }
   return points;
