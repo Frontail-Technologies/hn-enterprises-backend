@@ -20,7 +20,6 @@ import { plumbersRoutes } from "./plumbers/plumbers.routes";
 import { projectsRoutes } from "./projects/projects.routes";
 import { reportTemplatesRoutes } from "./report-templates/report-templates.routes";
 import { recycleBinRoutes } from "./recycle-bin/recycle-bin.routes";
-import { reportsRoutes } from "./reports/reports.routes";
 import { staffRoutes } from "./staff/staff.routes";
 import { statsRoutes } from "./stats/stats.routes";
 import { systemRoutes } from "./system/system.routes";
@@ -36,7 +35,6 @@ export const apiModules = new Elysia()
   .use(projectsRoutes)
   .use(reportTemplatesRoutes)
   .use(recycleBinRoutes)
-  .use(reportsRoutes)
   .use(customersRoutes)
   .use(uploadsRoutes)
   .use(usersRoutes)
