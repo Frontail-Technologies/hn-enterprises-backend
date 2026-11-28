@@ -1,6 +1,6 @@
 import { and, count, eq, gte, ne, sql } from "drizzle-orm";
 import { getDb } from "@db";
-import { dprRecords, projects, projectSites, staff, users } from "@db/schema";
+import { dprRecords, projects, projectSites, sitePlans, staff, users } from "@db/schema";
 import { projectPaymentCondition } from "@modules/payments/payments.service";
 import { dashboardStatsService } from "@modules/stats/dashboard-stats.service";
 
@@ -140,9 +140,20 @@ async function getDprCounts(projectId: string) {
       .where(eq(dprRecords.projectId, projectId)),
   ]);
 
+  const [plans] = await db
+    .select({
+      awaitingApproval: sql<number>`count(*) FILTER (WHERE ${sitePlans.status} = 'submitted')::int`,
+      approved: sql<number>`count(*) FILTER (WHERE ${sitePlans.status} = 'approved')::int`,
+      sentBack: sql<number>`count(*) FILTER (WHERE ${sitePlans.status} = 'sent_back')::int`,
+    })
+    .from(sitePlans)
+    .where(eq(sitePlans.projectId, projectId));
+
   return {
     pending: pending.value,
     submittedThisMonth: submittedThisMonth.value,
+    /** Plans (what admins approve): waiting, approved, sent back to the supervisor. */
+    plans: { awaitingApproval: plans?.awaitingApproval ?? 0, approved: plans?.approved ?? 0, sentBack: plans?.sentBack ?? 0 },
     /** Submitted, waiting for an admin. */
     awaitingApproval: byStatus?.awaitingApproval ?? 0,
     approved: byStatus?.approved ?? 0,

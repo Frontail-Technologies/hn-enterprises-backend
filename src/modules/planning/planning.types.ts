@@ -26,6 +26,7 @@ export type EvidenceFileInput = {
 };
 
 export type SitePlanListQuery = {
+  status?: "submitted" | "approved" | "sent_back";
   projectId?: string;
   siteId?: string;
   supervisorId?: string;

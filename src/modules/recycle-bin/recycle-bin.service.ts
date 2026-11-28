@@ -70,7 +70,7 @@ export async function listWith(db: Executor): Promise<RecycleBinItem[]> {
              jsonb_build_object(${sql.join(counts, sql`, `)}) AS related
       FROM deleted_records d
       LEFT JOIN users u ON u.id = d.deleted_by
-      LEFT JOIN projects p ON p.id = (d.data->'customer'->>'project_id')::uuid
+      LEFT JOIN projects p ON p.id = coalesce(d.data->'customer'->>'project_id', d.data->'row'->>'project_id')::uuid
       ORDER BY d.deleted_at DESC
       LIMIT 2000
     `);
@@ -86,7 +86,8 @@ export async function restoreWith(tx: Executor, recordId: string): Promise<{ lab
         FROM deleted_records WHERE id = ${recordId}::uuid FOR UPDATE
       `);
       if (!record) throw new Error("This item is no longer in the recycle bin");
-      if (record.entityType !== "customer") throw new Error("Only customers can be restored");
+      if (record.entityType === "site_plan" || record.entityType === "dpr_record") return restoreSingleRow(tx, recordId, record);
+      if (record.entityType !== "customer") throw new Error("This kind of item cannot be restored yet");
 
       const [conflicts] = await tx.execute<{ sameId: boolean; sameNumber: boolean; project: boolean; site: boolean }>(sql`
         SELECT EXISTS (SELECT 1 FROM customers WHERE id = ${record.entityId}::uuid) AS "sameId",
@@ -135,6 +136,23 @@ export async function restoreWith(tx: Executor, recordId: string): Promise<{ lab
       }
       await tx.execute(sql`DELETE FROM deleted_records WHERE id = ${recordId}::uuid`);
       return { label: record.label, entityId: record.entityId };
+}
+
+/** Plans and DPRs: one row, put back as it was if its customer still exists. */
+async function restoreSingleRow(tx: Executor, recordId: string, record: { entityType: string; entityId: string; label: string }) {
+  const table = record.entityType === "site_plan" ? "site_plans" : "dpr_records";
+  const source = sql`(SELECT data->'row' FROM deleted_records WHERE id = ${recordId}::uuid)`;
+  const [check] = await tx.execute<{ customer: boolean; clash: boolean }>(sql`
+    SELECT EXISTS (SELECT 1 FROM customers WHERE id = (${source}->>'customer_id')::uuid) AS customer,
+           EXISTS (SELECT 1 FROM ${sql.raw(table)} t
+                   WHERE t.customer_id = (${source}->>'customer_id')::uuid AND t.date = (${source}->>'date')::date
+                     AND t.supervisor_id IS NOT DISTINCT FROM (${source}->>'supervisor_id')::uuid) AS clash
+  `);
+  if (!check?.customer) throw new Error(`The customer of "${record.label}" was deleted, so it can't be restored`);
+  if (check.clash) throw new Error(`A newer one already exists for the same customer and date, so "${record.label}" can't be restored`);
+  await tx.execute(sql`INSERT INTO ${sql.raw(table)} SELECT * FROM jsonb_populate_record(NULL::${sql.raw(table)}, ${source})`);
+  await tx.execute(sql`DELETE FROM deleted_records WHERE id = ${recordId}::uuid`);
+  return { label: record.label, entityId: record.entityId };
 }
 
 export const recycleBinService = {

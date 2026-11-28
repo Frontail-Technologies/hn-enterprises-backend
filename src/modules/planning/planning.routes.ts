@@ -3,9 +3,21 @@ import { auth } from "@plugins";
 import type { AuthTokenPayload } from "@types";
 import { errorMessage, ok, statusFromError } from "@utils";
 import { planningController } from "./planning.controller";
-import { reviewDprRecords } from "./planning-review.service";
+import { deletePlanningRecord, reviewSitePlans, updateDprRecordByAdmin, updateSitePlanByAdmin } from "./planning-review.service";
+
+type SetContext = { status?: number | string };
+async function run<T>(set: SetContext, fallback: string, action: () => Promise<T>, message?: string) {
+  try {
+    return ok(await action(), message);
+  } catch (error) {
+    set.status = statusFromError(error);
+    return { success: false, message: errorMessage(error, fallback) };
+  }
+}
 import {
   dprRecordListQuerySchema,
+  dprTaskSchema,
+  planTaskSchema,
   planningOverviewQuerySchema,
   siteCustomersQuerySchema,
   sitePlanListQuerySchema,
@@ -40,18 +52,12 @@ export const planningRoutes = new Elysia({ prefix: "/planning" })
     ({ body, currentUser, set }) => planningController.upsertDprRecord({ body, currentUser, set }),
     { body: upsertDprRecordBodySchema, requireAuth: true },
   )
-  // Admin review: approve submitted DPRs, or send them back (to draft) with a reason.
+  // Admin review: approve submitted plans, or send them back with a reason.
   .post(
-    "/dpr-records/review",
-    async ({ body, currentUser, set }) => {
-      try {
-        const result = await reviewDprRecords(body.ids, body.action, body.note, (currentUser as AuthTokenPayload).id);
-        return ok(result, body.action === "approve" ? "DPR approved" : "DPR sent back");
-      } catch (error) {
-        set.status = statusFromError(error);
-        return { success: false, message: errorMessage(error, "Unable to review DPR") };
-      }
-    },
+    "/site-plans/review",
+    ({ body, currentUser, set }) =>
+      run(set, "Unable to review plan", () => reviewSitePlans(body.ids, body.action, body.note, (currentUser as AuthTokenPayload).id),
+        body.action === "approve" ? "Plan approved" : "Plan sent back"),
     {
       body: t.Object({
         ids: t.Array(t.String({ format: "uuid" }), { minItems: 1, maxItems: 500 }),
@@ -60,6 +66,39 @@ export const planningRoutes = new Elysia({ prefix: "/planning" })
       }),
       requireRole: ["super_admin", "admin"],
     },
+  )
+  // Admin edit / delete (delete goes to the recycle bin).
+  .patch(
+    "/site-plans/:id",
+    ({ params, body, currentUser, set }) =>
+      run(set, "Unable to save plan", () => updateSitePlanByAdmin(params.id, body, (currentUser as AuthTokenPayload).id), "Plan saved"),
+    { params: t.Object({ id: t.String({ format: "uuid" }) }), body: t.Object({ tasks: t.Array(planTaskSchema) }), requireRole: ["super_admin", "admin"] },
+  )
+  .delete(
+    "/site-plans/:id",
+    ({ params, currentUser, set }) =>
+      run(set, "Unable to delete plan", () => deletePlanningRecord("plan", params.id, (currentUser as AuthTokenPayload).id), "Plan deleted"),
+    { params: t.Object({ id: t.String({ format: "uuid" }) }), requireRole: ["super_admin", "admin"] },
+  )
+  .patch(
+    "/dpr-records/:id",
+    ({ params, body, currentUser, set }) =>
+      run(set, "Unable to save DPR", () => updateDprRecordByAdmin(params.id, body, (currentUser as AuthTokenPayload).id), "DPR saved"),
+    {
+      params: t.Object({ id: t.String({ format: "uuid" }) }),
+      body: t.Object({
+        tasks: t.Optional(t.Array(dprTaskSchema)),
+        remarks: t.Optional(t.String({ maxLength: 2000 })),
+        status: t.Optional(t.Union([t.Literal("draft"), t.Literal("submitted")])),
+      }),
+      requireRole: ["super_admin", "admin"],
+    },
+  )
+  .delete(
+    "/dpr-records/:id",
+    ({ params, currentUser, set }) =>
+      run(set, "Unable to delete DPR", () => deletePlanningRecord("dpr", params.id, (currentUser as AuthTokenPayload).id), "DPR deleted"),
+    { params: t.Object({ id: t.String({ format: "uuid" }) }), requireRole: ["super_admin", "admin"] },
   )
   .get(
     "/dpr-records/overview",

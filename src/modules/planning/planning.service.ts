@@ -144,11 +144,16 @@ export const planningService = {
       query.date ? eq(sitePlans.date, query.date) : undefined,
       query.from ? gte(sitePlans.date, query.from) : undefined,
       query.to ? lte(sitePlans.date, query.to) : undefined,
+      query.status ? eq(sitePlans.status, query.status) : undefined,
     ].filter((condition): condition is NonNullable<typeof condition> => Boolean(condition));
 
     const rows = await db
       .select({
         id: sitePlans.id,
+        status: sitePlans.status,
+        reviewedAt: sitePlans.reviewedAt,
+        reviewNote: sitePlans.reviewNote,
+        reviewedByName: sql<string | null>`(SELECT u.name FROM users u WHERE u.id = "site_plans"."reviewed_by")`,
         customerId: sitePlans.customerId,
         projectId: sitePlans.projectId,
         siteId: sitePlans.siteId,
@@ -186,6 +191,10 @@ export const planningService = {
     const supervisorId = currentUser.id;
     const db = getDb();
     const existing = await findSitePlan(input.customerId, input.date, supervisorId);
+    const isAdmin = currentUser.role === "super_admin" || currentUser.role === "admin";
+    if (!isAdmin && existing?.status === "approved") {
+      throw new Error("You do not have permission to change a plan that is already approved");
+    }
     // Immutable supervisor snapshot (safe-hard-delete brief §5) - survives a hard-deleted supervisor. Only resolved on create; an existing row keeps its original snapshot.
     const supervisorName = existing
       ? undefined
@@ -199,6 +208,8 @@ export const planningService = {
       supervisorId,
       ...(supervisorName !== undefined ? { supervisorName } : {}),
       tasks: input.tasks,
+      // Saving (again) sends it for approval; a sent-back plan is re-submitted this way.
+      status: "submitted" as const,
       updatedAt: new Date(),
     };
 

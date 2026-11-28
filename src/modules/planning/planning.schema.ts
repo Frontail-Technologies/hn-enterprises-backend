@@ -4,13 +4,13 @@ import { dprStatusEnum, planningTaskIdEnum } from "@db/schema";
 const taskIdSchema = t.Union(planningTaskIdEnum.enumValues.map((value) => t.Literal(value)));
 const dprStatusSchema = t.Union(dprStatusEnum.enumValues.map((value) => t.Literal(value)));
 
-const planTaskSchema = t.Object({
+export const planTaskSchema = t.Object({
   id: taskIdSchema,
   qty: t.Optional(t.String()),
   worker: t.Optional(t.String()),
 });
 
-const dprTaskSchema = t.Object({
+export const dprTaskSchema = t.Object({
   id: taskIdSchema,
   plannedQty: t.Optional(t.String()),
   completedQty: t.Optional(t.String()),
@@ -27,6 +27,7 @@ const evidenceFileSchema = t.Object({
 });
 
 export const sitePlanListQuerySchema = t.Object({
+  status: t.Optional(t.Union([t.Literal("submitted"), t.Literal("approved"), t.Literal("sent_back")])),
   projectId: t.Optional(t.String()),
   siteId: t.Optional(t.String()),
   supervisorId: t.Optional(t.String()),

@@ -30,10 +30,10 @@ export const recycleBinRoutes = new Elysia({ prefix: "/recycle-bin" })
         const restored = await recycleBinService.restore(params.id);
         await auditService.log({
           userId: (currentUser as AuthTokenPayload).id,
-          module: "Customers",
-          action: "Restored Customer",
+          module: "Recycle Bin",
+          action: "Restored",
           recordId: restored.entityId,
-          description: `Restored customer "${restored.label}" from the recycle bin`,
+          description: `Restored "${restored.label}" from the recycle bin`,
         });
         return restored;
       }, "Restored"),

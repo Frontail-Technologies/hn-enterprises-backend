@@ -19,6 +19,8 @@ export const planningTaskIdEnum = pgEnum("planning_task_id", [
 ]);
 
 export const dprStatusEnum = pgEnum("dpr_status", ["draft", "submitted", "approved"]);
+/** Plans are what an admin approves: submitted -> approved, or sent back (with a reason). */
+export const planStatusEnum = pgEnum("plan_status", ["submitted", "approved", "sent_back"]);
 
 export type PlanTaskPayload = {
   id: string;
@@ -60,6 +62,11 @@ export const sitePlans = pgTable(
     /** Immutable snapshot, populated at write time - survives a hard-deleted supervisor so historical plans stay attributable. */
     supervisorName: text("supervisor_name"),
     tasks: jsonb("tasks").$type<PlanTaskPayload[]>().notNull().default([]),
+    status: planStatusEnum("status").notNull().default("submitted"),
+    /** Admin review: who approved/sent it back, when, and the reason. */
+    reviewedBy: uuid("reviewed_by").references(() => users.id, { onDelete: "set null" }),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    reviewNote: text("review_note"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
