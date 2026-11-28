@@ -171,9 +171,11 @@ export const dprRecordsRelations = relations(dprRecords, ({ one }) => ({
  * Project-wise planning (replaces the per-customer plans / DPRs): one plan and
  * one DPR per supervisor, project and day, with a quantity per task.
  */
-export type ProjectPlanTask = { id: string; qty?: string };
-export type ProjectDprTask = { id: string; plannedQty?: string; doneQty?: string; delayReason?: string };
 export type ProjectDprManpower = { plumberId?: string; name: string; category?: "plumber" | "labour" };
+/** Plumbers / labour assigned to one task (same shape as manpower). */
+export type ProjectTaskWorker = ProjectDprManpower;
+export type ProjectPlanTask = { id: string; qty?: string; workers?: ProjectTaskWorker[] };
+export type ProjectDprTask = { id: string; plannedQty?: string; doneQty?: string; delayReason?: string; workers?: ProjectTaskWorker[] };
 
 export const projectPlans = pgTable(
   "project_plans",

@@ -36,16 +36,40 @@ export type ProjectPlanningListQuery = {
 type EvidenceFile = { id: string; fileName: string; fileUrl: string; mimeType?: string; capturedAt?: string };
 
 const clean = (value: string | undefined) => (value ?? "").trim();
-const cleanPlanTasks = (tasks: ProjectPlanTask[]) =>
-  tasks.map((task) => ({ id: task.id, qty: clean(task.qty) })).filter((task) => task.qty);
-const cleanDprTasks = (tasks: ProjectDprTask[]) =>
-  tasks
-    .map((task) => ({ id: task.id, plannedQty: clean(task.plannedQty), doneQty: clean(task.doneQty), delayReason: clean(task.delayReason) }))
-    .filter((task) => task.plannedQty || task.doneQty || task.delayReason);
 const cleanManpower = (rows: ProjectDprManpower[]) =>
   rows
     .map((row) => ({ ...(row.plumberId ? { plumberId: row.plumberId } : {}), name: clean(row.name), ...(row.category ? { category: row.category } : {}) }))
     .filter((row) => row.name);
+/** Workers on a task: cleaned, without repeats (same person once). */
+const cleanWorkers = (rows: ProjectDprManpower[] | undefined) => {
+  const seen = new Set<string>();
+  return cleanManpower(rows ?? []).filter((row) => {
+    const key = row.plumberId ?? row.name.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+};
+const cleanPlanTasks = (tasks: ProjectPlanTask[]) =>
+  tasks
+    .map((task) => {
+      const workers = cleanWorkers(task.workers);
+      return { id: task.id, qty: clean(task.qty), ...(workers.length ? { workers } : {}) };
+    })
+    .filter((task) => task.qty || task.workers?.length);
+const cleanDprTasks = (tasks: ProjectDprTask[]) =>
+  tasks
+    .map((task) => {
+      const workers = cleanWorkers(task.workers);
+      return {
+        id: task.id,
+        plannedQty: clean(task.plannedQty),
+        doneQty: clean(task.doneQty),
+        delayReason: clean(task.delayReason),
+        ...(workers.length ? { workers } : {}),
+      };
+    })
+    .filter((task) => task.plannedQty || task.doneQty || task.delayReason || task.workers?.length);
 
 async function supervisorName(userId: string) {
   const [row] = await getDb().select({ name: users.name }).from(users).where(eq(users.id, userId)).limit(1);

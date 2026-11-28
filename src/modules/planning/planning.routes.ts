@@ -46,16 +46,22 @@ const projectPlanningListQuery = t.Object({
   to: t.Optional(t.String()),
   status: t.Optional(t.String()),
 });
+const projectDprManpower = t.Object({
+  plumberId: t.Optional(t.String()),
+  name: t.String(),
+  category: t.Optional(t.Union([t.Literal("plumber"), t.Literal("labour")])),
+});
 const projectDprTask = t.Object({
   id: t.String({ minLength: 1 }),
   plannedQty: t.Optional(t.String()),
   doneQty: t.Optional(t.String()),
   delayReason: t.Optional(t.String()),
+  workers: t.Optional(t.Array(projectDprManpower)),
 });
-const projectDprManpower = t.Object({
-  plumberId: t.Optional(t.String()),
-  name: t.String(),
-  category: t.Optional(t.Union([t.Literal("plumber"), t.Literal("labour")])),
+const projectPlanTask = t.Object({
+  id: t.String({ minLength: 1 }),
+  qty: t.Optional(t.String()),
+  workers: t.Optional(t.Array(projectDprManpower)),
 });
 const evidenceFile = t.Object({
   id: t.String({ minLength: 1 }),
@@ -82,7 +88,7 @@ export const planningRoutes = new Elysia({ prefix: "/planning" })
       body: t.Object({
         projectId: t.String({ format: "uuid" }),
         date: t.String({ minLength: 10, maxLength: 10 }),
-        tasks: t.Array(t.Object({ id: t.String({ minLength: 1 }), qty: t.Optional(t.String()) })),
+        tasks: t.Array(projectPlanTask),
         remarks: t.Optional(t.String()),
       }),
       requireAuth: true,
@@ -109,7 +115,7 @@ export const planningRoutes = new Elysia({ prefix: "/planning" })
     {
       params: t.Object({ id: t.String({ format: "uuid" }) }),
       body: t.Object({
-        tasks: t.Optional(t.Array(t.Object({ id: t.String({ minLength: 1 }), qty: t.Optional(t.String()) }))),
+        tasks: t.Optional(t.Array(projectPlanTask)),
         remarks: t.Optional(t.String()),
       }),
       requireRole: ["super_admin", "admin"],
