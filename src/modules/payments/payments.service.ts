@@ -78,6 +78,11 @@ async function assertSupervisorLinks(
   if (input.plumberId) await assertPlumberAccess(currentUser, input.plumberId);
 }
 
+async function customerNameOf(customerId: string): Promise<string | null> {
+  const [row] = await getDb().select({ name: customers.customerName }).from(customers).where(eq(customers.id, customerId)).limit(1);
+  return row?.name ?? null;
+}
+
 async function resolveProjectIdForCustomer(customerId: string): Promise<string | null> {
   const db = getDb();
   const [customer] = await db.select({ projectId: customers.projectId }).from(customers).where(eq(customers.id, customerId)).limit(1);
@@ -144,6 +149,8 @@ async function getPaymentOrThrow(id: string) {
 
 export function projectPaymentCondition(projectId: string) {
   const db = getDb();
+  // "none" = General / office expenses (no project).
+  if (projectId === "none") return isNull(payments.projectId);
   return or(
     eq(payments.projectId, projectId),
     inArray(
@@ -174,9 +181,12 @@ export const paymentsService = {
       paidTo: payments.paidTo,
       address: payments.address,
       customerId: payments.customerId,
-      customerName: customers.customerName,
+      // The live name, else the name saved when the customer was deleted.
+      customerName: sql<string | null>`coalesce(${customers.customerName}, ${payments.customerNameSnapshot})`,
+      customerDeleted: sql<boolean>`(${payments.customerId} IS NULL AND ${payments.customerNameSnapshot} IS NOT NULL)`,
       customerTrBpNumber: customers.trBpNumber,
       projectId: payments.projectId,
+      projectName: sql<string | null>`(SELECT p.name FROM projects p WHERE p.id = "payments"."project_id")`,
       amount: payments.amount,
       paymentDate: payments.paymentDate,
       mode: payments.mode,
@@ -392,6 +402,7 @@ export const paymentsService = {
         paidTo: input.paidTo || null,
         address: input.address || null,
         customerId: input.customerId || null,
+        customerNameSnapshot: input.customerId ? await customerNameOf(input.customerId) : null,
         projectId,
         amount: String(input.amount),
         paymentDate: new Date(input.paymentDate),
@@ -494,6 +505,9 @@ export const paymentsService = {
       .update(payments)
       .set({
         ...patch,
+        ...(input.customerId ? { customerNameSnapshot: await customerNameOf(input.customerId) } : {}),
+        // "" = moved to General / office (no project, no customer); cleanObject drops "" so set it here.
+        ...(input.projectId === "" && !input.customerId ? { projectId: null, customerId: null, customerNameSnapshot: null } : {}),
         ...(isApprovalTransition ? { approvedBy: currentUser.id } : {}),
         updatedAt: new Date(),
       })
