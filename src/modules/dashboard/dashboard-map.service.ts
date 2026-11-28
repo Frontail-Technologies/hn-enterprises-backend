@@ -1,6 +1,6 @@
 import { and, eq, sql } from "drizzle-orm";
 import { getDb } from "@db";
-import { customers } from "@db/schema";
+import { customers, projects } from "@db/schema";
 import { customerStatCondition } from "@modules/customers/customer-completion";
 import { accessibleProjectIds, inProjects } from "@modules/projects/project-access.service";
 import type { AuthTokenPayload } from "@types";
@@ -13,6 +13,7 @@ export type CustomerMapPoint = {
   name: string;
   bpNo: string;
   projectId: string | null;
+  projectName: string;
   lat: number;
   lng: number;
   stage: MapStage;
@@ -39,11 +40,13 @@ export async function getCustomerMapPoints(projectId: string | undefined, curren
       name: customers.customerName,
       bpNo: customers.trBpNumber,
       projectId: customers.projectId,
+      projectName: projects.name,
       lat: LAT,
       lng: LNG,
       stage: stageCase(),
     })
     .from(customers)
+    .leftJoin(projects, eq(customers.projectId, projects.id))
     .where(
       and(
         sql`${LAT} IS NOT NULL AND ${LNG} IS NOT NULL`,
@@ -58,7 +61,16 @@ export async function getCustomerMapPoints(projectId: string | undefined, curren
     const lng = Number(row.lng);
     // Skip typos and 0,0 placeholders.
     if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180 || (lat === 0 && lng === 0)) continue;
-    points.push({ id: row.id, name: row.name ?? "", bpNo: row.bpNo ?? "", projectId: row.projectId, lat, lng, stage: row.stage });
+    points.push({
+      id: row.id,
+      name: row.name ?? "",
+      bpNo: row.bpNo ?? "",
+      projectId: row.projectId,
+      projectName: row.projectName ?? "",
+      lat,
+      lng,
+      stage: row.stage,
+    });
   }
   return points;
 }
