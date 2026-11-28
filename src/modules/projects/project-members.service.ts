@@ -12,6 +12,8 @@ export type ProjectMemberRow = {
   kind: string;
   personId: string;
   name: string;
+  /** Supervisors: their staff designation (supervisor / site_manager / project_manager). */
+  designation: string | null;
   avatarUrl: string | null;
   mobile: string | null;
   addedAt: string;
@@ -39,6 +41,7 @@ export const projectMembersService = {
         kind: sql<string>`CASE WHEN ${projectMembers.memberType} = 'supervisor' THEN 'supervisor' ELSE coalesce(${plumbers.category}::text, 'plumber') END`,
         personId: sql<string>`coalesce(${projectMembers.userId}, ${projectMembers.plumberId})`,
         name: sql<string>`coalesce(${users.name}, ${plumbers.name}, 'Removed person')`,
+        designation: sql<string | null>`(SELECT s.designation::text FROM staff s WHERE s.user_id = "project_members"."user_id" LIMIT 1)`,
         avatarUrl: sql<string | null>`coalesce(${users.avatarUrl}, ${plumbers.avatarUrl})`,
         mobile: sql<string | null>`coalesce(${users.mobile}, ${plumbers.contactNumber})`,
         addedAt: projectMembers.addedAt,

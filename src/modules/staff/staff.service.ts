@@ -98,6 +98,9 @@ function payrollValues(input: CreateStaffBody) {
   };
 }
 
+/** Designations that get a login and use the mobile app (supervisor rules). */
+export const LOGIN_DESIGNATIONS = new Set(["supervisor", "site_manager", "project_manager"]);
+
 export const staffService = {
   async list(query: StaffListQuery) {
     const db = getDb();
@@ -136,7 +139,7 @@ export const staffService = {
     const db = getDb();
 
     const designation = input.designation ?? "supervisor";
-    if (designation !== "supervisor") {
+    if (!LOGIN_DESIGNATIONS.has(designation)) {
       // Staff without app access: no login account, details live on the staff row.
       const name = input.name?.trim();
       if (!name) throw new Error("Name is required");
@@ -205,7 +208,7 @@ export const staffService = {
         .values({
           ...payrollValues(input),
           userId,
-          designation: "supervisor",
+          designation,
           createdBy: actorId,
           updatedBy: actorId,
         })
@@ -227,8 +230,10 @@ export const staffService = {
 
     if (input.designation && input.designation !== existing.designation) {
       // Supervisors are login accounts; the others have none, so a record can't switch between the two.
-      if (existing.userId || input.designation === "supervisor") {
-        throw new Error("A supervisor cannot be changed to another designation (or back). Add a new staff member instead.");
+      // Login designations (supervisor / site manager / project manager) can switch among
+      // themselves; switching to or from a no-login designation would need an account change.
+      if (Boolean(existing.userId) !== LOGIN_DESIGNATIONS.has(input.designation)) {
+        throw new Error("This designation cannot be changed between app-login and no-login staff. Add a new staff member instead.");
       }
     }
 
@@ -264,7 +269,7 @@ export const staffService = {
     }
 
     const patch = cleanObject({
-      designation: existing.userId ? undefined : input.designation,
+      designation: input.designation,
       assignedProjectId: input.assignedProjectId,
       salaryType: input.salaryType,
       monthlySalary: input.monthlySalary != null ? String(input.monthlySalary) : undefined,
