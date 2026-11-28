@@ -4,6 +4,7 @@ import type { AuthTokenPayload } from "@types";
 import { errorMessage, ok, statusFromError } from "@utils";
 import { planningController } from "./planning.controller";
 import { getProjectPlanningOverview, listProjectCustomers } from "./planning-project.service";
+import { listPlanningCustomers, type PlanningCustomersQuery } from "./planning-customers.service";
 import { deletePlanningRecord, reviewSitePlans, updateDprRecordByAdmin, updateSitePlanByAdmin } from "./planning-review.service";
 
 type SetContext = { status?: number | string };
@@ -37,6 +38,31 @@ export const planningRoutes = new Elysia({ prefix: "/planning" })
       ),
     {
       query: t.Object({ date: t.String({ minLength: 1 }), mode: t.Optional(t.Union([t.Literal("work"), t.Literal("dpr")])) }),
+      requireAuth: true,
+    },
+  )
+  // Paged customer list with each one's plan / DPR status for the day (app DPR / Planning tab).
+  .get(
+    "/customers",
+    async ({ query, currentUser, set }) => {
+      try {
+        const { rows, pagination, counts } = await listPlanningCustomers(query as PlanningCustomersQuery, currentUser as AuthTokenPayload);
+        return ok(rows, undefined, { pagination, counts });
+      } catch (error) {
+        set.status = statusFromError(error);
+        return { success: false, message: errorMessage(error, "Unable to load customers") };
+      }
+    },
+    {
+      query: t.Object({
+        date: t.String({ minLength: 10, maxLength: 10 }),
+        mode: t.Optional(t.Union([t.Literal("work"), t.Literal("dpr")])),
+        projectId: t.Optional(t.String({ format: "uuid" })),
+        status: t.Optional(t.String()),
+        search: t.Optional(t.String()),
+        page: t.Optional(t.String()),
+        limit: t.Optional(t.String()),
+      }),
       requireAuth: true,
     },
   )
