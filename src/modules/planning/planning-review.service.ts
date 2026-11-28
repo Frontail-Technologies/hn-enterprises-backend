@@ -46,10 +46,11 @@ export async function reviewSitePlans(ids: string[], action: PlanReviewAction, n
 
   if (action === "reject" && updated.length) {
     const customerRows = await db
-      .select({ id: customers.id, name: customers.customerName })
+      .select({ id: customers.id, name: customers.customerName, trBpNumber: customers.trBpNumber })
       .from(customers)
       .where(inArray(customers.id, updated.map((row) => row.customerId)));
     const nameById = new Map(customerRows.map((row) => [row.id, row.name]));
+    const bpById = new Map(customerRows.map((row) => [row.id, row.trBpNumber ?? ""]));
     for (const row of updated) {
       if (!row.supervisorId) continue;
       await notificationService
@@ -60,7 +61,17 @@ export async function reviewSitePlans(ids: string[], action: PlanReviewAction, n
           category: "work",
           sourceType: "plan",
           sourceId: row.id,
-          route: { pathname: "/customers/[id]", params: { id: row.customerId } },
+          // Opens the plan itself in the app (older apps fall back to the notifications list).
+          route: {
+            pathname: "/planning/plan",
+            params: {
+              customerId: row.customerId,
+              customerName: nameById.get(row.customerId) ?? "",
+              trBpNumber: bpById.get(row.customerId) ?? "",
+              projectId: row.projectId,
+              date: row.date,
+            },
+          },
         })
         .catch((error: unknown) => console.error("[plan] notify failed", error));
     }
