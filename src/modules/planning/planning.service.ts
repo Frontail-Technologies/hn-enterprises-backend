@@ -35,11 +35,12 @@ function planningScope(currentUser: AuthTokenPayload): string | undefined {
  */
 async function assertPlanningTargetAccess(
   currentUser: AuthTokenPayload,
-  input: { projectId: string; customerId: string; siteId: string },
+  input: { projectId: string; customerId: string; siteId?: string },
 ) {
   if (!isProjectScoped(currentUser)) return;
   await assertProjectAccess(currentUser, input.projectId);
   await assertCustomerAccess(currentUser, input.customerId);
+  if (!input.siteId) return;
   const [site] = await getDb()
     .select({ projectId: projectSites.projectId })
     .from(projectSites)
@@ -47,6 +48,13 @@ async function assertPlanningTargetAccess(
     .limit(1);
   if (!site) throw new Error("Project site not found");
   await assertProjectAccess(currentUser, site.projectId);
+}
+
+/** The site sent by older app versions, else the customer's own site (may be none). */
+async function resolveSiteId(input: { customerId: string; siteId?: string }) {
+  if (input.siteId) return input.siteId;
+  const [row] = await getDb().select({ siteId: customers.siteId }).from(customers).where(eq(customers.id, input.customerId)).limit(1);
+  return row?.siteId ?? null;
 }
 
 async function fetchSiteTotals(projectIds: string[] | null) {
@@ -203,7 +211,7 @@ export const planningService = {
     const values = {
       customerId: input.customerId,
       projectId: input.projectId,
-      siteId: input.siteId,
+      siteId: await resolveSiteId(input),
       date: input.date,
       supervisorId,
       ...(supervisorName !== undefined ? { supervisorName } : {}),
@@ -307,7 +315,7 @@ export const planningService = {
     const values = {
       customerId: input.customerId,
       projectId: input.projectId,
-      siteId: input.siteId,
+      siteId: await resolveSiteId(input),
       date: input.date,
       supervisorId,
       ...(supervisorName !== undefined ? { supervisorName } : {}),
@@ -380,7 +388,7 @@ export const planningService = {
       fetchSiteMeta(siteIds),
     ]);
 
-    const completedBySite = new Map(completedRows.map((row) => [row.siteId, Number(row.completed)]));
+    const completedBySite = new Map(completedRows.flatMap((row) => (row.siteId ? [[row.siteId, Number(row.completed)] as const] : [])));
     return buildOverviewRows(
       siteTotals.map((row) => ({ siteId: row.siteId, total: Number(row.total) })),
       completedBySite,
@@ -412,7 +420,7 @@ export const planningService = {
       fetchSiteMeta(siteIds),
     ]);
 
-    const completedBySite = new Map(completedRows.map((row) => [row.siteId, Number(row.completed)]));
+    const completedBySite = new Map(completedRows.flatMap((row) => (row.siteId ? [[row.siteId, Number(row.completed)] as const] : [])));
     return buildOverviewRows(
       siteTotals.map((row) => ({ siteId: row.siteId, total: Number(row.total) })),
       completedBySite,

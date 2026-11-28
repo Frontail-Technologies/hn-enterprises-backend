@@ -26,6 +26,8 @@ export type PlanTaskPayload = {
   id: string;
   qty?: string;
   worker?: string;
+  /** Plumber / labour picked from the project's list (worker keeps the name). */
+  plumberId?: string;
 };
 
 export type DprTaskPayload = {
@@ -33,6 +35,7 @@ export type DprTaskPayload = {
   plannedQty?: string;
   completedQty?: string;
   worker?: string;
+  plumberId?: string;
   delayReason?: string;
 };
 
@@ -54,9 +57,8 @@ export const sitePlans = pgTable(
     projectId: uuid("project_id")
       .notNull()
       .references(() => projects.id, { onDelete: "restrict" }),
-    siteId: uuid("site_id")
-      .notNull()
-      .references(() => projectSites.id, { onDelete: "restrict" }),
+    /** Optional: planning is per project now; kept for older app versions. */
+    siteId: uuid("site_id").references(() => projectSites.id, { onDelete: "restrict" }),
     date: date("date", { mode: "string" }).notNull(),
     supervisorId: uuid("supervisor_id").references(() => users.id, { onDelete: "set null" }),
     /** Immutable snapshot, populated at write time - survives a hard-deleted supervisor so historical plans stay attributable. */
@@ -93,9 +95,8 @@ export const dprRecords = pgTable(
     projectId: uuid("project_id")
       .notNull()
       .references(() => projects.id, { onDelete: "restrict" }),
-    siteId: uuid("site_id")
-      .notNull()
-      .references(() => projectSites.id, { onDelete: "restrict" }),
+    /** Optional: planning is per project now; kept for older app versions. */
+    siteId: uuid("site_id").references(() => projectSites.id, { onDelete: "restrict" }),
     date: date("date", { mode: "string" }).notNull(),
     supervisorId: uuid("supervisor_id").references(() => users.id, { onDelete: "set null" }),
     /** Immutable snapshot, populated at write time - survives a hard-deleted supervisor so historical DPRs stay attributable. */

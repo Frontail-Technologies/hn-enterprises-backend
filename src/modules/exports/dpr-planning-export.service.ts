@@ -2,7 +2,7 @@ import ExcelJS from "exceljs";
 import { format, parseISO } from "date-fns";
 import { and, eq, inArray } from "drizzle-orm";
 import { getDb } from "@db";
-import { customers, dprRecords, plumbers, projectSites, sitePlans } from "@db/schema";
+import { customers, dprRecords, plumbers, projects, sitePlans } from "@db/schema";
 import { customerStatCondition } from "@modules/customers/customer-completion";
 import { applyDataStyle, applyHeaderStyle } from "./flat-register";
 import { buildExportFilename } from "./workbook-helpers";
@@ -23,6 +23,7 @@ const ACTIVITIES: Array<{ label: string; statKey?: string }> = [
   { label: "Commissioning", statKey: "commissioning-done" },
 ];
 
+// One block per project (planning is per project; sites are being removed).
 type SiteBlock = { siteId: string; siteLabel: string; customerIds: string[] };
 
 async function resolveSiteBlocks(query: DprPlanningExportQuery): Promise<SiteBlock[]> {
@@ -37,31 +38,27 @@ async function resolveSiteBlocks(query: DprPlanningExportQuery): Promise<SiteBlo
     query.projectId ? eq(dprRecords.projectId, query.projectId) : undefined,
     query.supervisorId ? eq(dprRecords.supervisorId, query.supervisorId) : undefined,
   ].filter((condition): condition is NonNullable<typeof condition> => Boolean(condition));
-
   const [plans, dprs] = await Promise.all([
-    db.select({ siteId: sitePlans.siteId, customerId: sitePlans.customerId }).from(sitePlans).where(and(...planConditions)),
-    db.select({ siteId: dprRecords.siteId, customerId: dprRecords.customerId }).from(dprRecords).where(and(...dprConditions)),
+    db.select({ projectId: sitePlans.projectId, customerId: sitePlans.customerId }).from(sitePlans).where(and(...planConditions)),
+    db.select({ projectId: dprRecords.projectId, customerId: dprRecords.customerId }).from(dprRecords).where(and(...dprConditions)),
   ]);
 
-  const bySite = new Map<string, Set<string>>();
+  const byProject = new Map<string, Set<string>>();
   [...plans, ...dprs].forEach((row) => {
-    const set = bySite.get(row.siteId) ?? new Set<string>();
+    const set = byProject.get(row.projectId) ?? new Set<string>();
     set.add(row.customerId);
-    bySite.set(row.siteId, set);
+    byProject.set(row.projectId, set);
   });
-  if (!bySite.size) return [];
+  if (!byProject.size) return [];
 
-  const siteIds = Array.from(bySite.keys());
-  const siteRows = await db
-    .select({ id: projectSites.id, name: projectSites.name, address: projectSites.address })
-    .from(projectSites)
-    .where(inArray(projectSites.id, siteIds));
-  const siteLabelById = new Map(siteRows.map((site) => [site.id, site.address || site.name]));
+  const projectIds = Array.from(byProject.keys());
+  const projectRows = await db.select({ id: projects.id, name: projects.name }).from(projects).where(inArray(projects.id, projectIds));
+  const nameById = new Map(projectRows.map((project) => [project.id, project.name]));
 
-  return siteIds.map((siteId) => ({
-    siteId,
-    siteLabel: siteLabelById.get(siteId) ?? "Unknown site",
-    customerIds: Array.from(bySite.get(siteId) ?? []),
+  return projectIds.map((projectId) => ({
+    siteId: projectId,
+    siteLabel: nameById.get(projectId) ?? "Unknown project",
+    customerIds: Array.from(byProject.get(projectId) ?? []),
   }));
 }
 
@@ -124,7 +121,7 @@ function writeDprPlanningSheet(
   blocks.forEach((block) => {
     const metaRow = sheet.getRow(row);
     metaRow.getCell(1).value = `Date: ${dateLabel}`;
-    metaRow.getCell(2).value = `Address / Site: ${block.siteLabel}`;
+    metaRow.getCell(2).value = `Project: ${block.siteLabel}`;
     metaRow.eachCell((cell) => {
       cell.font = { name: "Calibri", size: 10, bold: true, color: { argb: "FF1A1A1A" } };
       cell.alignment = { vertical: "middle" };

@@ -7,7 +7,7 @@ import {
   PASSWORD_RESET_OTP_MAX_ATTEMPTS,
 } from "@constants";
 import { getDb } from "@db";
-import { passwordResetTokens, refreshTokens, users } from "@db/schema";
+import { passwordResetTokens, refreshTokens, staff, users } from "@db/schema";
 import { auditService, backgroundJobService, emailService } from "@services";
 import { assertStrongPassword, generateSecureToken, hashPassword, hashToken, verifyPassword } from "@utils";
 import type { AuthTokenPayload } from "@types";
@@ -33,8 +33,15 @@ function isAllowedForClient(user: UserRecord, clientType?: LoginInput["clientTyp
   return user.role === "super_admin" || user.role === "admin";
 }
 
-function publicUser(user: UserRecord) {
+/** Job title from the linked staff row (Supervisor / Site Manager / Project Manager), for the app's labels. */
+async function staffDesignation(userId: string) {
+  const [row] = await getDb().select({ designation: staff.designation }).from(staff).where(eq(staff.userId, userId)).limit(1);
+  return row?.designation ?? null;
+}
+
+async function publicUser(user: UserRecord) {
   return {
+    designation: user.role === "supervisor" ? await staffDesignation(user.id) : null,
     id: user.id,
     name: user.name,
     username: user.username,
@@ -97,7 +104,7 @@ async function getActiveUserById(userId: string) {
   }
 
   return {
-    user: publicUser(user),
+    user: await publicUser(user),
     payload: authPayload(user),
   };
 }
@@ -111,7 +118,7 @@ async function getActiveUserBySession(userId: string, sessionId: string) {
   }
 
   return {
-    user: publicUser(user),
+    user: await publicUser(user),
     payload: authPayload(user),
   };
 }
@@ -208,7 +215,7 @@ export const authService = {
     });
 
     return {
-      user: publicUser(sessionUser),
+      user: await publicUser(sessionUser),
       payload: authPayload(sessionUser),
     };
   },

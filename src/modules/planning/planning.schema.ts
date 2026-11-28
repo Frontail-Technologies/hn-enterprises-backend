@@ -8,6 +8,7 @@ export const planTaskSchema = t.Object({
   id: taskIdSchema,
   qty: t.Optional(t.String()),
   worker: t.Optional(t.String()),
+  plumberId: t.Optional(t.String({ format: "uuid" })),
 });
 
 export const dprTaskSchema = t.Object({
@@ -15,6 +16,7 @@ export const dprTaskSchema = t.Object({
   plannedQty: t.Optional(t.String()),
   completedQty: t.Optional(t.String()),
   worker: t.Optional(t.String()),
+  plumberId: t.Optional(t.String({ format: "uuid" })),
   delayReason: t.Optional(t.String()),
 });
 
@@ -40,7 +42,7 @@ export const sitePlanListQuerySchema = t.Object({
 export const upsertSitePlanBodySchema = t.Object({
   customerId: t.String({ minLength: 1 }),
   projectId: t.String({ minLength: 1 }),
-  siteId: t.String({ minLength: 1 }),
+  siteId: t.Optional(t.String({ minLength: 1 })),
   date: t.String({ minLength: 1 }),
   tasks: t.Array(planTaskSchema),
 });
@@ -59,7 +61,7 @@ export const dprRecordListQuerySchema = t.Object({
 export const upsertDprRecordBodySchema = t.Object({
   customerId: t.String({ minLength: 1 }),
   projectId: t.String({ minLength: 1 }),
-  siteId: t.String({ minLength: 1 }),
+  siteId: t.Optional(t.String({ minLength: 1 })),
   date: t.String({ minLength: 1 }),
   status: t.Optional(dprStatusSchema),
   remarks: t.Optional(t.String()),

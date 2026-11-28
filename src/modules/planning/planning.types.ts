@@ -7,6 +7,7 @@ export type PlanTaskInput = {
   id: PlanningTaskId;
   qty?: string;
   worker?: string;
+  plumberId?: string;
 };
 
 export type DprTaskInput = {
@@ -14,6 +15,7 @@ export type DprTaskInput = {
   plannedQty?: string;
   completedQty?: string;
   worker?: string;
+  plumberId?: string;
   delayReason?: string;
 };
 
@@ -39,7 +41,8 @@ export type SitePlanListQuery = {
 export type UpsertSitePlanBody = {
   customerId: string;
   projectId: string;
-  siteId: string;
+  /** Optional: taken from the customer when missing. */
+  siteId?: string;
   date: string;
   tasks: PlanTaskInput[];
 };
@@ -51,7 +54,7 @@ export type DprRecordListQuery = SitePlanListQuery & {
 export type UpsertDprRecordBody = {
   customerId: string;
   projectId: string;
-  siteId: string;
+  siteId?: string;
   date: string;
   status?: DprStatus;
   remarks?: string;
