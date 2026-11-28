@@ -45,6 +45,9 @@ const SPECS = {
       })),
       { table: "site_plans", where: sql`x.project_id = m.id` },
       { table: "dpr_records", where: sql`x.project_id = m.id` },
+      // Project-wise plans / DPRs (deleted with the project, restored with it).
+      { table: "project_plans", where: sql`x.project_id = m.id` },
+      { table: "project_dprs", where: sql`x.project_id = m.id` },
       { table: "bills", where: sql`x.project_id = m.id` },
       { table: "bill_payments", where: sql`x.bill_id IN ${projectBills}` },
       { table: "project_members", where: sql`x.project_id = m.id` },

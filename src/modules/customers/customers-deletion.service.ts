@@ -20,7 +20,7 @@ import { snapshotCustomers, type CustomerOptionalTable } from "@modules/recycle-
 
 /** What the admin ticked in the delete dialog. Defaults keep expenses and material entries. */
 export type CustomerDeleteOptions = {
-  /** Plans and DPRs must go with the customer (they can't exist without it). */
+  /** Ignored: plans / DPRs are project-wise now (kept so older admin builds don't fail validation). */
   deletePlans?: boolean;
   deletePayments?: boolean;
   deleteMaterial?: boolean;
@@ -28,7 +28,9 @@ export type CustomerDeleteOptions = {
 
 function optionalTables(options: CustomerDeleteOptions): CustomerOptionalTable[] {
   return [
-    ...(options.deletePlans ? (["site_plans", "dpr_records"] as const) : []),
+    // Leftover per-customer plans / DPRs (old app versions) always go with the customer.
+    "site_plans",
+    "dpr_records",
     ...(options.deletePayments ? (["payments"] as const) : []),
     ...(options.deleteMaterial ? (["material_transactions"] as const) : []),
   ];
@@ -40,10 +42,9 @@ function optionalTables(options: CustomerDeleteOptions): CustomerOptionalTable[]
  */
 async function removeOptionalRows(tx: DbHandle, customerIds: string[], options: CustomerDeleteOptions) {
   if (!customerIds.length) return;
-  if (options.deletePlans) {
-    await tx.delete(dprRecords).where(inArray(dprRecords.customerId, customerIds));
-    await tx.delete(sitePlans).where(inArray(sitePlans.customerId, customerIds));
-  }
+  // Old per-customer plans / DPRs (planning is project-wise now): never block a delete.
+  await tx.delete(dprRecords).where(inArray(dprRecords.customerId, customerIds));
+  await tx.delete(sitePlans).where(inArray(sitePlans.customerId, customerIds));
   if (options.deletePayments) {
     await tx.delete(payments).where(inArray(payments.customerId, customerIds));
   } else {
@@ -121,20 +122,6 @@ function customerDependencies(customerId: string, options: CustomerDeleteOptions
       count: async (db) =>
         scalarCount(countOf(db).from(materialTransactions).where(eq(materialTransactions.customerId, customerId))),
     },
-    {
-      key: "sitePlans",
-      label: "Plans",
-      action: options.deletePlans ? "delete" : "block",
-      count: async (db) => scalarCount(countOf(db).from(sitePlans).where(eq(sitePlans.customerId, customerId))),
-      blockReason: (n) => `${n} plan${n === 1 ? "" : "s"} belong to this customer. Tick "Delete plans and DPRs" to delete them with it.`,
-    },
-    {
-      key: "dprRecords",
-      label: "DPRs",
-      action: options.deletePlans ? "delete" : "block",
-      count: async (db) => scalarCount(countOf(db).from(dprRecords).where(eq(dprRecords.customerId, customerId))),
-      blockReason: (n) => `${n} DPR${n === 1 ? "" : "s"} belong to this customer. Tick "Delete plans and DPRs" to delete them with it.`,
-    },
   ];
 }
 
@@ -188,19 +175,9 @@ export const customersDeletionService = {
   },
 };
 
-/** Bulk delete: plans/DPRs block unless ticked; expenses and material entries never block. */
-export async function assertCustomersDeletable(db: DbHandle, customerIds: string[], options: CustomerDeleteOptions = {}) {
-  if (!customerIds.length || options.deletePlans) return;
-  const blockingSitePlans = await scalarCount(countOf(db).from(sitePlans).where(inArray(sitePlans.customerId, customerIds)));
-  const blockingDprRecords = await scalarCount(countOf(db).from(dprRecords).where(inArray(dprRecords.customerId, customerIds)));
-  if (blockingSitePlans > 0 || blockingDprRecords > 0) {
-    const parts: string[] = [];
-    if (blockingSitePlans > 0) parts.push(`${blockingSitePlans} plan${blockingSitePlans === 1 ? "" : "s"}`);
-    if (blockingDprRecords > 0) parts.push(`${blockingDprRecords} DPR${blockingDprRecords === 1 ? "" : "s"}`);
-    throw new EntityInUseError(
-      `Some selected customers have ${parts.join(" and ")}. Tick "Delete plans and DPRs" to delete them too.`,
-    );
-  }
+/** Bulk delete: nothing blocks any more (expenses and material entries are kept or deleted as ticked). */
+export async function assertCustomersDeletable(_db: DbHandle, _customerIds: string[], _options: CustomerDeleteOptions = {}) {
+  return;
 }
 
 /** Snapshot + remove ticked related rows for a bulk delete (call inside its transaction). */

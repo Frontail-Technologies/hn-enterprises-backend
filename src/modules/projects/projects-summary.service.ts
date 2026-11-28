@@ -1,6 +1,7 @@
 import { and, count, eq, gte, ne, sql } from "drizzle-orm";
 import { getDb } from "@db";
-import { dprRecords, projects, projectSites, sitePlans, staff, users } from "@db/schema";
+import { projectDprs, projectPlans, projects, projectSites, staff, users } from "@db/schema";
+import { DPR_MISSING_FOR_PLAN } from "@modules/planning/project-planning.service";
 import { projectPaymentCondition } from "@modules/payments/payments.service";
 import { dashboardStatsService } from "@modules/stats/dashboard-stats.service";
 
@@ -108,58 +109,46 @@ async function getSites(projectId: string) {
   };
 }
 
+/** Project-wise plans and DPRs (one per supervisor, project and day). */
 async function getDprCounts(projectId: string) {
   const db = getDb();
   const startOfMonth = new Date();
   startOfMonth.setUTCDate(1);
   const startOfMonthDate = startOfMonth.toISOString().slice(0, 10);
 
-  const [[pending], [submittedThisMonth], [byStatus]] = await Promise.all([
-    db
-      .select({ value: count() })
-      .from(dprRecords)
-      .where(and(eq(dprRecords.projectId, projectId), ne(dprRecords.status, "approved"))),
-    db
-      .select({ value: count() })
-      .from(dprRecords)
-      .where(
-        and(
-          eq(dprRecords.projectId, projectId),
-          gte(dprRecords.date, startOfMonthDate),
-          ne(dprRecords.status, "draft"),
-        ),
-      ),
+  const [[plans], [dprs], [pending]] = await Promise.all([
     db
       .select({
-        awaitingApproval: sql<number>`count(*) FILTER (WHERE ${dprRecords.status} = 'submitted')::int`,
-        approved: sql<number>`count(*) FILTER (WHERE ${dprRecords.status} = 'approved')::int`,
-        drafts: sql<number>`count(*) FILTER (WHERE ${dprRecords.status} = 'draft')::int`,
-        sentBack: sql<number>`count(*) FILTER (WHERE ${dprRecords.status} = 'draft' AND ${dprRecords.reviewNote} IS NOT NULL)::int`,
+        awaitingApproval: sql<number>`count(*) FILTER (WHERE ${projectPlans.status} = 'submitted')::int`,
+        approved: sql<number>`count(*) FILTER (WHERE ${projectPlans.status} = 'approved')::int`,
+        sentBack: sql<number>`count(*) FILTER (WHERE ${projectPlans.status} = 'sent_back')::int`,
       })
-      .from(dprRecords)
-      .where(eq(dprRecords.projectId, projectId)),
+      .from(projectPlans)
+      .where(eq(projectPlans.projectId, projectId)),
+    db
+      .select({
+        submittedThisMonth: sql<number>`count(*) FILTER (WHERE ${projectDprs.status} <> 'draft' AND ${projectDprs.date} >= ${startOfMonthDate})::int`,
+        drafts: sql<number>`count(*) FILTER (WHERE ${projectDprs.status} = 'draft')::int`,
+      })
+      .from(projectDprs)
+      .where(eq(projectDprs.projectId, projectId)),
+    // Plans (not sent back) whose supervisor hasn't submitted that day's DPR yet.
+    db
+      .select({ value: count() })
+      .from(projectPlans)
+      .where(and(eq(projectPlans.projectId, projectId), ne(projectPlans.status, "sent_back"), DPR_MISSING_FOR_PLAN)),
   ]);
 
-  const [plans] = await db
-    .select({
-      awaitingApproval: sql<number>`count(*) FILTER (WHERE ${sitePlans.status} = 'submitted')::int`,
-      approved: sql<number>`count(*) FILTER (WHERE ${sitePlans.status} = 'approved')::int`,
-      sentBack: sql<number>`count(*) FILTER (WHERE ${sitePlans.status} = 'sent_back')::int`,
-    })
-    .from(sitePlans)
-    .where(eq(sitePlans.projectId, projectId));
-
   return {
-    pending: pending.value,
-    submittedThisMonth: submittedThisMonth.value,
+    pending: pending?.value ?? 0,
+    submittedThisMonth: dprs?.submittedThisMonth ?? 0,
     /** Plans (what admins approve): waiting, approved, sent back to the supervisor. */
     plans: { awaitingApproval: plans?.awaitingApproval ?? 0, approved: plans?.approved ?? 0, sentBack: plans?.sentBack ?? 0 },
-    /** Submitted, waiting for an admin. */
-    awaitingApproval: byStatus?.awaitingApproval ?? 0,
-    approved: byStatus?.approved ?? 0,
-    /** Not submitted yet (includes ones sent back). */
-    drafts: byStatus?.drafts ?? 0,
-    sentBack: byStatus?.sentBack ?? 0,
+    /** Kept for older admin builds: DPRs are no longer reviewed, so these mirror the plans. */
+    awaitingApproval: plans?.awaitingApproval ?? 0,
+    approved: plans?.approved ?? 0,
+    drafts: dprs?.drafts ?? 0,
+    sentBack: plans?.sentBack ?? 0,
   };
 }
 

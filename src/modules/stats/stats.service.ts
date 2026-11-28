@@ -1,6 +1,6 @@
-import { and, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { getDb } from "@db";
-import { complaints, customers, dprRecords, sitePlans, users } from "@db/schema";
+import { complaints, customers, projectDprs, projectPlans, projects, users } from "@db/schema";
 import { accessibleProjectIds, inProjects } from "@modules/projects/project-access.service";
 import { buildCustomerCompletionAudit, type CustomerCompletionAudit, customerStatCondition } from "@modules/customers/customer-completion";
 import { buildPaginationMeta, parsePagination } from "@utils";
@@ -113,41 +113,56 @@ function latestDate(dates: (string | Date | null | undefined)[]) {
   return valid.length ? valid[valid.length - 1] : null;
 }
 
+/** Project-wise DPRs (one per supervisor, project and day). */
 async function fetchDprDetailRows(projectIds: string[] | null) {
-  const db = getDb();
-  const rows = await db.query.dprRecords.findMany({
-    where: inProjects(dprRecords.projectId, projectIds),
-    with: { project: true, site: true },
-    orderBy: (fields, { desc: descOrder }) => [descOrder(fields.date)],
-  });
+  const rows = await getDb()
+    .select({
+      id: projectDprs.id,
+      projectName: projects.name,
+      date: projectDprs.date,
+      status: projectDprs.status,
+      remarks: projectDprs.remarks,
+      tasks: projectDprs.tasks,
+      supervisorName: projectDprs.supervisorName,
+    })
+    .from(projectDprs)
+    .leftJoin(projects, eq(projectDprs.projectId, projects.id))
+    .where(inProjects(projectDprs.projectId, projectIds))
+    .orderBy(desc(projectDprs.date));
 
   return rows.map((record) => ({
     id: record.id,
-    title: record.site?.name ?? "Site",
-    reference: record.project?.name ?? "-",
-    site: record.site?.name ?? "-",
-    address: record.site?.address || "-",
-    status:
-      record.status === "approved" ? ("Done" as const) : record.status === "submitted" ? ("In Progress" as const) : ("Pending" as const),
+    title: record.projectName ?? "Project",
+    reference: record.supervisorName ?? "-",
+    site: record.projectName ?? "-",
+    address: "-",
+    status: record.status === "draft" ? ("Pending" as const) : ("Done" as const),
     updatedOn: record.date,
-    helper: record.remarks || `${record.tasks.length} task(s) logged`,
+    helper: record.remarks || `${record.tasks.length} task(s) reported`,
   }));
 }
 
+/** Project-wise plans. */
 async function fetchPlanningDetailRows(projectIds: string[] | null) {
-  const db = getDb();
-  const rows = await db.query.sitePlans.findMany({
-    where: inProjects(sitePlans.projectId, projectIds),
-    with: { project: true, site: true },
-    orderBy: (fields, { desc: descOrder }) => [descOrder(fields.date)],
-  });
+  const rows = await getDb()
+    .select({
+      id: projectPlans.id,
+      projectName: projects.name,
+      date: projectPlans.date,
+      tasks: projectPlans.tasks,
+      supervisorName: projectPlans.supervisorName,
+    })
+    .from(projectPlans)
+    .leftJoin(projects, eq(projectPlans.projectId, projects.id))
+    .where(inProjects(projectPlans.projectId, projectIds))
+    .orderBy(desc(projectPlans.date));
 
   return rows.map((record) => ({
     id: record.id,
-    title: record.site?.name ?? "Site",
-    reference: record.project?.name ?? "-",
-    site: record.site?.name ?? "-",
-    address: record.site?.address || "-",
+    title: record.projectName ?? "Project",
+    reference: record.supervisorName ?? "-",
+    site: record.projectName ?? "-",
+    address: "-",
     status: "Planned" as const,
     updatedOn: record.date,
     helper: `${record.tasks.length} task(s) planned`,

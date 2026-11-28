@@ -6,9 +6,10 @@ import {
   billPayments,
   bills,
   customers,
-  dprRecords,
   materials,
   payments,
+  projectDprs,
+  projectPlans,
   projects,
   projectSites,
   workProgressUpdates,
@@ -16,6 +17,7 @@ import {
 import { dashboardStatsService } from "@modules/stats/dashboard-stats.service";
 import { projectPaymentCondition } from "@modules/payments/payments.service";
 import { netPayable } from "@modules/bills/bills.service";
+import { DPR_MISSING_FOR_PLAN } from "@modules/planning/project-planning.service";
 
 export type DashboardPeriod = "today" | "this-month" | "this-year" | "custom-month" | "custom-year";
 
@@ -189,17 +191,24 @@ async function getMonthlyExpensesAmount(projectId: string | undefined, range: { 
   return Number(row?.value ?? 0);
 }
 
+/**
+ * "DPR pending" = plans filed in the period (submitted or approved, not sent
+ * back) whose supervisor has not yet submitted the DPR for that project and
+ * day. Planning is project-wise: one plan and one DPR per supervisor, project
+ * and day.
+ */
 async function getDprPendingCount(projectId: string | undefined, range: { from: Date; to: Date }) {
   const db = getDb();
   const [row] = await db
     .select({ value: count() })
-    .from(dprRecords)
+    .from(projectPlans)
     .where(
       and(
-        ne(dprRecords.status, "approved"),
-        gte(dprRecords.date, toDateOnly(range.from)),
-        lte(dprRecords.date, toDateOnly(range.to)),
-        projectId ? eq(dprRecords.projectId, projectId) : undefined,
+        ne(projectPlans.status, "sent_back"),
+        gte(projectPlans.date, toDateOnly(range.from)),
+        lte(projectPlans.date, toDateOnly(range.to)),
+        projectId ? eq(projectPlans.projectId, projectId) : undefined,
+        DPR_MISSING_FOR_PLAN,
       ),
     );
   return row?.value ?? 0;
@@ -379,7 +388,7 @@ type DashboardAlert = {
 async function getAlerts(projectId: string | undefined): Promise<DashboardAlert[]> {
   const db = getDb();
 
-  const [lowStockRows, overdueBillRows, submittedPaymentRows, sentBackRows, submittedDprRows] = await Promise.all([
+  const [lowStockRows, overdueBillRows, submittedPaymentRows, sentBackRows, submittedPlanRows] = await Promise.all([
     db
       .select({
         id: materials.id,
@@ -420,11 +429,13 @@ async function getAlerts(projectId: string | undefined): Promise<DashboardAlert[
       ${projectId ? sql`AND project_id = ${projectId}` : sql``}
       LIMIT 6
     `),
+    // Project plans waiting for an admin's approval.
     db
-      .select({ id: dprRecords.id, evidence: dprRecords.evidence, siteName: projectSites.name })
-      .from(dprRecords)
-      .leftJoin(projectSites, eq(dprRecords.siteId, projectSites.id))
-      .where(and(eq(dprRecords.status, "submitted"), projectId ? eq(dprRecords.projectId, projectId) : undefined))
+      .select({ id: projectPlans.id, date: projectPlans.date, projectName: projects.name, supervisorName: projectPlans.supervisorName })
+      .from(projectPlans)
+      .leftJoin(projects, eq(projectPlans.projectId, projects.id))
+      .where(and(eq(projectPlans.status, "submitted"), projectId ? eq(projectPlans.projectId, projectId) : undefined))
+      .orderBy(desc(projectPlans.date))
       .limit(6),
   ]);
 
@@ -456,10 +467,10 @@ async function getAlerts(projectId: string | undefined): Promise<DashboardAlert[
       description: `${customer.customer_name} needs field correction`,
       tone: "warning" as const,
     })),
-    ...submittedDprRows.map((record) => ({
-      id: `dpr-${record.id}`,
-      title: "DPR awaiting admin review",
-      description: `${record.evidence?.length ?? 0} photos submitted for ${record.siteName ?? "the site"}`,
+    ...submittedPlanRows.map((plan) => ({
+      id: `plan-${plan.id}`,
+      title: "Plan awaiting approval",
+      description: `${plan.projectName ?? "Project"} · ${plan.supervisorName ?? "Supervisor"} · ${plan.date}`,
       tone: "info" as const,
     })),
   ];
@@ -484,9 +495,10 @@ async function getRecentActivity(): Promise<DashboardActivityItem[]> {
       .orderBy(desc(workProgressUpdates.createdAt))
       .limit(6),
     db
-      .select({ id: dprRecords.id, status: dprRecords.status, date: dprRecords.date })
-      .from(dprRecords)
-      .orderBy(desc(dprRecords.date))
+      .select({ id: projectDprs.id, status: projectDprs.status, date: projectDprs.date, projectName: projects.name })
+      .from(projectDprs)
+      .leftJoin(projects, eq(projectDprs.projectId, projects.id))
+      .orderBy(desc(projectDprs.date))
       .limit(6),
     db
       .select({ id: payments.id, category: payments.category, status: payments.status, paymentDate: payments.paymentDate })
@@ -512,7 +524,7 @@ async function getRecentActivity(): Promise<DashboardActivityItem[]> {
     })),
     ...dprRows.map((row) => ({
       id: `dpr-${row.id}`,
-      title: `DPR ${humanize(row.status)}`,
+      title: `DPR ${humanize(row.status)}${row.projectName ? ` · ${row.projectName}` : ""}`,
       type: "DPR" as const,
       dateTime: row.date,
     })),

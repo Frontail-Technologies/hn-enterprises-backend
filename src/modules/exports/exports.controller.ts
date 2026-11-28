@@ -4,14 +4,12 @@ import { errorMessage, statusFromError } from "@utils";
 import { attendanceExportService } from "./attendance-export.service";
 import { wageExportService } from "./wage-export.service";
 import { customerExportService } from "./customer-export.service";
-import { dprPlanningExportService } from "./dpr-planning-export.service";
 import { inventoryExportService } from "./inventory-export.service";
 import { userExportService } from "./user-export.service";
 import { mastersExportService } from "./masters-export.service";
 import type {
   AttendanceExportQuery,
   CustomerRegisterQuery,
-  DprPlanningExportQuery,
   HolidaysExportQuery,
   InventoryConsumptionExportQuery,
   InventoryPbgConsumptionExportQuery,
@@ -75,18 +73,6 @@ export const exportsController = {
     } catch (error) {
       set.status = statusFromError(error);
       return { success: false, message: errorMessage(error, "Unable to generate customer register") };
-    }
-  },
-
-  async dprPlanning({ query, set }: { query: DprPlanningExportQuery; set: ExportSetContext }) {
-    try {
-      const { workbook, filename } = await dprPlanningExportService.build(query);
-      const buffer = await workbook.xlsx.writeBuffer();
-      setXlsxHeaders(set, filename);
-      return buffer;
-    } catch (error) {
-      set.status = statusFromError(error);
-      return { success: false, message: errorMessage(error, "Unable to generate DPR/Planning summary") };
     }
   },
 

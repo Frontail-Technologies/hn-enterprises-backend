@@ -13,6 +13,15 @@ import type { AuthTokenPayload } from "@types";
  */
 
 const ADMIN_ROLES = new Set(["super_admin", "admin"]);
+
+/** For a project_plans row: its supervisor has not submitted that project / day's DPR yet. */
+export const DPR_MISSING_FOR_PLAN = sql`NOT EXISTS (
+  SELECT 1 FROM project_dprs d
+  WHERE d.project_id = ${projectPlans.projectId}
+    AND d.date = ${projectPlans.date}
+    AND d.supervisor_id IS NOT DISTINCT FROM ${projectPlans.supervisorId}
+    AND d.status <> 'draft'
+)`;
 const isAdmin = (user: AuthTokenPayload) => ADMIN_ROLES.has(user.role);
 
 export type ProjectPlanningListQuery = {

@@ -79,11 +79,6 @@ export type InventoryPlumberBalanceExportQuery = {
   materialId?: string;
 };
 
-export type DprPlanningExportQuery = {
-  date: string;
-  projectId?: string;
-  supervisorId?: string;
-};
 
 export type UserRegisterQuery = {
   role?: string;

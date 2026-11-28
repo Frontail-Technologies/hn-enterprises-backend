@@ -20,19 +20,6 @@ export const exportsRoutes = new Elysia({ prefix: "/exports" })
     },
   )
   .get(
-    "/dpr-planning",
-    ({ query, set }) => exportsController.dprPlanning({ query, set }),
-    {
-      query: t.Object({
-        date: t.String(),
-        projectId: t.Optional(t.String()),
-        supervisorId: t.Optional(t.String()),
-      }),
-      // Supervisors (mobile) never export; keep other projects' data out of reach.
-      requireRole: ["super_admin", "admin", "viewer"],
-    },
-  )
-  .get(
     "/inventory/stock",
     ({ query, set }) => exportsController.inventoryStock({ query, set }),
     {

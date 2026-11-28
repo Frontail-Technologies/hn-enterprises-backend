@@ -7,6 +7,8 @@ import {
   complaints,
   customerNotes,
   dprRecords,
+  projectDprs,
+  projectPlans,
   projectSites,
   sitePlans,
   staff,
@@ -104,6 +106,18 @@ function buildUserDeleteImpactConfig(userId: string): DeleteImpactConfig {
         label: "Complaints Created",
         action: "detach",
         count: async (db) => scalarCount(countOf(db).from(complaints).where(eq(complaints.createdByAdminId, userId))),
+      },
+      {
+        key: "projectPlans",
+        label: "Plans (as supervisor)",
+        action: "detach",
+        count: async (db) => scalarCount(countOf(db).from(projectPlans).where(eq(projectPlans.supervisorId, userId))),
+      },
+      {
+        key: "projectDprs",
+        label: "DPRs (as supervisor)",
+        action: "detach",
+        count: async (db) => scalarCount(countOf(db).from(projectDprs).where(eq(projectDprs.supervisorId, userId))),
       },
       {
         key: "sitePlans",

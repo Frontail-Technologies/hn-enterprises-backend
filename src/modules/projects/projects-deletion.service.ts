@@ -9,6 +9,8 @@ import {
   customerNotes,
   customers,
   dprRecords,
+  projectDprs,
+  projectPlans,
   materialTransactions,
   payments,
   projectDocuments,
@@ -212,6 +214,18 @@ function projectDependencies(
           .from(bills)
           .where(eq(bills.projectId, projectId))
           .limit(5),
+    },
+    {
+      key: "projectPlans",
+      label: "Plans",
+      action: "delete",
+      count: async (db) => scalarCount(countOf(db).from(projectPlans).where(eq(projectPlans.projectId, projectId))),
+    },
+    {
+      key: "projectDprs",
+      label: "DPRs",
+      action: "delete",
+      count: async (db) => scalarCount(countOf(db).from(projectDprs).where(eq(projectDprs.projectId, projectId))),
     },
     {
       key: "sitePlans",
