@@ -166,3 +166,62 @@ export const dprRecordsRelations = relations(dprRecords, ({ one }) => ({
     relationName: "dpr_records_supervisor",
   }),
 }));
+
+/**
+ * Project-wise planning (replaces the per-customer plans / DPRs): one plan and
+ * one DPR per supervisor, project and day, with a quantity per task.
+ */
+export type ProjectPlanTask = { id: string; qty?: string };
+export type ProjectDprTask = { id: string; plannedQty?: string; doneQty?: string; delayReason?: string };
+export type ProjectDprManpower = { plumberId?: string; name: string; category?: "plumber" | "labour" };
+
+export const projectPlans = pgTable(
+  "project_plans",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    supervisorId: uuid("supervisor_id").references(() => users.id, { onDelete: "set null" }),
+    supervisorName: text("supervisor_name"),
+    date: date("date", { mode: "string" }).notNull(),
+    tasks: jsonb("tasks").$type<ProjectPlanTask[]>().notNull().default([]),
+    remarks: text("remarks"),
+    status: planStatusEnum("status").notNull().default("submitted"),
+    reviewedBy: uuid("reviewed_by").references(() => users.id, { onDelete: "set null" }),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    reviewNote: text("review_note"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    projectDateSupervisorIdx: uniqueIndex("project_plans_project_date_supervisor_idx").on(table.projectId, table.date, table.supervisorId),
+    dateIdx: index("project_plans_date_idx").on(table.date),
+    statusIdx: index("project_plans_status_idx").on(table.status),
+  }),
+);
+
+export const projectDprs = pgTable(
+  "project_dprs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    supervisorId: uuid("supervisor_id").references(() => users.id, { onDelete: "set null" }),
+    supervisorName: text("supervisor_name"),
+    date: date("date", { mode: "string" }).notNull(),
+    tasks: jsonb("tasks").$type<ProjectDprTask[]>().notNull().default([]),
+    manpower: jsonb("manpower").$type<ProjectDprManpower[]>().notNull().default([]),
+    remarks: text("remarks"),
+    evidence: jsonb("evidence").$type<PlanningEvidenceFile[]>().notNull().default([]),
+    status: dprStatusEnum("status").notNull().default("submitted"),
+    submittedAt: timestamp("submitted_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    projectDateSupervisorIdx: uniqueIndex("project_dprs_project_date_supervisor_idx").on(table.projectId, table.date, table.supervisorId),
+    dateIdx: index("project_dprs_date_idx").on(table.date),
+  }),
+);

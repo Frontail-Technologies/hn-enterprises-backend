@@ -5,6 +5,17 @@ import { errorMessage, ok, statusFromError } from "@utils";
 import { planningController } from "./planning.controller";
 import { getProjectPlanningOverview, listProjectCustomers } from "./planning-project.service";
 import { listPlanningCustomers, type PlanningCustomersQuery } from "./planning-customers.service";
+import {
+  deleteProjectPlanning,
+  listProjectDprs,
+  listProjectPlans,
+  reviewProjectPlans,
+  updateProjectDprByAdmin,
+  updateProjectPlanByAdmin,
+  upsertProjectDpr,
+  upsertProjectPlan,
+  type ProjectPlanningListQuery,
+} from "./project-planning.service";
 import { deletePlanningRecord, reviewSitePlans, updateDprRecordByAdmin, updateSitePlanByAdmin } from "./planning-review.service";
 
 type SetContext = { status?: number | string };
@@ -27,8 +38,132 @@ import {
   upsertSitePlanBodySchema,
 } from "./planning.schema";
 
+const projectPlanningListQuery = t.Object({
+  projectId: t.Optional(t.String()),
+  supervisorId: t.Optional(t.String()),
+  date: t.Optional(t.String()),
+  from: t.Optional(t.String()),
+  to: t.Optional(t.String()),
+  status: t.Optional(t.String()),
+});
+const projectDprTask = t.Object({
+  id: t.String({ minLength: 1 }),
+  plannedQty: t.Optional(t.String()),
+  doneQty: t.Optional(t.String()),
+  delayReason: t.Optional(t.String()),
+});
+const projectDprManpower = t.Object({
+  plumberId: t.Optional(t.String()),
+  name: t.String(),
+  category: t.Optional(t.Union([t.Literal("plumber"), t.Literal("labour")])),
+});
+const evidenceFile = t.Object({
+  id: t.String({ minLength: 1 }),
+  fileName: t.String({ minLength: 1 }),
+  fileUrl: t.String({ minLength: 1 }),
+  mimeType: t.Optional(t.String()),
+  capturedAt: t.Optional(t.String()),
+});
+
 export const planningRoutes = new Elysia({ prefix: "/planning" })
   .use(auth)
+  // ---- Project-wise plans and DPRs (one per supervisor, project and day) ----
+  .get(
+    "/project-plans",
+    ({ query, currentUser, set }) =>
+      run(set, "Unable to load plans", () => listProjectPlans(query as ProjectPlanningListQuery, currentUser as AuthTokenPayload)),
+    { query: projectPlanningListQuery, requireAuth: true },
+  )
+  .put(
+    "/project-plans",
+    ({ body, currentUser, set }) =>
+      run(set, "Unable to save the plan", () => upsertProjectPlan(body, currentUser as AuthTokenPayload), "Plan saved"),
+    {
+      body: t.Object({
+        projectId: t.String({ format: "uuid" }),
+        date: t.String({ minLength: 10, maxLength: 10 }),
+        tasks: t.Array(t.Object({ id: t.String({ minLength: 1 }), qty: t.Optional(t.String()) })),
+        remarks: t.Optional(t.String()),
+      }),
+      requireAuth: true,
+    },
+  )
+  .post(
+    "/project-plans/review",
+    ({ body, currentUser, set }) =>
+      run(set, "Unable to review plans", () => reviewProjectPlans(body.ids, body.action, body.note, (currentUser as AuthTokenPayload).id),
+        body.action === "approve" ? "Plan approved" : "Plan sent back"),
+    {
+      body: t.Object({
+        ids: t.Array(t.String({ format: "uuid" }), { minItems: 1 }),
+        action: t.Union([t.Literal("approve"), t.Literal("reject")]),
+        note: t.Optional(t.String()),
+      }),
+      requireRole: ["super_admin", "admin"],
+    },
+  )
+  .patch(
+    "/project-plans/:id",
+    ({ params, body, currentUser, set }) =>
+      run(set, "Unable to update the plan", () => updateProjectPlanByAdmin(params.id, body, (currentUser as AuthTokenPayload).id), "Plan updated"),
+    {
+      params: t.Object({ id: t.String({ format: "uuid" }) }),
+      body: t.Object({
+        tasks: t.Optional(t.Array(t.Object({ id: t.String({ minLength: 1 }), qty: t.Optional(t.String()) }))),
+        remarks: t.Optional(t.String()),
+      }),
+      requireRole: ["super_admin", "admin"],
+    },
+  )
+  .delete(
+    "/project-plans/:id",
+    ({ params, currentUser, set }) =>
+      run(set, "Unable to delete the plan", () => deleteProjectPlanning("plan", params.id, (currentUser as AuthTokenPayload).id), "Plan deleted"),
+    { params: t.Object({ id: t.String({ format: "uuid" }) }), requireRole: ["super_admin", "admin"] },
+  )
+  .get(
+    "/project-dprs",
+    ({ query, currentUser, set }) =>
+      run(set, "Unable to load DPRs", () => listProjectDprs(query as ProjectPlanningListQuery, currentUser as AuthTokenPayload)),
+    { query: projectPlanningListQuery, requireAuth: true },
+  )
+  .put(
+    "/project-dprs",
+    ({ body, currentUser, set }) =>
+      run(set, "Unable to save the DPR", () => upsertProjectDpr(body, currentUser as AuthTokenPayload), "DPR saved"),
+    {
+      body: t.Object({
+        projectId: t.String({ format: "uuid" }),
+        date: t.String({ minLength: 10, maxLength: 10 }),
+        tasks: t.Array(projectDprTask),
+        manpower: t.Optional(t.Array(projectDprManpower)),
+        remarks: t.Optional(t.String()),
+        evidence: t.Optional(t.Array(evidenceFile)),
+        status: t.Optional(t.Union([t.Literal("draft"), t.Literal("submitted")])),
+      }),
+      requireAuth: true,
+    },
+  )
+  .patch(
+    "/project-dprs/:id",
+    ({ params, body, currentUser, set }) =>
+      run(set, "Unable to update the DPR", () => updateProjectDprByAdmin(params.id, body, (currentUser as AuthTokenPayload).id), "DPR updated"),
+    {
+      params: t.Object({ id: t.String({ format: "uuid" }) }),
+      body: t.Object({
+        tasks: t.Optional(t.Array(projectDprTask)),
+        manpower: t.Optional(t.Array(projectDprManpower)),
+        remarks: t.Optional(t.String()),
+      }),
+      requireRole: ["super_admin", "admin"],
+    },
+  )
+  .delete(
+    "/project-dprs/:id",
+    ({ params, currentUser, set }) =>
+      run(set, "Unable to delete the DPR", () => deleteProjectPlanning("dpr", params.id, (currentUser as AuthTokenPayload).id), "DPR deleted"),
+    { params: t.Object({ id: t.String({ format: "uuid" }) }), requireRole: ["super_admin", "admin"] },
+  )
   // Project-wise overview / customers (mobile planning lists by project, not site).
   .get(
     "/project-overview",
