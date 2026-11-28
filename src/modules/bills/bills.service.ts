@@ -2,6 +2,7 @@ import { and, count, eq, getTableColumns, ilike, sql } from "drizzle-orm";
 import { getDb } from "@db";
 import { billPayments, bills, projects } from "@db/schema";
 import { normalizeKey } from "@modules/master-import/master-import.mapper";
+import { snapshotRecords } from "@modules/recycle-bin/recycle-bin.service";
 import { buildPaginationMeta, cleanObject, parsePagination, toSearchPattern } from "@utils";
 import type {
   BillListQuery,
@@ -149,18 +150,13 @@ export const billsService = {
     return withPendingAmount(bill);
   },
 
-  async delete(id: string) {
-    const db = getDb();
+  /** The bill and its received payments go to the recycle bin (30 days). */
+  async delete(id: string, userId: string) {
     await getBillOrThrow(id);
-
-    try {
-      await db.delete(bills).where(eq(bills.id, id));
-    } catch (error: any) {
-      if (error.code === "23503") {
-        throw new Error("Cannot delete this bill because it has associated payments. Please delete the payments first.");
-      }
-      throw error;
-    }
+    await getDb().transaction(async (tx) => {
+      await snapshotRecords(tx, "bill", [id], userId);
+      await tx.delete(bills).where(eq(bills.id, id));
+    });
   },
 
   async listPayments(billId: string) {

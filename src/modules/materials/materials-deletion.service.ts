@@ -1,6 +1,7 @@
 import { count, eq } from "drizzle-orm";
 import { getDb } from "@db";
 import { materialTransactions, materials } from "@db/schema";
+import { snapshotRecords } from "@modules/recycle-bin/recycle-bin.service";
 import { auditService } from "@services";
 import { EntityInUseError } from "@utils";
 import { computeDeleteImpact } from "../deletion/deletion.service";
@@ -62,6 +63,7 @@ export const materialsDeletionService = {
         throw new EntityInUseError(`"${impact.entity.label}" cannot be deleted: ${impact.blockers.map((b) => b.reason).join(" ")}`);
       }
 
+      await snapshotRecords(tx, "material", [materialId], userId);
       await tx.delete(materials).where(eq(materials.id, materialId));
       return { label: impact.entity.label, totalAffected: impact.totalAffected };
     });
@@ -71,7 +73,7 @@ export const materialsDeletionService = {
       module: "Inventory",
       action: "Deleted Material",
       recordId: materialId,
-      description: `Deleted material "${result.label}"`,
+      description: `Deleted material "${result.label}" (recycle bin)`,
     });
 
     return result;

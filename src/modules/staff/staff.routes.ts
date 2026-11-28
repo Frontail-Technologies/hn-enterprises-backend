@@ -33,11 +33,11 @@ export const staffRoutes = new Elysia({ prefix: "/staff" })
     },
   )
   // Staff without a login only (drivers, helpers...); supervisors go through /users.
-  .post("/bulk/delete", ({ body, set }) => staffController.bulkRemove({ body, set }), {
+  .post("/bulk/delete", ({ body, currentUser, set }) => staffController.bulkRemove({ body, currentUser, set }), {
     body: bulkStaffIdsSchema,
     requireRole: ["super_admin", "admin"],
   })
-  .delete("/:id", ({ params, set }) => staffController.remove({ params, set }), {
+  .delete("/:id", ({ params, currentUser, set }) => staffController.remove({ params, currentUser, set }), {
     params: t.Object({ id: t.String() }),
     requireRole: ["super_admin", "admin"],
   });

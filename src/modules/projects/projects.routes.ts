@@ -147,7 +147,7 @@ export const projectsRoutes = new Elysia({ prefix: "/projects" })
   )
   .delete(
     "/:id/sites/:siteId",
-    ({ params, set }) => projectsController.deleteSite({ params, set }),
+    ({ params, currentUser, set }) => projectsController.deleteSite({ params, currentUser, set }),
     {
       params: t.Object({ id: t.String(), siteId: t.String() }),
       requireRole: ["super_admin", "admin"],

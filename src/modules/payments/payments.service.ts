@@ -8,6 +8,7 @@ const createdByUsers = alias(users, "created_by_users");
 import { permissionService } from "@services";
 import { activityService } from "@modules/activity/activity.service";
 import { expenseTitle } from "@modules/activity/activity.catalog";
+import { snapshotRecords } from "@modules/recycle-bin/recycle-bin.service";
 import {
   assertCustomerAccess,
   assertPlumberAccess,
@@ -544,12 +545,14 @@ export const paymentsService = {
     return payment;
   },
 
-  async remove(id: string) {
+  async remove(id: string, userId: string) {
     const existing = await getPaymentOrThrow(id);
     if (existing.status === "approved") {
       throw new Error("Approved payments cannot be deleted. Please create a Void transaction instead to offset it.");
     }
-    const db = getDb();
-    await db.delete(payments).where(eq(payments.id, id));
+    await getDb().transaction(async (tx) => {
+      await snapshotRecords(tx, "payment", [id], userId);
+      await tx.delete(payments).where(eq(payments.id, id));
+    });
   },
 };

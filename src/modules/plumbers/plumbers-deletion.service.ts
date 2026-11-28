@@ -1,6 +1,7 @@
 import { count, eq, inArray } from "drizzle-orm";
 import { getDb } from "@db";
 import { customers, materialTransactions, payments, plumbers, wageRecords } from "@db/schema";
+import { snapshotRecords } from "@modules/recycle-bin/recycle-bin.service";
 import { auditService } from "@services";
 import { EntityInUseError } from "@utils";
 import { computeDeleteImpact } from "../deletion/deletion.service";
@@ -79,6 +80,7 @@ export const plumbersDeletionService = {
         throw new EntityInUseError(`"${impact.entity.label}" cannot be deleted: ${impact.blockers.map((b) => b.reason).join(" ")}`);
       }
 
+      await snapshotRecords(tx, "plumber", [plumberId], userId);
       await tx.delete(plumbers).where(eq(plumbers.id, plumberId));
       return { label: impact.entity.label, totalAffected: impact.totalAffected };
     });

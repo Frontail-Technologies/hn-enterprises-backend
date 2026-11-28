@@ -66,18 +66,20 @@ export const staffController = {
     }
   },
 
-  async remove({ params, set }: { params: { id: string }; set: SetContext }) {
+  async remove({ params, currentUser, set }: { params: { id: string }; currentUser: AuthTokenPayload | null; set: SetContext }) {
     try {
-      return ok(await staffService.remove(params.id), "Staff member deleted");
+      if (!currentUser) throw new Error("Authentication required");
+      return ok(await staffService.remove(params.id, currentUser.id), "Staff member deleted");
     } catch (error) {
       set.status = statusFromError(error);
       return { success: false, message: errorMessage(error, "Unable to delete staff member") };
     }
   },
 
-  async bulkRemove({ body, set }: { body: { ids: string[] }; set: SetContext }) {
+  async bulkRemove({ body, currentUser, set }: { body: { ids: string[] }; currentUser: AuthTokenPayload | null; set: SetContext }) {
     try {
-      return ok(await staffService.bulkRemove(body.ids), "Staff deleted");
+      if (!currentUser) throw new Error("Authentication required");
+      return ok(await staffService.bulkRemove(body.ids, currentUser.id), "Staff deleted");
     } catch (error) {
       set.status = statusFromError(error);
       return { success: false, message: errorMessage(error, "Unable to delete staff") };

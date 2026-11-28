@@ -12,7 +12,7 @@ export const plumbersRoutes = new Elysia({ prefix: "/plumbers" })
   })
   .post(
     "/bulk/delete",
-    ({ body, set }) => plumbersController.bulkRemove({ body, set }),
+    ({ body, currentUser, set }) => plumbersController.bulkRemove({ body, currentUser, set }),
     { body: bulkDeleteByIdsBodySchema, requireRole: ["super_admin", "admin"] },
   )
   .post(

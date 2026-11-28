@@ -131,9 +131,10 @@ export const billsController = {
     }
   },
 
-  async delete({ params, set }: { params: { id: string }; set: SetContext }) {
+  async delete({ params, currentUser, set }: { params: { id: string }; currentUser: AuthTokenPayload | null; set: SetContext }) {
     try {
-      await billsService.delete(params.id);
+      if (!currentUser) throw new Error("Authentication required");
+      await billsService.delete(params.id, currentUser.id);
       return ok(null, "Bill deleted");
     } catch (error) {
       set.status = statusFromError(error);

@@ -92,9 +92,10 @@ export const plumbersController = {
     }
   },
 
-  async bulkRemove({ body, set }: { body: { ids: string[] }; set: SetContext }) {
+  async bulkRemove({ body, currentUser, set }: { body: { ids: string[] }; currentUser: AuthTokenPayload | null; set: SetContext }) {
     try {
-      const result = await plumbersService.bulkRemove(body.ids);
+      if (!currentUser) throw new Error("Authentication required");
+      const result = await plumbersService.bulkRemove(body.ids, currentUser.id);
       return ok(result, `${result.count} plumber${result.count === 1 ? "" : "s"} deleted`);
     } catch (error) {
       set.status = statusFromError(error);

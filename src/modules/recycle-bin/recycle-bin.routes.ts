@@ -19,7 +19,7 @@ async function run<T>(set: SetContext, fallback: string, action: () => Promise<T
   }
 }
 
-/** Deleted customers kept for 30 days: list, restore, delete forever (admins only). */
+/** Deleted items kept for 30 days: list, restore, delete forever (admins only). */
 export const recycleBinRoutes = new Elysia({ prefix: "/recycle-bin" })
   .use(auth)
   .get("/", ({ set }) => run(set, "Unable to load the recycle bin", () => recycleBinService.list()), { requireRole: ADMINS })
@@ -48,7 +48,7 @@ export const recycleBinRoutes = new Elysia({ prefix: "/recycle-bin" })
         if (result.count) {
           await auditService.log({
             userId: (currentUser as AuthTokenPayload).id,
-            module: "Customers",
+            module: "Recycle Bin",
             action: "Emptied Recycle Bin",
             description: `Permanently deleted ${result.count} item${result.count === 1 ? "" : "s"} from the recycle bin`,
           });
@@ -64,8 +64,8 @@ export const recycleBinRoutes = new Elysia({ prefix: "/recycle-bin" })
         const purged = await recycleBinService.purge(params.id);
         await auditService.log({
           userId: (currentUser as AuthTokenPayload).id,
-          module: "Customers",
-          action: "Deleted Customer Permanently",
+          module: "Recycle Bin",
+          action: "Deleted Permanently",
           recordId: params.id,
           description: `Removed "${purged.label}" from the recycle bin for good`,
         });

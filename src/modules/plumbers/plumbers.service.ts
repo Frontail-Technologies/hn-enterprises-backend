@@ -3,6 +3,7 @@ import { getDb } from "@db";
 import { plumbers } from "@db/schema";
 import { normalizeKey } from "@modules/master-import/master-import.mapper";
 import { inPlumbers } from "@modules/projects/project-access.service";
+import { snapshotRecords } from "@modules/recycle-bin/recycle-bin.service";
 import { buildPaginationMeta, cleanObject, isForeignKeyViolation, parsePagination, toEntityInUseError, toSearchPattern } from "@utils";
 import { assertPlumbersDeletable, plumbersDeletionService } from "./plumbers-deletion.service";
 import type { CreatePlumberBody, PlumberListQuery, UpdatePlumberBody } from "./plumbers.types";
@@ -114,7 +115,7 @@ export const plumbersService = {
     return plumbersDeletionService.execute(id, userId);
   },
 
-  async bulkRemove(ids: string[]) {
+  async bulkRemove(ids: string[], userId: string) {
     const db = getDb();
     const uniqueIds = Array.from(new Set(ids));
     const existing = await db.select({ id: plumbers.id }).from(plumbers).where(inArray(plumbers.id, uniqueIds));
@@ -124,6 +125,7 @@ export const plumbersService = {
     try {
       await db.transaction(async (tx) => {
         await assertPlumbersDeletable(tx, resolvedIds);
+        await snapshotRecords(tx, "plumber", resolvedIds, userId);
         await tx.delete(plumbers).where(inArray(plumbers.id, resolvedIds));
       });
     } catch (error) {

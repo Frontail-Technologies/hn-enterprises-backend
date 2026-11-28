@@ -2,9 +2,10 @@ import { and, count, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import { getDb } from "@db";
 import { bills, customers, dprRecords, projectDocuments, projects, projectSites, sitePlans, users } from "@db/schema";
 import { normalizeKey } from "@modules/master-import/master-import.mapper";
+import { snapshotRecords } from "@modules/recycle-bin/recycle-bin.service";
 import { auditService } from "@services";
 import { buildPaginationMeta, cleanObject, parsePagination, toSearchPattern } from "@utils";
-import { projectsDeletionService } from "./projects-deletion.service";
+import { detachProjectLinks, projectsDeletionService } from "./projects-deletion.service";
 import { ensureProjectMembers, inProjects } from "./project-access.service";
 import type {
   CreateProjectBody,
@@ -238,6 +239,8 @@ export const projectsService = {
         tx.select({ value: count() }).from(customers).where(inArray(customers.projectId, resolvedIds)),
       ]);
 
+      await snapshotRecords(tx, "project", resolvedIds, userId);
+      await detachProjectLinks(tx, resolvedIds);
       await tx.delete(sitePlans).where(inArray(sitePlans.projectId, resolvedIds));
       await tx.delete(dprRecords).where(inArray(dprRecords.projectId, resolvedIds));
       await tx.delete(bills).where(inArray(bills.projectId, resolvedIds));
@@ -360,10 +363,20 @@ export const projectsService = {
     return site;
   },
 
-  async deleteSite(projectId: string, siteId: string) {
-    await getSiteOrThrow(projectId, siteId);
-    const db = getDb();
-    await db.delete(projectSites).where(eq(projectSites.id, siteId));
+  async deleteSite(projectId: string, siteId: string, userId: string) {
+    const site = await getSiteOrThrow(projectId, siteId);
+    await getDb().transaction(async (tx) => {
+      await snapshotRecords(tx, "project_site", [siteId], userId);
+      await tx.delete(projectSites).where(eq(projectSites.id, siteId));
+    });
+    await auditService.log({
+      userId,
+      module: "Projects",
+      action: "Deleted Site",
+      recordId: siteId,
+      projectId,
+      description: `Deleted site ${site.name} (recycle bin)`,
+    });
   },
 
   async listDocuments(projectId: string) {

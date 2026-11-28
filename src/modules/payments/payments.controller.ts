@@ -181,9 +181,10 @@ export const paymentsController = {
     }
   },
 
-  async remove({ params, set }: { params: { id: string }; set: SetContext }) {
+  async remove({ params, currentUser, set }: { params: { id: string }; currentUser: AuthTokenPayload | null; set: SetContext }) {
     try {
-      await paymentsService.remove(params.id);
+      if (!currentUser) throw new Error("Authentication required");
+      await paymentsService.remove(params.id, currentUser.id);
       return ok(null, "Payment deleted");
     } catch (error) {
       set.status = statusFromError(error);

@@ -1,4 +1,4 @@
-import { count, eq, inArray } from "drizzle-orm";
+import { count, eq, inArray, sql } from "drizzle-orm";
 import { getDb } from "@db";
 import {
   auditLogs,
@@ -19,6 +19,7 @@ import {
   users,
   workProgressUpdates,
 } from "@db/schema";
+import { snapshotRecords } from "@modules/recycle-bin/recycle-bin.service";
 import { auditService } from "@services";
 import { EntityInUseError } from "@utils";
 import { computeDeleteImpact } from "../deletion/deletion.service";
@@ -28,6 +29,29 @@ import type {
   DeleteImpactDependencyConfig,
   DeleteImpactResult,
 } from "../deletion/deletion.types";
+
+/**
+ * Detach expenses and material entries from the projects' sites, customers
+ * and the projects themselves in one update per table, before the delete.
+ * Leaving it to the separate ON DELETE SET NULL actions can fail: once a row
+ * was touched earlier in the transaction, clearing project_id re-checks
+ * site_id while the site is already gone.
+ */
+export async function detachProjectLinks(tx: DbHandle, projectIds: string[]) {
+  if (!projectIds.length) return;
+  const ids = sql.join(projectIds.map((id) => sql`${id}::uuid`), sql`, `);
+  for (const table of ["payments", "material_transactions"]) {
+    const sites = sql`(SELECT id FROM project_sites WHERE project_id IN (${ids}))`;
+    const people = sql`(SELECT id FROM customers WHERE project_id IN (${ids}))`;
+    await tx.execute(sql`
+      UPDATE ${sql.raw(table)} SET
+        project_id = CASE WHEN project_id IN (${ids}) THEN NULL ELSE project_id END,
+        site_id = CASE WHEN site_id IN ${sites} THEN NULL ELSE site_id END,
+        customer_id = CASE WHEN customer_id IN ${people} THEN NULL ELSE customer_id END
+      WHERE project_id IN (${ids}) OR site_id IN ${sites} OR customer_id IN ${people}
+    `);
+  }
+}
 
 function countOf(db: DbHandle) {
   return db.select({ value: count() });
@@ -318,6 +342,9 @@ export const projectsDeletionService = {
       // workProgressUpdates, billPayments) cascades automatically via the schema's own
       // ON DELETE CASCADE; payments/materialTransactions/auditLogs/staff are ON DELETE SET
       // NULL (detach), so they're left alone here.
+      // Copy everything the delete removes or detaches to the recycle bin first.
+      await snapshotRecords(tx, "project", [projectId], userId);
+      await detachProjectLinks(tx, [projectId]);
       await tx.delete(sitePlans).where(eq(sitePlans.projectId, projectId));
       await tx.delete(dprRecords).where(eq(dprRecords.projectId, projectId));
       await tx.delete(bills).where(eq(bills.projectId, projectId));
@@ -335,7 +362,7 @@ export const projectsDeletionService = {
       module: "Projects",
       action: "Deleted Project (cascade)",
       recordId: projectId,
-      description: `Deleted project "${result.label}" and ${result.totalAffected} related record${result.totalAffected === 1 ? "" : "s"}`,
+      description: `Deleted project "${result.label}" and ${result.totalAffected} related record${result.totalAffected === 1 ? "" : "s"} (recycle bin)`,
       metadata: { totalAffected: result.totalAffected },
     });
 

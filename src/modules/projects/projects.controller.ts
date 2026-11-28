@@ -183,9 +183,10 @@ export const projectsController = {
     }
   },
 
-  async deleteSite({ params, set }: { params: { id: string; siteId: string }; set: SetContext }) {
+  async deleteSite({ params, currentUser, set }: { params: { id: string; siteId: string }; currentUser: AuthTokenPayload | null; set: SetContext }) {
     try {
-      await projectsService.deleteSite(params.id, params.siteId);
+      if (!currentUser) throw new Error("Authentication required");
+      await projectsService.deleteSite(params.id, params.siteId, currentUser.id);
       return ok(null, "Project site deleted");
     } catch (error) {
       set.status = statusFromError(error);

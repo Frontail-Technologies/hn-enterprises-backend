@@ -14,6 +14,7 @@ import type { UserRole } from "@types";
 import type { CreateStaffBody, StaffListQuery, UpdateStaffBody } from "./staff.types";
 import { forgetAuthUser } from "@plugins";
 import { ensureProjectMembers } from "@modules/projects/project-access.service";
+import { snapshotRecords } from "@modules/recycle-bin/recycle-bin.service";
 
 const staffName = sql<string>`coalesce(${users.name}, ${staff.name}, '')`;
 const staffMobile = sql<string | null>`coalesce(${users.mobile}, ${staff.mobile})`;
@@ -306,20 +307,27 @@ export const staffService = {
    * Delete staff without a login. Supervisors (login accounts) are deleted
    * through the user hard-delete workflow, keyed by staff.userId (see below).
    */
-  async remove(id: string) {
+  async remove(id: string, userId: string) {
     const existing = await getStaffOrThrow(id);
     if (existing.userId) throw new Error("A supervisor cannot be deleted here - delete their login account instead");
-    await getDb().delete(staff).where(eq(staff.id, id));
+    await getDb().transaction(async (tx) => {
+      await snapshotRecords(tx, "staff", [id], userId);
+      await tx.delete(staff).where(eq(staff.id, id));
+    });
     return { id, name: existing.name };
   },
 
-  async bulkRemove(ids: string[]) {
+  async bulkRemove(ids: string[], userId: string) {
     const unique = Array.from(new Set(ids));
     if (!unique.length) return { count: 0 };
-    const rows = await getDb()
-      .delete(staff)
-      .where(and(inArray(staff.id, unique), isNull(staff.userId)))
-      .returning({ id: staff.id });
+    const rows = await getDb().transaction(async (tx) => {
+      // Staff without a login only (the snapshot skips supervisors as well).
+      await snapshotRecords(tx, "staff", unique, userId);
+      return tx
+        .delete(staff)
+        .where(and(inArray(staff.id, unique), isNull(staff.userId)))
+        .returning({ id: staff.id });
+    });
     return { count: rows.length };
   },
 

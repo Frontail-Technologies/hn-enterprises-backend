@@ -98,6 +98,6 @@ export const paymentsRoutes = new Elysia({ prefix: "/payments" })
   )
   .delete(
     "/:id",
-    ({ params, set }) => paymentsController.remove({ params, set }),
+    ({ params, currentUser, set }) => paymentsController.remove({ params, currentUser, set }),
     { params: t.Object({ id: t.String() }), requireRole: ["super_admin", "admin"] },
   );
