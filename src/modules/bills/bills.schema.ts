@@ -26,6 +26,11 @@ export const createBillBodySchema = t.Object({
   dueDate: t.Optional(t.String()),
   totalAmount: t.Number(),
   tax: t.Optional(t.Number()),
+  tdsIncome: t.Optional(t.Number({ minimum: 0 })),
+  tdsGst: t.Optional(t.Number({ minimum: 0 })),
+  prs: t.Optional(t.Number({ minimum: 0 })),
+  bankGuarantee: t.Optional(t.Number({ minimum: 0 })),
+  holdAmount: t.Optional(t.Number({ minimum: 0 })),
   status: t.Optional(billStatusSchema),
   remarks: t.Optional(t.String()),
   /** Bill photos, already uploaded via /uploads. */
@@ -44,4 +49,13 @@ export const createBillPaymentBodySchema = t.Object({
 
 export const updateBillPaymentBodySchema = t.Object({
   status: billPaymentStatusSchema,
+});
+
+/** Client paid out part of the bank guarantee or the held amount. */
+export const releaseBillAmountBodySchema = t.Object({
+  kind: t.Union([t.Literal("bg"), t.Literal("hold")]),
+  amount: t.Number({ exclusiveMinimum: 0 }),
+  paymentDate: t.String({ minLength: 1 }),
+  mode: t.String({ minLength: 1 }),
+  remarks: t.Optional(t.String()),
 });

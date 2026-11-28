@@ -19,6 +19,11 @@ export type CreateBillBody = {
   dueDate?: string;
   totalAmount: number;
   tax?: number;
+  tdsIncome?: number;
+  tdsGst?: number;
+  prs?: number;
+  bankGuarantee?: number;
+  holdAmount?: number;
   status?: BillStatus;
   remarks?: string;
   attachments?: BillAttachment[];

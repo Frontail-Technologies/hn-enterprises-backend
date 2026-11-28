@@ -1,10 +1,13 @@
 import { Elysia, t } from "elysia";
 import { auth } from "@plugins";
+import { errorMessage, ok, statusFromError } from "@utils";
 import { billsController } from "./bills.controller";
+import { billsService } from "./bills.service";
 import {
   billListQuerySchema,
   createBillBodySchema,
   createBillPaymentBodySchema,
+  releaseBillAmountBodySchema,
   updateBillBodySchema,
   updateBillPaymentBodySchema,
 } from "./bills.schema";
@@ -50,6 +53,19 @@ export const billsRoutes = new Elysia({ prefix: "/bills" })
     "/:id/payments",
     ({ params, set }) => billsController.listPayments({ params, set }),
     { params: t.Object({ id: t.String() }), requireAuth: true },
+  )
+  .post(
+    "/:id/release",
+    async ({ params, body, currentUser, set }) => {
+      try {
+        if (!currentUser) throw new Error("Authentication required");
+        return ok(await billsService.releaseAmount(params.id, body, currentUser.id), "Released amount recorded");
+      } catch (error) {
+        set.status = statusFromError(error);
+        return { success: false, message: errorMessage(error, "Unable to record the release") };
+      }
+    },
+    { params: t.Object({ id: t.String() }), body: releaseBillAmountBodySchema, requireRole: ["super_admin", "admin"] },
   )
   .post(
     "/:id/payments",

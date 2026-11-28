@@ -12,11 +12,51 @@ import type {
   UpdateBillBody,
 } from "./bills.types";
 
-function withPendingAmount<T extends { totalAmount: string; tax: string; paidAmount: string }>(
-  bill: T,
-) {
-  const pendingAmount = Number(bill.totalAmount) + Number(bill.tax) - Number(bill.paidAmount);
-  return { ...bill, pendingAmount };
+type BillMoney = {
+  totalAmount: string;
+  tax: string;
+  paidAmount: string;
+  tdsIncome?: string;
+  tdsGst?: string;
+  prs?: string;
+  bankGuarantee?: string;
+  bgReleased?: string;
+  holdAmount?: string;
+  holdReleased?: string;
+};
+
+const n = (value: string | undefined) => Number(value ?? 0);
+
+/** What the client still owes: total + tax - TDS - PRS - BG still held - hold still held. */
+export function netPayable(bill: BillMoney) {
+  const bgHeld = n(bill.bankGuarantee) - n(bill.bgReleased);
+  const holdHeld = n(bill.holdAmount) - n(bill.holdReleased);
+  return n(bill.totalAmount) + n(bill.tax) - n(bill.tdsIncome) - n(bill.tdsGst) - n(bill.prs) - bgHeld - holdHeld;
+}
+
+/** Same as netPayable, in SQL (for sums). */
+export const NET_PAYABLE_SQL = sql`(${bills.totalAmount} + ${bills.tax} - ${bills.tdsIncome} - ${bills.tdsGst} - ${bills.prs}
+  - (${bills.bankGuarantee} - ${bills.bgReleased}) - (${bills.holdAmount} - ${bills.holdReleased}))`;
+
+function withPendingAmount<T extends BillMoney>(bill: T) {
+  const net = netPayable(bill);
+  return {
+    ...bill,
+    netPayable: net,
+    pendingAmount: net - n(bill.paidAmount),
+    bgHeld: n(bill.bankGuarantee) - n(bill.bgReleased),
+    holdHeld: n(bill.holdAmount) - n(bill.holdReleased),
+  };
+}
+
+function deductionValues(input: { tdsIncome?: number; tdsGst?: number; prs?: number; bankGuarantee?: number; holdAmount?: number }) {
+  return {
+    ...(input.tdsIncome != null ? { tdsIncome: String(input.tdsIncome) } : {}),
+    ...(input.tdsGst != null ? { tdsGst: String(input.tdsGst) } : {}),
+    ...(input.prs != null ? { prs: String(input.prs) } : {}),
+    ...(input.bankGuarantee != null ? { bankGuarantee: String(input.bankGuarantee) } : {}),
+    ...(input.holdAmount != null ? { holdAmount: String(input.holdAmount) } : {}),
+  };
 }
 
 async function getBillOrThrow(id: string) {
@@ -75,8 +115,12 @@ export const billsService = {
       .select({
         billed: sql<string>`coalesce(sum(${bills.totalAmount}), 0)`,
         received: sql<string>`coalesce(sum(${bills.paidAmount}), 0)`,
-        pending: sql<string>`coalesce(sum(${bills.totalAmount} + ${bills.tax} - ${bills.paidAmount}), 0)`,
-        overdue: sql<string>`coalesce(sum(case when ${bills.status} = 'overdue' then ${bills.totalAmount} + ${bills.tax} - ${bills.paidAmount} else 0 end), 0)`,
+        pending: sql<string>`coalesce(sum(${NET_PAYABLE_SQL} - ${bills.paidAmount}), 0)`,
+        overdue: sql<string>`coalesce(sum(case when ${bills.status} = 'overdue' then ${NET_PAYABLE_SQL} - ${bills.paidAmount} else 0 end), 0)`,
+        tds: sql<string>`coalesce(sum(${bills.tdsIncome} + ${bills.tdsGst}), 0)`,
+        prs: sql<string>`coalesce(sum(${bills.prs}), 0)`,
+        bgHeld: sql<string>`coalesce(sum(${bills.bankGuarantee} - ${bills.bgReleased}), 0)`,
+        holdHeld: sql<string>`coalesce(sum(${bills.holdAmount} - ${bills.holdReleased}), 0)`,
       })
       .from(bills)
       .where(where);
@@ -86,6 +130,10 @@ export const billsService = {
       received: Number(row?.received ?? 0),
       pending: Number(row?.pending ?? 0),
       overdue: Number(row?.overdue ?? 0),
+      tds: Number(row?.tds ?? 0),
+      prs: Number(row?.prs ?? 0),
+      bgHeld: Number(row?.bgHeld ?? 0),
+      holdHeld: Number(row?.holdHeld ?? 0),
     };
   },
 
@@ -106,6 +154,7 @@ export const billsService = {
         dueDate: input.dueDate ? new Date(input.dueDate) : null,
         totalAmount: String(input.totalAmount),
         tax: String(input.tax ?? 0),
+        ...deductionValues(input),
         status: input.status ?? "draft",
         remarks: input.remarks || null,
         attachments: input.attachments ?? [],
@@ -138,6 +187,7 @@ export const billsService = {
       .set({
         ...patch,
         ...(input.billNumber ? { normalizedBillNumber: normalizeKey(input.billNumber) } : {}),
+        ...deductionValues(input),
         // An empty list is a real value (all photos removed), so it bypasses cleanObject.
         ...(input.attachments ? { attachments: input.attachments } : {}),
         updatedBy: userId,
@@ -176,7 +226,7 @@ export const billsService = {
       const [bill] = await tx.select().from(bills).where(eq(bills.id, billId)).limit(1);
       if (!bill) throw new Error("Bill not found");
 
-      const totalPayable = Number(bill.totalAmount) + Number(bill.tax);
+      const totalPayable = netPayable(bill);
       const currentPaid = Number(bill.paidAmount);
       const newPayment = Number(input.amount);
 
@@ -210,7 +260,7 @@ export const billsService = {
         .returning();
 
       const newPaidAmount = Number(updatedBill.paidAmount);
-      const newTotalPayable = Number(updatedBill.totalAmount) + Number(updatedBill.tax);
+      const newTotalPayable = netPayable(updatedBill);
       const nextStatus =
         newPaidAmount >= newTotalPayable ? "completed" : updatedBill.status === "draft" ? "submitted" : updatedBill.status;
 
@@ -218,6 +268,51 @@ export const billsService = {
         await tx.update(bills).set({ status: nextStatus }).where(eq(bills.id, billId));
       }
 
+      return payment;
+    });
+  },
+
+  /**
+   * The client paid out (part of) the bank guarantee or the held amount: it
+   * becomes "released" and is recorded as a received payment on the bill.
+   */
+  async releaseAmount(
+    billId: string,
+    input: { kind: "bg" | "hold"; amount: number; paymentDate: string; mode: string; remarks?: string },
+    userId: string,
+  ) {
+    const db = getDb();
+    return db.transaction(async (tx) => {
+      const [bill] = await tx.select().from(bills).where(eq(bills.id, billId)).limit(1);
+      if (!bill) throw new Error("Bill not found");
+      const held = input.kind === "bg" ? n(bill.bankGuarantee) - n(bill.bgReleased) : n(bill.holdAmount) - n(bill.holdReleased);
+      const label = input.kind === "bg" ? "Bank guarantee" : "Hold amount";
+      if (input.amount > held + 0.001) throw new Error(`${label} release cannot be more than the ${held.toFixed(2)} still held`);
+
+      const [payment] = await tx
+        .insert(billPayments)
+        .values({
+          billId,
+          amount: String(input.amount),
+          paymentDate: new Date(input.paymentDate),
+          mode: input.mode,
+          status: "cleared",
+          receivedBy: userId,
+          remarks: [`${label} released`, input.remarks?.trim()].filter(Boolean).join(" - "),
+        })
+        .returning();
+
+      await tx
+        .update(bills)
+        .set({
+          ...(input.kind === "bg"
+            ? { bgReleased: sql`${bills.bgReleased} + ${input.amount}` }
+            : { holdReleased: sql`${bills.holdReleased} + ${input.amount}` }),
+          paidAmount: sql`${bills.paidAmount} + ${input.amount}`,
+          updatedBy: userId,
+          updatedAt: new Date(),
+        })
+        .where(eq(bills.id, billId));
       return payment;
     });
   },

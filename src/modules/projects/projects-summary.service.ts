@@ -199,10 +199,14 @@ async function getWorkTotals(projectId: string) {
       FROM customers c
       WHERE c.project_id = ${projectId}
     `),
-    db.execute<{ bills: number; billed: string; paid: string }>(sql`
+    db.execute<{ bills: number; billed: string; paid: string; net: string; tds: string; bgHeld: string; holdHeld: string }>(sql`
       SELECT COUNT(*)::int AS bills,
              COALESCE(SUM(total_amount), 0) AS billed,
-             COALESCE(SUM(paid_amount), 0) AS paid
+             COALESCE(SUM(paid_amount), 0) AS paid,
+             COALESCE(SUM(total_amount + tax - tds_income - tds_gst - prs - (bank_guarantee - bg_released) - (hold_amount - hold_released)), 0) AS net,
+             COALESCE(SUM(tds_income + tds_gst), 0) AS tds,
+             COALESCE(SUM(bank_guarantee - bg_released), 0) AS "bgHeld",
+             COALESCE(SUM(hold_amount - hold_released), 0) AS "holdHeld"
       FROM bills
       WHERE project_id = ${projectId} AND status <> 'draft'
     `),
@@ -222,7 +226,16 @@ async function getWorkTotals(projectId: string) {
   return {
     lmc: { bySize: lmc, totalMetres: lmc.reduce((sum, row) => sum + row.metres, 0) },
     gi: { ...giSizes, totalMetres: Object.values(giSizes).reduce((sum, value) => sum + value, 0) },
-    billing: { bills: billing?.bills ?? 0, billed, paid, outstanding: Math.max(billed - paid, 0) },
+    billing: {
+      bills: billing?.bills ?? 0,
+      billed,
+      paid,
+      // Net of TDS, PRS and amounts the client still holds (BG, hold).
+      outstanding: Math.max(Number(billing?.net ?? billed) - paid, 0),
+      tds: Number(billing?.tds ?? 0),
+      bgHeld: Number(billing?.bgHeld ?? 0),
+      holdHeld: Number(billing?.holdHeld ?? 0),
+    },
   };
 }
 

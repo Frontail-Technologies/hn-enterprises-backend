@@ -43,6 +43,15 @@ export const bills = pgTable(
     totalAmount: numeric("total_amount", { precision: 14, scale: 2 }).notNull(),
     tax: numeric("tax", { precision: 14, scale: 2 }).notNull().default("0"),
     paidAmount: numeric("paid_amount", { precision: 14, scale: 2 }).notNull().default("0"),
+    /** Deductions by the client. Net to receive = total + tax - TDS (income tax, GST) - PRS - BG held - hold held. */
+    tdsIncome: numeric("tds_income", { precision: 14, scale: 2 }).notNull().default("0"),
+    tdsGst: numeric("tds_gst", { precision: 14, scale: 2 }).notNull().default("0"),
+    prs: numeric("prs", { precision: 14, scale: 2 }).notNull().default("0"),
+    /** Bank guarantee / hold amounts kept back by the client; "released" = paid out later (also counted in paidAmount). */
+    bankGuarantee: numeric("bank_guarantee", { precision: 14, scale: 2 }).notNull().default("0"),
+    bgReleased: numeric("bg_released", { precision: 14, scale: 2 }).notNull().default("0"),
+    holdAmount: numeric("hold_amount", { precision: 14, scale: 2 }).notNull().default("0"),
+    holdReleased: numeric("hold_released", { precision: 14, scale: 2 }).notNull().default("0"),
     status: billStatusEnum("status").notNull().default("draft"),
     remarks: text("remarks"),
     attachments: jsonb("attachments").$type<BillAttachment[]>().notNull().default([]),

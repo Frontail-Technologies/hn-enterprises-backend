@@ -15,6 +15,7 @@ import {
 } from "@db/schema";
 import { dashboardStatsService } from "@modules/stats/dashboard-stats.service";
 import { projectPaymentCondition } from "@modules/payments/payments.service";
+import { netPayable } from "@modules/bills/bills.service";
 
 export type DashboardPeriod = "today" | "this-month" | "this-year" | "custom-month" | "custom-year";
 
@@ -164,7 +165,7 @@ async function getSubmittedPaymentsCount(projectId: string | undefined) {
 async function getBillingPendingAmount(projectId: string | undefined, range: { from: Date; to: Date }) {
   const db = getDb();
   const [row] = await db.execute<{ value: string }>(sql`
-    SELECT COALESCE(SUM(total_amount + tax - paid_amount), 0) as value
+    SELECT COALESCE(SUM(total_amount + tax - tds_income - tds_gst - prs - (bank_guarantee - bg_released) - (hold_amount - hold_released) - paid_amount), 0) as value
     FROM bills
     WHERE bill_date >= ${range.from.toISOString()} AND bill_date <= ${range.to.toISOString()}
     ${projectId ? sql`AND project_id = ${projectId}` : sql``}
@@ -391,7 +392,20 @@ async function getAlerts(projectId: string | undefined): Promise<DashboardAlert[
       .where(lte(materials.currentBalance, materials.reorderLevel))
       .limit(6),
     db
-      .select({ id: bills.id, billNumber: bills.billNumber, totalAmount: bills.totalAmount, tax: bills.tax, paidAmount: bills.paidAmount })
+      .select({
+        id: bills.id,
+        billNumber: bills.billNumber,
+        totalAmount: bills.totalAmount,
+        tax: bills.tax,
+        paidAmount: bills.paidAmount,
+        tdsIncome: bills.tdsIncome,
+        tdsGst: bills.tdsGst,
+        prs: bills.prs,
+        bankGuarantee: bills.bankGuarantee,
+        bgReleased: bills.bgReleased,
+        holdAmount: bills.holdAmount,
+        holdReleased: bills.holdReleased,
+      })
       .from(bills)
       .where(and(eq(bills.status, "overdue"), projectId ? eq(bills.projectId, projectId) : undefined))
       .limit(6),
@@ -427,7 +441,7 @@ async function getAlerts(projectId: string | undefined): Promise<DashboardAlert[
     ...overdueBillRows.map((bill) => ({
       id: `bill-${bill.id}`,
       title: `${bill.billNumber} is overdue`,
-      description: `${money(Number(bill.totalAmount) + Number(bill.tax) - Number(bill.paidAmount))} pending`,
+      description: `${money(netPayable(bill) - Number(bill.paidAmount))} pending`,
       tone: "danger" as const,
     })),
     ...submittedPaymentRows.map((payment) => ({
