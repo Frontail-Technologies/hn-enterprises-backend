@@ -3,9 +3,6 @@ import { auth } from "@plugins";
 import type { AuthTokenPayload } from "@types";
 import { errorMessage, ok, statusFromError } from "@utils";
 import { getBillingReport } from "./reports-billing.service";
-import { getMaterialReport } from "./reports-material.service";
-import { getPeopleReport } from "./reports-people.service";
-import { getProgressReport } from "./reports-progress.service";
 import type { ReportQuery } from "./reports.types";
 
 type SetContext = { status?: number | string };
@@ -25,18 +22,9 @@ const query = t.Object({
 });
 const ADMINS = ["super_admin", "admin"] as const;
 
-/** HN's own reports for the admin panel (Reports page). */
+/** Bills by month and pending by age (charts on the Billing page). */
 export const reportsRoutes = new Elysia({ prefix: "/reports" })
   .use(auth)
-  .get("/progress", ({ query: q, currentUser, set }) =>
-    run(set, "Unable to load the progress report", () => getProgressReport(q as ReportQuery, currentUser as AuthTokenPayload)),
-    { query, requireRole: [...ADMINS] })
-  .get("/people", ({ query: q, currentUser, set }) =>
-    run(set, "Unable to load the plumbers & labour report", () => getPeopleReport(q as ReportQuery, currentUser as AuthTokenPayload)),
-    { query, requireRole: [...ADMINS] })
-  .get("/material", ({ query: q, currentUser, set }) =>
-    run(set, "Unable to load the material report", () => getMaterialReport(q as ReportQuery, currentUser as AuthTokenPayload)),
-    { query, requireRole: [...ADMINS] })
   .get("/billing", ({ query: q, currentUser, set }) =>
     run(set, "Unable to load the billing report", () => getBillingReport(q as ReportQuery, currentUser as AuthTokenPayload)),
     { query, requireRole: [...ADMINS] });
